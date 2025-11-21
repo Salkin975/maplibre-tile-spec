@@ -42,13 +42,14 @@ export default abstract class Vector<T extends ArrayBufferView = ArrayBufferView
     }
 
     presentValues(): SelectionVector {
-        const selectionVector = [];
+        const selectionVector = new Uint32Array(this._size);
+        let index = 0;
         for (let i = 0; i < this.size; i++) {
             if (this.has(i)) {
-                selectionVector.push(i);
+                selectionVector[index++] = i;
             }
         }
-        return new FlatSelectionVector(selectionVector);
+        return new FlatSelectionVector(selectionVector, index);
     }
 
     presentValuesSelected(selectionVector: SelectionVector): SelectionVector {
@@ -65,13 +66,14 @@ export default abstract class Vector<T extends ArrayBufferView = ArrayBufferView
     }
 
     nullableValues(): SelectionVector {
-        const selectionVector = [];
+        const selectionVector = new Uint32Array(this._size);
+        let index = 0;
         for (let i = 0; i < this.size; i++) {
             if (!this.has(i)) {
-                selectionVector.push(i);
+                selectionVector[index++] = i;
             }
         }
-        return new FlatSelectionVector(selectionVector);
+        return new FlatSelectionVector(selectionVector, index);
     }
 
     nullableValuesSelected(selectionVector: SelectionVector): SelectionVector {
@@ -90,45 +92,51 @@ export default abstract class Vector<T extends ArrayBufferView = ArrayBufferView
     protected abstract getValueFromBuffer(index: number): K;
 
     filter(value: K): SelectionVector {
-        const selectionVector = [];
+        const selectionVector = new Uint32Array(this._size);
+        let index = 0;
         for (let i = 0; i < this._size; i++) {
             if (this.has(i) && this.getValue(i) === value) {
-                selectionVector.push(i);
+                selectionVector[index++] = i;
             }
         }
-        return new FlatSelectionVector(selectionVector);
+        return new FlatSelectionVector(selectionVector, index);
     }
 
     filterNotEqual(value: K): SelectionVector {
-        const selectionVector = [];
+        const selectionVector = new Uint32Array(this._size);
+        let index = 0;
         for (let i = 0; i < this._size; i++) {
             if (!this.has(i) || this.getValue(i) !== value) {
-                selectionVector.push(i);
+                selectionVector[index++] = i;
             }
         }
-        return new FlatSelectionVector(selectionVector);
+        return new FlatSelectionVector(selectionVector, index);
     }
 
     match(values: K[]): SelectionVector {
-        const selectionVector = [];
+        const selectionVector = new Uint32Array(this._size * values.length);
+        let index = 0;
         for (let i = 0; i < this._size; i++) {
             if (!this.has(i)) continue;
             const value = this.getValue(i);
             const matchCount = values.filter(v => v === value).length;
-            selectionVector.push(...Array(matchCount).fill(i));
+            for (let k = 0; k < matchCount; k++) {
+                selectionVector[index++] = i;
+            }
         }
-        return new FlatSelectionVector(selectionVector);
+        return new FlatSelectionVector(selectionVector, index);
     }
 
 
     noneMatch(values: K[]): SelectionVector {
-        const selectionVector = [];
+        const selectionVector = new Uint32Array(this._size);
+        let index = 0;
         for (let i = 0; i < this._size; i++) {
             if (this.has(i) && !values.includes(this.getValue(i))) {
-                selectionVector.push(i);
+                selectionVector[index++] = i;
             }
         }
-        return new FlatSelectionVector(selectionVector);
+        return new FlatSelectionVector(selectionVector, index);
     }
 
     /* updates the values and limit of the existing SelectionVector in-place */
@@ -185,23 +193,25 @@ export default abstract class Vector<T extends ArrayBufferView = ArrayBufferView
     }
 
     greaterThanOrEqualTo(value: K): SelectionVector {
-        const selectionVector = [];
+        const selectionVector = new Uint32Array(this._size);
+        let index = 0;
         for (let i = 0; i < this._size; i++) {
             if (this.has(i) && this.getValue(i) >= value) {
-                selectionVector.push(i);
+                selectionVector[index++] = i;
             }
         }
-        return new FlatSelectionVector(selectionVector);
+        return new FlatSelectionVector(selectionVector, index);
     }
 
     smallerThanOrEqualTo(value: K): SelectionVector {
-        const selectionVector = [];
+        const selectionVector = new Uint32Array(this._size);
+        let index = 0;
         for (let i = 0; i < this._size; i++) {
             if (this.has(i) && this.getValue(i) <= value) {
-                selectionVector.push(i);
+                selectionVector[index++] = i;
             }
         }
-        return new FlatSelectionVector(selectionVector);
+        return new FlatSelectionVector(selectionVector, index);
     }
 
     greaterThanOrEqualToSelected(value: K, selectionVector: SelectionVector): void {
