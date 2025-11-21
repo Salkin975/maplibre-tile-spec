@@ -3,7 +3,6 @@ import {StringFlatVector} from "../vector/flat/stringFlatVector";
 import {StringDictionaryVector} from "../vector/dictionary/stringDictionaryVector";
 import type IntWrapper from "./intWrapper";
 import BitVector from "../vector/flat/bitVector";
-import type Vector from "../vector/vector";
 import {PhysicalStreamType} from "../metadata/tile/physicalStreamType";
 import {DictionaryType} from "../metadata/tile/dictionaryType";
 import {LengthType} from "../metadata/tile/lengthType";
@@ -13,6 +12,7 @@ import {decodeVarintInt32} from "./integerDecodingUtils";
 import {decodeBooleanRle, skipColumn} from "./decodingUtils";
 import {RleEncodedStreamMetadata} from "../metadata/tile/rleEncodedStreamMetadata";
 import {StringFsstDictionaryVector} from "../vector/fsst-dictionary/stringFsstDictionaryVector";
+import type ComparisonVector from "../vector/comparisonVector";
 
 export class StringDecoder {
     private static readonly ROOT_COLUMN_NAME = "default";
@@ -27,7 +27,7 @@ export class StringDecoder {
         offset: IntWrapper,
         numStreams: number,
         bitVector?: BitVector,
-    ): Vector {
+    ): ComparisonVector {
         let dictionaryLengthStream: Int32Array = null;
         let offsetStream: Int32Array = null;
         let dictionaryStream: Uint8Array = null;
@@ -116,7 +116,7 @@ export class StringDecoder {
         dictionaryStream: Uint8Array | null,
         symbolLengthStream: Int32Array | null,
         nullabilityBuffer: BitVector | null
-    ): Vector | null {
+    ): ComparisonVector | null {
         if (!symbolTableStream) {
             return null;
         }
@@ -137,7 +137,7 @@ export class StringDecoder {
         offsetStream: Int32Array | null,
         dictionaryLengthStream: Int32Array | null,
         nullabilityBuffer: BitVector | null
-    ): Vector | null {
+    ): ComparisonVector | null {
         if (!dictionaryStream) {
             return null;
         }
@@ -152,7 +152,7 @@ export class StringDecoder {
         plainDataStream: Uint8Array | null,
         offsetStream: Int32Array | null,
         nullabilityBuffer: BitVector | null
-    ): Vector | null {
+    ): ComparisonVector | null {
         if (!plainLengthStream || !plainDataStream) {
             return null;
         }
@@ -187,7 +187,7 @@ export class StringDecoder {
         column: Column,
         numFeatures: number,
         propertyColumnNames?: Set<string>,
-    ): Vector[] {
+    ): ComparisonVector[] {
         let dictionaryOffsetBuffer: Int32Array = null;
         let dictionaryBuffer: Uint8Array = null;
         let symbolOffsetBuffer: Int32Array = null;

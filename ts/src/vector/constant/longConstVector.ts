@@ -1,7 +1,7 @@
 import type BitVector from "../flat/bitVector";
-import Vector from "../vector";
+import ComparisonVector from "../comparisonVector";
 
-export class LongConstVector extends Vector<BigInt64Array, bigint> {
+export class LongConstVector extends ComparisonVector<BigInt64Array, bigint> {
     public constructor(name: string, value: bigint, sizeOrNullabilityBuffer: number | BitVector) {
         super(name, BigInt64Array.of(value), sizeOrNullabilityBuffer);
     }

@@ -1,7 +1,7 @@
 import type BitVector from "./flat/bitVector";
-import Vector from "./vector";
+import ComparisonVector from "./comparisonVector";
 
-export abstract class VariableSizeVector<T extends ArrayBufferView, K> extends Vector<T, K> {
+export abstract class VariableSizeVector<T extends ArrayBufferView, K> extends ComparisonVector<T, K> {
     //TODO: switch to Uint32Array by changing the decodings
     protected constructor(
         name: string,

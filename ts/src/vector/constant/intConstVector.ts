@@ -1,7 +1,7 @@
 import type BitVector from "../flat/bitVector";
-import Vector from "../vector";
+import ComparisonVector from "../comparisonVector";
 
-export class IntConstVector extends Vector<Int32Array, number> {
+export class IntConstVector extends ComparisonVector<Int32Array, number> {
     public constructor(name: string, value: number, sizeOrNullabilityBuffer: number | BitVector) {
         super(name, Int32Array.of(value), sizeOrNullabilityBuffer);
     }

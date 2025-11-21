@@ -16,7 +16,7 @@ export class StringFlatVector extends VariableSizeVector<Uint8Array, string> {
         const end = this.offsetBuffer[index + 1];
         return decodeString(this.dataBuffer, start, end);
     }
-
+    // these methods get implemented in the next Pull Requests
     override filter(value: string): SelectionVector {
         throw new Error("Method not implemented");
     }
@@ -42,15 +42,15 @@ export class StringFlatVector extends VariableSizeVector<Uint8Array, string> {
         throw new Error("Method not implemented");
     }
     override greaterThanOrEqualTo(value: string): SelectionVector {
-        throw new Error("Method not available for type string");
+        throw new Error("Method not implemented");
     }
     override smallerThanOrEqualTo(value: string): SelectionVector {
-        throw new Error("Method not available for type string");
+        throw new Error("Method not implemented");
     }
     override greaterThanOrEqualToSelected(value: string, selectionVector: SelectionVector): void {
-        throw new Error("Method not available for type string");
+        throw new Error("Method not implemented");
     }
     override smallerThanOrEqualToSelected(value: string, selectionVector: SelectionVector): void {
-        throw new Error("Method not available for type string");
+        throw new Error("Method not implemented");
     }
 }
