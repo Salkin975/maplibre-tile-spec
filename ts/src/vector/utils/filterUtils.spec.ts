@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { IntFlatVector } from "./flat/intFlatVector";
-import BitVector from "./flat/bitVector";
-import { FlatSelectionVector } from "./filter/flatSelectionVector";
+import { IntFlatVector } from "../flat/intFlatVector";
+import BitVector from "../flat/bitVector";
+import { FlatSelectionVector } from "../filter/flatSelectionVector";
 import {
     filter,
     filterSelected,
@@ -15,7 +15,7 @@ import {
     presentValuesSelected,
     nullableValues,
     nullableValuesSelected
-} from "./utils";
+} from "./index";
 
 
 function createVector(values: number[], name = "test"): IntFlatVector {
