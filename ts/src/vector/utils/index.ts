@@ -8,7 +8,7 @@
  */
 
 export {
-    filter,
+    filterByValue,
     filterSelected,
     filterNotEqual,
     filterNotEqualSelected,
@@ -16,7 +16,7 @@ export {
     matchSelected,
     noneMatch,
     noneMatchSelected,
-    presentValues,
+    createNonNullSelectionVector,
     presentValuesSelected,
     nullableValues,
     nullableValuesSelected,

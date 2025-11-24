@@ -8,7 +8,7 @@ import { FlatSelectionVector } from "../filter/flatSelectionVector";
  * @param vector The vector to filter
  * @returns SelectionVector with indices where values are present (non-null)
  */
-export function presentValues<K>(vector: Vector<ArrayBufferView, K>): SelectionVector {
+export function createNonNullSelectionVector<K>(vector: Vector<ArrayBufferView, K>): SelectionVector {
     const selectionVector = new Uint32Array(vector.size);
     let index = 0;
     for (let i = 0; i < vector.size; i++) {
@@ -91,7 +91,7 @@ export function nullableValuesSelected<K>(
  * @param value The value to match
  * @returns SelectionVector with indices where vector[i] === value
  */
-export function filter<K>(vector: Vector<ArrayBufferView, K>, value: K): SelectionVector {
+export function filterByValue<K>(vector: Vector<ArrayBufferView, K>, value: K): SelectionVector {
     const selectionVector = new Uint32Array(vector.size);
     let index = 0;
     for (let i = 0; i < vector.size; i++) {

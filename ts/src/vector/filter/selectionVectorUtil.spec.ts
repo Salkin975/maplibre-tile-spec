@@ -115,7 +115,7 @@ describe("selectionVectorUtils", () => {
 
             it("Should return empty vector when all selected indices are null", () => {
                 const selectionVector = new FlatSelectionVector(new Uint32Array([1, 3, 5]));
-                const buffer = new Uint8Array([0b01010101]); // bits at 0, 2, 4, 6 (not 1, 3, 5)
+                const buffer = new Uint8Array([0b01010101]); // bits at 0, 2, 4, 6
                 const bitVector = new BitVector(buffer, 8);
                 const result = updateNullableSelectionVector(selectionVector, bitVector);
                 expect(result).toBeInstanceOf(FlatSelectionVector);
