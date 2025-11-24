@@ -13,9 +13,6 @@ import { type StringFlatVector } from "../flat/stringFlatVector";
 /**
  * Union type of all vector types that support comparison operations.
  * These vectors contain numeric values that can be compared using >= and <= operators.
- *
- * Note: String vectors and boolean vectors are NOT included as they don't support
- * meaningful numeric comparison operations.
  */
 export type ComparableVector =
     | IntFlatVector
