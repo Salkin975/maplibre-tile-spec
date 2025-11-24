@@ -17,11 +17,12 @@ export {
     noneMatch,
     noneMatchSelected,
     createNonNullSelectionVector,
-    nonNullValuesSelected,
+    filterNonNullSelected,
     nullableValues,
-    nullableValuesSelected,
+    filterNullSelected,
     greaterThanOrEqualTo,
     greaterThanOrEqualToSelected,
     smallerThanOrEqualTo,
-    smallerThanOrEqualToSelected
+    smallerThanOrEqualToSelected,
+    type ComparableVector,
 } from "./vector/utils";

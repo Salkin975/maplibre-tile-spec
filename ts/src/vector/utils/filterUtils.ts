@@ -20,14 +20,14 @@ export function createNonNullSelectionVector<K>(vector: Vector<ArrayBufferView, 
 }
 
 /**
- * Filters an existing SelectionVector to only include indices with non-null values.
+ * Filters an existing SelectionVector to only include indices where the vector has non-null values.
  * Updates the SelectionVector in-place.
  *
- * @param vector The vector to check
+ * @param vector The vector to check for non-null values
  * @param selectionVector The SelectionVector to filter (modified in-place)
  * @returns The filtered SelectionVector (same reference as input)
  */
-export function nonNullValuesSelected<K>(
+export function filterNonNullSelected<K>(
     vector: Vector<ArrayBufferView, K>,
     selectionVector: SelectionVector
 ): SelectionVector {
@@ -61,14 +61,14 @@ export function nullableValues<K>(vector: Vector<ArrayBufferView, K>): Selection
 }
 
 /**
- * Filters an existing SelectionVector to only include indices with null values.
+ * Filters an existing SelectionVector to only include indices where the vector has null values.
  * Updates the SelectionVector in-place.
  *
- * @param vector The vector to check
+ * @param vector The vector to check for null values
  * @param selectionVector The SelectionVector to filter (modified in-place)
  * @returns The filtered SelectionVector (same reference as input)
  */
-export function nullableValuesSelected<K>(
+export function filterNullSelected<K>(
     vector: Vector<ArrayBufferView, K>,
     selectionVector: SelectionVector
 ): SelectionVector {
