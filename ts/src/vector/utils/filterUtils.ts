@@ -27,7 +27,7 @@ export function createNonNullSelectionVector<K>(vector: Vector<ArrayBufferView, 
  * @param selectionVector The SelectionVector to filter (modified in-place)
  * @returns The filtered SelectionVector (same reference as input)
  */
-export function presentValuesSelected<K>(
+export function nonNullValuesSelected<K>(
     vector: Vector<ArrayBufferView, K>,
     selectionVector: SelectionVector
 ): SelectionVector {
