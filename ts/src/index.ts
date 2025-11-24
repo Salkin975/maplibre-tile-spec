@@ -7,3 +7,21 @@ export { GEOMETRY_TYPE } from "./vector/geometry/geometryType";
 export type { TileSetMetadata } from "./metadata/tileset/tilesetMetadata";
 export type { Geometry } from "./vector/geometry/geometryVector";
 export type { Feature } from "./vector/featureTable";
+export {
+    filterByValue,
+    filterSelected,
+    filterNotEqual,
+    filterNotEqualSelected,
+    match,
+    matchSelected,
+    noneMatch,
+    noneMatchSelected,
+    createNonNullSelectionVector,
+    presentValuesSelected,
+    nullableValues,
+    nullableValuesSelected,
+    greaterThanOrEqualTo,
+    greaterThanOrEqualToSelected,
+    smallerThanOrEqualTo,
+    smallerThanOrEqualToSelected
+} from "./vector/utils";
