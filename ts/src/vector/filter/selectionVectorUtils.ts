@@ -13,7 +13,6 @@ export function createSelectionVector(size: number) {
  * @param nullabilityBuffer - Optional bit vector where 1=not null, 0=null. If undefined/null, all values are considered non-null.
  */
 export function createNullableSelectionVector(size: number, nullabilityBuffer?: BitVector): SelectionVector {
-    // If no nullability buffer, all values are non-null, so we know the exact size
     if (!nullabilityBuffer) {
         const selectionVector = new Uint32Array(size);
         for (let i = 0; i < size; i++) {
@@ -21,16 +20,12 @@ export function createNullableSelectionVector(size: number, nullabilityBuffer?: 
         }
         return new FlatSelectionVector(selectionVector);
     }
-
-    // First pass: count non-null values to allocate exact size
     let count = 0;
     for (let i = 0; i < size; i++) {
         if (nullabilityBuffer.get(i)) {
             count++;
         }
     }
-
-    // Second pass: fill the array with non-null indices
     const selectionVector = new Uint32Array(count);
     let index = 0;
     for (let i = 0; i < size; i++) {
