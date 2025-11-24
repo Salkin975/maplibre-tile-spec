@@ -17,7 +17,7 @@ export {
     noneMatch,
     noneMatchSelected,
     createNonNullSelectionVector,
-    presentValuesSelected,
+    nonNullValuesSelected,
     nullableValues,
     nullableValuesSelected,
     greaterThanOrEqualTo,
