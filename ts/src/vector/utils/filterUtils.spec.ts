@@ -12,9 +12,9 @@ import {
     noneMatch,
     noneMatchSelected,
     createNonNullSelectionVector,
-    nonNullValuesSelected,
+    filterNonNullSelected,
     nullableValues,
-    nullableValuesSelected
+    filterNullSelected
 } from "./filterUtils";
 
 
@@ -236,18 +236,18 @@ describe("BaseVector tests", () => {
         });
     });
 
-    describe("presentValuesSelected", () => {
+    describe("filterNonNullSelected", () => {
         it("should filter present values from selection", () => {
             const simpleVector: IntFlatVector = createVector([10, 20, 30, 40, 50, 60, 70, 80, 90]);
             const selection = new FlatSelectionVector(new Uint32Array([0, 2, 4, 6, 8]));
-            nonNullValuesSelected(simpleVector, selection);
+            filterNonNullSelected(simpleVector, selection);
             expect(selection.selectionValues()).toEqual(new Uint32Array([0, 2, 4, 6, 8]));
         });
 
         it("should filter out null values from selection", () => {
             const withNulls = createNullableVector([10, 20, 30, 40, 50], 0b00010111);
             const selection = new FlatSelectionVector(new Uint32Array([0, 2, 3, 4]));
-            nonNullValuesSelected(withNulls, selection);
+            filterNonNullSelected(withNulls, selection);
             expect(selection.selectionValues()).toEqual(new Uint32Array([0, 2, 4]));
         });
     });
@@ -266,18 +266,18 @@ describe("BaseVector tests", () => {
         });
     });
 
-    describe("nullableValuesSelected", () => {
+    describe("filterNullSelected", () => {
         it("should return empty for vector without nulls", () => {
             const simpleVector: IntFlatVector = createVector([10, 20, 30, 40, 50, 60, 70, 80, 90]);
             const selection = new FlatSelectionVector(new Uint32Array([0, 2, 4, 6, 8]));
-            nullableValuesSelected(simpleVector, selection);
+            filterNullSelected(simpleVector, selection);
             expect(selection.selectionValues()).toEqual(new Uint32Array([]));
         });
 
         it("should filter only null values from selection", () => {
             const withNulls = createNullableVector([10, 20, 30, 40, 50], 0b00010111);
             const selection = new FlatSelectionVector(new Uint32Array([0, 2, 3, 4]));
-            nullableValuesSelected(withNulls, selection);
+            filterNullSelected(withNulls, selection);
             expect(selection.selectionValues()).toEqual(new Uint32Array([3]));
         });
     });
