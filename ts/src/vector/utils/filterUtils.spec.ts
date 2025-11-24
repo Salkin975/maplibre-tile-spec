@@ -12,7 +12,7 @@ import {
     noneMatch,
     noneMatchSelected,
     createNonNullSelectionVector,
-    presentValuesSelected,
+    nonNullValuesSelected,
     nullableValues,
     nullableValuesSelected
 } from "./filterUtils";
@@ -240,14 +240,14 @@ describe("BaseVector tests", () => {
         it("should filter present values from selection", () => {
             const simpleVector: IntFlatVector = createVector([10, 20, 30, 40, 50, 60, 70, 80, 90]);
             const selection = new FlatSelectionVector(new Uint32Array([0, 2, 4, 6, 8]));
-            presentValuesSelected(simpleVector, selection);
+            nonNullValuesSelected(simpleVector, selection);
             expect(selection.selectionValues()).toEqual(new Uint32Array([0, 2, 4, 6, 8]));
         });
 
         it("should filter out null values from selection", () => {
             const withNulls = createNullableVector([10, 20, 30, 40, 50], 0b00010111);
             const selection = new FlatSelectionVector(new Uint32Array([0, 2, 3, 4]));
-            presentValuesSelected(withNulls, selection);
+            nonNullValuesSelected(withNulls, selection);
             expect(selection.selectionValues()).toEqual(new Uint32Array([0, 2, 4]));
         });
     });
