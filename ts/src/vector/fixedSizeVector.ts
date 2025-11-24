@@ -1,3 +1,3 @@
-import ComparisonVector from "./comparisonVector";
+import Vector from "./vector";
 
-export abstract class FixedSizeVector<T extends ArrayBufferView, K> extends ComparisonVector<T, K> {}
+export abstract class FixedSizeVector<T extends ArrayBufferView, K> extends Vector<T, K> {}

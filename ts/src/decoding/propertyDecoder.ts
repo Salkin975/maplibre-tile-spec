@@ -24,8 +24,7 @@ import { StringDecoder } from "./stringDecoder";
 import { IntSequenceVector } from "../vector/sequence/intSequenceVector";
 import { type RleEncodedStreamMetadata } from "../metadata/tile/rleEncodedStreamMetadata";
 import { LongSequenceVector } from "../vector/sequence/longSequenceVector";
-import type ComparisonVector from "../vector/comparisonVector";
-import type BaseVector from "../vector/baseVector";
+import type Vector from "../vector/vector";
 
 export function decodePropertyColumn(
     data: Uint8Array,
@@ -34,7 +33,7 @@ export function decodePropertyColumn(
     numStreams: number,
     numFeatures: number,
     propertyColumnNames?: Set<string>,
-): BaseVector | BaseVector[] {
+): Vector | Vector[] {
     if (columnMetadata.type === "scalarType") {
         if (propertyColumnNames && !propertyColumnNames.has(columnMetadata.name)) {
             skipColumn(numStreams, data, offset);
@@ -162,7 +161,7 @@ function decodeLongColumn(
     column: Column,
     sizeOrNullabilityBuffer: number | BitVector,
     scalarColumn: ScalarColumn,
-): ComparisonVector<BigInt64Array, bigint> {
+): Vector<BigInt64Array, bigint> {
     const dataStreamMetadata = StreamMetadataDecoder.decode(data, offset);
     const vectorType = IntegerStreamDecoder.getVectorType(dataStreamMetadata, sizeOrNullabilityBuffer, data, offset);
     const isSigned = scalarColumn.physicalType === ScalarType.INT_64;
@@ -197,7 +196,7 @@ function decodeIntColumn(
     column: Column,
     scalarColumn: ScalarColumn,
     sizeOrNullabilityBuffer: number | BitVector,
-): ComparisonVector<Int32Array, number> {
+): Vector<Int32Array, number> {
     const dataStreamMetadata = StreamMetadataDecoder.decode(data, offset);
     const vectorType = IntegerStreamDecoder.getVectorType(dataStreamMetadata, sizeOrNullabilityBuffer, data, offset);
     const isSigned = scalarColumn.physicalType === ScalarType.INT_32;

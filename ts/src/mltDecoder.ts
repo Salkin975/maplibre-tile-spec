@@ -24,7 +24,7 @@ import { TypeMap } from "./metadata/tileset/typeMap";
 import { type StreamMetadata } from "./metadata/tile/streamMetadata";
 import { type GeometryVector } from "./vector/geometry/geometryVector";
 import { type GpuVector } from "./vector/geometry/gpuVector";
-import type BaseVector from "./vector/baseVector";
+import type Vector from "./vector/vector";
 
 const ID_COLUMN_NAME = "id";
 const GEOMETRY_COLUMN_NAME = "geometry";
@@ -69,7 +69,7 @@ export default function decodeTile(
         // Decode columns from streams
         let idVector: IntVector | null = null;
         let geometryVector: GeometryVector | GpuVector | null = null;
-        const propertyVectors: BaseVector[] = [];
+        const propertyVectors: Vector[] = [];
         let numFeatures = 0;
 
         for (const columnMetadata of featureTableMetadata.columns) {

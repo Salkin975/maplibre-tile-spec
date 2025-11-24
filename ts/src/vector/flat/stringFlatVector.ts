@@ -41,16 +41,4 @@ export class StringFlatVector extends VariableSizeVector<Uint8Array, string> {
     override noneMatchSelected(values: string[], selectionVector: SelectionVector): void {
         throw new Error("Method not implemented");
     }
-    override greaterThanOrEqualTo(value: string): SelectionVector {
-        throw new Error("Method not implemented");
-    }
-    override smallerThanOrEqualTo(value: string): SelectionVector {
-        throw new Error("Method not implemented");
-    }
-    override greaterThanOrEqualToSelected(value: string, selectionVector: SelectionVector): void {
-        throw new Error("Method not implemented");
-    }
-    override smallerThanOrEqualToSelected(value: string, selectionVector: SelectionVector): void {
-        throw new Error("Method not implemented");
-    }
 }

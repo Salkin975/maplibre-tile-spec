@@ -12,14 +12,11 @@ import {decodeVarintInt32} from "./integerDecodingUtils";
 import {decodeBooleanRle, skipColumn} from "./decodingUtils";
 import {RleEncodedStreamMetadata} from "../metadata/tile/rleEncodedStreamMetadata";
 import {StringFsstDictionaryVector} from "../vector/fsst-dictionary/stringFsstDictionaryVector";
-import type ComparisonVector from "../vector/comparisonVector";
+import type Vector from "../vector/vector";
 
 export class StringDecoder {
     private static readonly ROOT_COLUMN_NAME = "default";
     private static readonly NESTED_COLUMN_SEPARATOR = ":";
-
-    private constructor() {
-    }
 
     static decode(
         name: string,
@@ -27,7 +24,7 @@ export class StringDecoder {
         offset: IntWrapper,
         numStreams: number,
         bitVector?: BitVector,
-    ): ComparisonVector {
+    ): Vector {
         let dictionaryLengthStream: Int32Array = null;
         let offsetStream: Int32Array = null;
         let dictionaryStream: Uint8Array = null;
@@ -116,7 +113,7 @@ export class StringDecoder {
         dictionaryStream: Uint8Array | null,
         symbolLengthStream: Int32Array | null,
         nullabilityBuffer: BitVector | null
-    ): ComparisonVector | null {
+    ): Vector | null {
         if (!symbolTableStream) {
             return null;
         }
@@ -137,7 +134,7 @@ export class StringDecoder {
         offsetStream: Int32Array | null,
         dictionaryLengthStream: Int32Array | null,
         nullabilityBuffer: BitVector | null
-    ): ComparisonVector | null {
+    ): Vector | null {
         if (!dictionaryStream) {
             return null;
         }
@@ -152,7 +149,7 @@ export class StringDecoder {
         plainDataStream: Uint8Array | null,
         offsetStream: Int32Array | null,
         nullabilityBuffer: BitVector | null
-    ): ComparisonVector | null {
+    ): Vector | null {
         if (!plainLengthStream || !plainDataStream) {
             return null;
         }
@@ -187,7 +184,7 @@ export class StringDecoder {
         column: Column,
         numFeatures: number,
         propertyColumnNames?: Set<string>,
-    ): ComparisonVector[] {
+    ): Vector[] {
         let dictionaryOffsetBuffer: Int32Array = null;
         let dictionaryBuffer: Uint8Array = null;
         let symbolOffsetBuffer: Int32Array = null;
