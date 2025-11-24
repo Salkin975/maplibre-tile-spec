@@ -3,7 +3,7 @@ import { IntFlatVector } from "../flat/intFlatVector";
 import BitVector from "../flat/bitVector";
 import { FlatSelectionVector } from "../filter/flatSelectionVector";
 import {
-    filter,
+    filterByValue,
     filterSelected,
     filterNotEqual,
     filterNotEqualSelected,
@@ -11,11 +11,11 @@ import {
     matchSelected,
     noneMatch,
     noneMatchSelected,
-    presentValues,
+    createNonNullSelectionVector,
     presentValuesSelected,
     nullableValues,
     nullableValuesSelected
-} from "./index";
+} from "./filterUtils";
 
 
 function createVector(values: number[], name = "test"): IntFlatVector {
@@ -32,28 +32,28 @@ function createNullableVector(values: number[], nullBits: number, name = "test")
 
 // int is used for base testing since it is the simplest datatype. Edge cases are tested separately in the according vector classes
 describe("BaseVector tests", () => {
-    describe("filter", () => {
+    describe("filterByValue", () => {
         it("should filter matching values", () => {
             const intVector: IntFlatVector = createVector([10, 20, 30, 40, 50, 60, 70, 80, 90]);
-            const result = filter(intVector, 20);
+            const result = filterByValue(intVector, 20);
             expect(result.selectionValues()).toStrictEqual(new Uint32Array([1]));
         });
 
         it("should filter duplicate values", () => {
             const withDuplicates = createVector([10, 20, 30, 20, 50, 10]);
-            const result = filter(withDuplicates, 20);
+            const result = filterByValue(withDuplicates, 20);
             expect(result.selectionValues()).toStrictEqual(new Uint32Array([1, 3]));
         });
 
         it("should return empty when no match", () => {
             const simpleVector: IntFlatVector = createVector([10, 20, 30, 40, 50, 60, 70, 80, 90]);
-            const result = filter(simpleVector, 15);
+            const result = filterByValue(simpleVector, 15);
             expect(result.selectionValues()).toStrictEqual(new Uint32Array([]));
         });
 
         it("should filter with nullability", () => {
             const withNulls = createNullableVector([10, 20, 30, 40, 50], 0b00010111);
-            const result = filter(withNulls, 30);
+            const result = filterByValue(withNulls, 30);
             expect(result.selectionValues()).toStrictEqual(new Uint32Array([2]));
         });
     });
@@ -222,16 +222,16 @@ describe("BaseVector tests", () => {
         });
     });
 
-    describe("presentValues", () => {
+    describe("createNonNullSelectionVector", () => {
         it("should return all indices for vector without nulls", () => {
             const simpleVector: IntFlatVector = createVector([10, 20, 30, 40, 50, 60, 70, 80, 90]);
-            const result = presentValues(simpleVector);
+            const result = createNonNullSelectionVector(simpleVector);
             expect(result.selectionValues()).toEqual(new Uint32Array([0, 1, 2, 3, 4, 5, 6, 7, 8]));
         });
 
         it("should return indices of present (non-null) values", () => {
             const withNulls = createNullableVector([10, 20, 30, 40, 50], 0b00010111);
-            const result = presentValues(withNulls);
+            const result = createNonNullSelectionVector(withNulls);
             expect(result.selectionValues()).toEqual(new Uint32Array([0, 1, 2, 4]));
         });
     });

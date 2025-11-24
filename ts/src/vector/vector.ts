@@ -1,19 +1,4 @@
 import type BitVector from "./flat/bitVector";
-import { type SelectionVector } from "./filter/selectionVector";
-import {
-    presentValues,
-    presentValuesSelected,
-    nullableValues,
-    nullableValuesSelected,
-    filter,
-    filterSelected,
-    filterNotEqual,
-    filterNotEqualSelected,
-    match,
-    matchSelected,
-    noneMatch,
-    noneMatchSelected
-} from "./utils";
 
 export default abstract class Vector<T extends ArrayBufferView = ArrayBufferView, K = unknown> {
     protected nullabilityBuffer: BitVector | null;
@@ -55,52 +40,4 @@ export default abstract class Vector<T extends ArrayBufferView = ArrayBufferView
     }
 
     protected abstract getValueFromBuffer(index: number): K;
-
-    presentValues(): SelectionVector {
-        return presentValues(this);
-    }
-
-    presentValuesSelected(selectionVector: SelectionVector): SelectionVector {
-        return presentValuesSelected(this, selectionVector);
-    }
-
-    nullableValues(): SelectionVector {
-        return nullableValues(this);
-    }
-
-    nullableValuesSelected(selectionVector: SelectionVector): SelectionVector {
-        return nullableValuesSelected(this, selectionVector);
-    }
-
-    filter(value: K): SelectionVector {
-        return filter(this, value);
-    }
-
-    filterSelected(value: K, selectionVector: SelectionVector): void {
-        filterSelected(this, value, selectionVector);
-    }
-
-    filterNotEqual(value: K): SelectionVector {
-        return filterNotEqual(this, value);
-    }
-
-    filterNotEqualSelected(value: K, selectionVector: SelectionVector): void {
-        filterNotEqualSelected(this, value, selectionVector);
-    }
-
-    match(values: K[]): SelectionVector {
-        return match(this, values);
-    }
-
-    matchSelected(values: K[], selectionVector: SelectionVector): void {
-        matchSelected(this, values, selectionVector);
-    }
-
-    noneMatch(values: K[]): SelectionVector {
-        return noneMatch(this, values);
-    }
-
-    noneMatchSelected(values: K[], selectionVector: SelectionVector): void {
-        noneMatchSelected(this, values, selectionVector);
-    }
 }
