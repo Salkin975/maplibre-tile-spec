@@ -18,11 +18,17 @@ export default abstract class Vector<T extends ArrayBufferView = ArrayBufferView
     }
 
     getValue(index: number): K | null {
+        if (index < 0 || index >= this._size) {
+            throw new RangeError("Index out of bounds");
+        }
         return this.nullabilityBuffer && !this.nullabilityBuffer.get(index) ? null : this.getValueFromBuffer(index);
     }
 
     has(index: number): boolean {
-        return (this.nullabilityBuffer && this.nullabilityBuffer.get(index)) || !this.nullabilityBuffer;
+        if (index < 0 || index >= this._size) {
+            return false;
+        }
+        return this.nullabilityBuffer ? this.nullabilityBuffer.get(index) : true;
     }
 
     get name(): string {

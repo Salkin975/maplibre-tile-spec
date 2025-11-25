@@ -1,0 +1,31 @@
+/**
+ * Vector utility functions for filtering and comparison operations.
+ *
+ * This module provides external utility functions for working with vectors,
+ * promoting composition and enabling tree-shaking.
+ *
+ * @module vector/utils
+ */
+
+export {
+    filterByValue,
+    filterSelected,
+    filterNotEqual,
+    filterNotEqualSelected,
+    match,
+    matchSelected,
+    noneMatch,
+    noneMatchSelected,
+    createNonNullSelectionVector,
+    filterNonNullSelected,
+    nullableValues,
+    filterNullSelected,
+} from './filterUtils';
+
+export {
+    greaterThanOrEqualTo,
+    greaterThanOrEqualToSelected,
+    smallerThanOrEqualTo,
+    smallerThanOrEqualToSelected,
+    type ComparableVector,
+} from './comparisonUtils';

@@ -13,11 +13,24 @@ export function createSelectionVector(size: number) {
  * @param nullabilityBuffer - Optional bit vector where 1=not null, 0=null. If undefined/null, all values are considered non-null.
  */
 export function createNullableSelectionVector(size: number, nullabilityBuffer?: BitVector): SelectionVector {
-    const selectionVector = [];
+    if (!nullabilityBuffer) {
+        const selectionVector = new Uint32Array(size);
+        for (let i = 0; i < size; i++) {
+            selectionVector[i] = i;
+        }
+        return new FlatSelectionVector(selectionVector);
+    }
+    let count = 0;
     for (let i = 0; i < size; i++) {
-        // Include index if no nullability buffer (all non-null) OR if bit is set (non-null)
-        if (!nullabilityBuffer || nullabilityBuffer.get(i)) {
-            selectionVector.push(i);
+        if (nullabilityBuffer.get(i)) {
+            count++;
+        }
+    }
+    const selectionVector = new Uint32Array(count);
+    let index = 0;
+    for (let i = 0; i < size; i++) {
+        if (nullabilityBuffer.get(i)) {
+            selectionVector[index++] = i;
         }
     }
     return new FlatSelectionVector(selectionVector);
@@ -29,13 +42,14 @@ export function createNullableSelectionVector(size: number, nullabilityBuffer?: 
  * @param nullabilityBuffer - Optional bit vector where 1=not null, 0=null. If undefined/null, all values are considered non-null.
  */
 export function updateNullableSelectionVector(selectionVector: SelectionVector, nullabilityBuffer?: BitVector): SelectionVector {
-    const filteredIndices = [];
+    const filteredIndices = new Uint32Array(selectionVector.limit);
+    let index = 0;
     for (let i = 0; i < selectionVector.limit; i++) {
         const vectorIndex = selectionVector.getIndex(i);
         // Include index if no nullability buffer (all non-null) OR if bit is set (non-null)
         if (!nullabilityBuffer || nullabilityBuffer.get(vectorIndex)) {
-            filteredIndices.push(vectorIndex);
+            filteredIndices[index++] = vectorIndex;
         }
     }
-    return new FlatSelectionVector(filteredIndices);
+    return new FlatSelectionVector(filteredIndices, index);
 }
