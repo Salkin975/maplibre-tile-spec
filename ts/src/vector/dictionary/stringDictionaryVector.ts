@@ -4,6 +4,7 @@ import { decodeString } from "../../decoding/decodingUtils";
 
 export class StringDictionaryVector extends VariableSizeVector<Uint8Array, string> {
     private readonly textEncoder: TextEncoder;
+    private readonly sortedIndices?: Uint32Array;
 
     constructor(
         name: string,
@@ -11,9 +12,11 @@ export class StringDictionaryVector extends VariableSizeVector<Uint8Array, strin
         offsetBuffer: Int32Array,
         dictionaryBuffer: Uint8Array,
         nullabilityBuffer?: BitVector,
+        sortedIndices?: Uint32Array
     ) {
         super(name, offsetBuffer, dictionaryBuffer, nullabilityBuffer ?? indexBuffer.length);
         this.indexBuffer = indexBuffer;
+        this.sortedIndices = sortedIndices;
         this.textEncoder = new TextEncoder();
     }
 
@@ -22,5 +25,17 @@ export class StringDictionaryVector extends VariableSizeVector<Uint8Array, strin
         const start = this.offsetBuffer[offset];
         const end = this.offsetBuffer[offset + 1];
         return decodeString(this.dataBuffer, start, end);
+    }
+
+    get index(){
+        return this.indexBuffer;
+    }
+
+    get isSorted (): boolean {
+        return this.sortedIndices !== undefined;
+    }
+
+    get sorted(){
+        return this.sortedIndices;
     }
 }

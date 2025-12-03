@@ -9,6 +9,20 @@ import type { LongConstVector } from "../constant/longConstVector";
 import type { IntSequenceVector } from "../sequence/intSequenceVector";
 import type { LongSequenceVector } from "../sequence/longSequenceVector";
 import { type StringFlatVector } from "../flat/stringFlatVector";
+import { StringDictionaryVector } from "../dictionary/stringDictionaryVector";
+import {
+    greaterThanOrEqualToStringDictionary,
+    greaterThanOrEqualToStringDictionarySelected,
+    smallerThanOrEqualToStringDictionary,
+    smallerThanOrEqualToStringDictionarySelected,
+} from "./stringDictionaryUtils";
+import {
+    greaterThanOrEqualToStringFsstDictionary,
+    greaterThanOrEqualToStringFsstDictionarySelected,
+    smallerThanOrEqualToStringFsstDictionary,
+    smallerThanOrEqualToStringFsstDictionarySelected,
+} from "./stringFsstDictionaryUtil";
+import { StringFsstDictionaryVector } from "../fsst-dictionary/stringFsstDictionaryVector";
 
 /**
  * Union type of all vector types that support comparison operations.
@@ -17,6 +31,7 @@ import { type StringFlatVector } from "../flat/stringFlatVector";
 export type ComparableVector =
     | IntFlatVector
     | StringFlatVector
+    | StringDictionaryVector
     | LongFlatVector
     | FloatFlatVector
     | DoubleFlatVector
@@ -28,11 +43,20 @@ export type ComparableVector =
 /**
  * Returns a SelectionVector containing indices where the vector value is greater than or equal to the specified value.
  *
- * @param vector The vector to filter (must be a numeric vector type)
+ * @param vector The vector to filter (must be a numeric or string vector type)
  * @param value The threshold value to compare against
  * @returns SelectionVector with indices where vector[i] >= value
  */
 export function greaterThanOrEqualTo<K>(vector: ComparableVector, value: K): SelectionVector {
+    // Optimized path for StringFlatVector
+    if (vector instanceof StringDictionaryVector) {
+        return greaterThanOrEqualToStringDictionary(vector, value as string);
+    }
+    if (vector instanceof StringFsstDictionaryVector) {
+        return greaterThanOrEqualToStringFsstDictionary(vector, value as string);
+    }
+
+    // Generic fallback for numeric vectors
     const selectionVector = new Uint32Array(vector.size);
     let index = 0;
     for (let i = 0; i < vector.size; i++) {
@@ -47,7 +71,7 @@ export function greaterThanOrEqualTo<K>(vector: ComparableVector, value: K): Sel
  * Filters an existing SelectionVector to only include indices where the vector value is greater than or equal to the specified value.
  * Updates the SelectionVector in-place.
  *
- * @param vector The vector to check (must be a numeric vector type)
+ * @param vector The vector to check (must be a numeric or string vector type)
  * @param value The threshold value to compare against
  * @param selectionVector The SelectionVector to filter (modified in-place)
  */
@@ -56,6 +80,15 @@ export function greaterThanOrEqualToSelected<K>(
     value: K,
     selectionVector: SelectionVector
 ): void {
+    // Optimized path for StringFlatVector
+    if (vector instanceof StringDictionaryVector) {
+        return greaterThanOrEqualToStringDictionarySelected(vector, value as string, selectionVector);
+    }
+    if (vector instanceof StringFsstDictionaryVector) {
+        return greaterThanOrEqualToStringFsstDictionarySelected(vector, value as string, selectionVector);
+    }
+
+    // Generic fallback for numeric vectors
     let writeIndex = 0;
     const vectorValues = selectionVector.selectionValues();
     for (let i = 0; i < selectionVector.limit; i++) {
@@ -70,11 +103,20 @@ export function greaterThanOrEqualToSelected<K>(
 /**
  * Returns a SelectionVector containing indices where the vector value is less than or equal to the specified value.
  *
- * @param vector The vector to filter (must be a numeric vector type)
+ * @param vector The vector to filter (must be a numeric or string vector type)
  * @param value The threshold value to compare against
  * @returns SelectionVector with indices where vector[i] <= value
  */
 export function smallerThanOrEqualTo<K>(vector: ComparableVector, value: K): SelectionVector {
+    // Optimized path for StringFlatVector
+    if (vector instanceof StringDictionaryVector) {
+        return smallerThanOrEqualToStringDictionary(vector, value as string);
+    }
+    if (vector instanceof StringFsstDictionaryVector) {
+        return smallerThanOrEqualToStringFsstDictionary(vector, value as string);
+    }
+
+    // Generic fallback for numeric vectors
     const selectionVector = new Uint32Array(vector.size);
     let index = 0;
     for (let i = 0; i < vector.size; i++) {
@@ -89,7 +131,7 @@ export function smallerThanOrEqualTo<K>(vector: ComparableVector, value: K): Sel
  * Filters an existing SelectionVector to only include indices where the vector value is less than or equal to the specified value.
  * Updates the SelectionVector in-place.
  *
- * @param vector The vector to check (must be a numeric vector type)
+ * @param vector The vector to check (must be a numeric or string vector type)
  * @param value The threshold value to compare against
  * @param selectionVector The SelectionVector to filter (modified in-place)
  */
@@ -98,6 +140,15 @@ export function smallerThanOrEqualToSelected<K>(
     value: K,
     selectionVector: SelectionVector
 ): void {
+    // Optimized path for StringFlatVector
+    if (vector instanceof StringDictionaryVector) {
+        return smallerThanOrEqualToStringDictionarySelected(vector, value as string, selectionVector);
+    }
+    if (vector instanceof StringFsstDictionaryVector) {
+        return smallerThanOrEqualToStringFsstDictionarySelected(vector, value as string, selectionVector);
+    }
+
+    // Generic fallback for numeric vectors
     let writeIndex = 0;
     const vectorValues = selectionVector.selectionValues();
     for (let i = 0; i < selectionVector.limit; i++) {
