@@ -2,10 +2,6 @@ import type { SelectionVector } from "../filter/selectionVector";
 import { FlatSelectionVector } from "../filter/flatSelectionVector";
 import type { StringFsstDictionaryVector } from "../fsst-dictionary/stringFsstDictionaryVector";
 
-// ============================================================================
-// Core Dictionary Operations
-// ============================================================================
-
 function matchDictEntry(
     dictionary: Uint8Array,
     start: number,
@@ -41,10 +37,6 @@ function compareDictEntry(
     if (cmp === 0) cmp = length - valueLength;
     return isGte ? cmp >= 0 : cmp <= 0;
 }
-
-// ============================================================================
-// Dictionary Index Collection
-// ============================================================================
 
 function getMatchingDictIndices(
     vector: StringFsstDictionaryVector,
@@ -91,10 +83,6 @@ function getCompareDictIndices(
     }
     return result;
 }
-
-// ============================================================================
-// Scanning & Filtering
-// ============================================================================
 
 function ensureDecoded(vector: StringFsstDictionaryVector): void {
     if (vector.decoded == null && vector.size > 0) vector.getValue(0);

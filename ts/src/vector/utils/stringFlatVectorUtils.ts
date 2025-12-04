@@ -2,10 +2,6 @@ import type { SelectionVector } from "../filter/selectionVector";
 import type { StringFlatVector } from "../flat/stringFlatVector";
 import { FlatSelectionVector } from "../filter/flatSelectionVector";
 
-// ============================================================================
-// Helpers
-// ============================================================================
-
 function encode(value: string): Uint8Array {
     return new TextEncoder().encode(value);
 }
@@ -23,10 +19,6 @@ function groupByLength(values: string[]): Map<number, Uint8Array[]> {
     }
     return grouped;
 }
-
-// ============================================================================
-// Byte Comparison Functions
-// ============================================================================
 
 function bytesEqual(
     dataBuffer: Uint8Array,
@@ -128,10 +120,6 @@ function compareBytes(
     }
 }
 
-// ============================================================================
-// Selection Handling
-// ============================================================================
-
 function scanVector(
     vector: StringFlatVector,
     predicate: (index: number) => boolean,
@@ -178,7 +166,7 @@ function filterSelection(
 }
 
 // ============================================================================
-// Public API - Full Vector Scan
+// Public API
 // ============================================================================
 
 export function filterStringFlatByValue(

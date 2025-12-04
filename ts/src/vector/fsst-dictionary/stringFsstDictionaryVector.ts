@@ -86,4 +86,12 @@ export class StringFsstDictionaryVector extends VariableSizeVector<Uint8Array, s
 
         return lengthBuffer;
     }
+
+    get decoded() {
+        return this.decodedDictionary;
+    }
+
+    get index() {
+        return this.indexBuffer;
+    }
 }
