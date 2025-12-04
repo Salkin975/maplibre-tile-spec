@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { IntFlatVector } from "../flat/intFlatVector";
+import { StringDictionaryVector } from "../dictionary/stringDictionaryVector";
+import { StringFsstDictionaryVector } from "../fsst-dictionary/stringFsstDictionaryVector";
 import BitVector from "../flat/bitVector";
 import { FlatSelectionVector } from "../filter/flatSelectionVector";
 import {
@@ -11,304 +13,264 @@ import {
     matchSelected,
     noneMatch,
     noneMatchSelected,
-    createNonNullSelectionVector,
-    filterNonNullSelected,
-    nullableValues,
-    filterNullSelected
 } from "./filterUtils";
 
-
-function createVector(values: number[], name = "test"): IntFlatVector {
+function createIntVector(values: number[]): IntFlatVector {
     const data = new Int32Array(values);
-    return new IntFlatVector(name, data, values.length);
+    return new IntFlatVector("test", data, values.length);
 }
 
-function createNullableVector(values: number[], nullBits: number, name = "test"): IntFlatVector {
+function createNullableIntVector(values: number[], nullBits: number): IntFlatVector {
     const data = new Int32Array(values);
     const nullability = new Uint8Array([nullBits]);
     const bitVector = new BitVector(nullability, values.length);
-    return new IntFlatVector(name, data, bitVector);
+    return new IntFlatVector("test", data, bitVector);
 }
 
-// int is used for base testing since it is the simplest datatype. Edge cases are tested separately in the according vector classes
-describe("BaseVector tests", () => {
-    describe("filterByValue", () => {
-        it("should filter matching values", () => {
-            const intVector: IntFlatVector = createVector([10, 20, 30, 40, 50, 60, 70, 80, 90]);
-            const result = filterByValue(intVector, 20);
-            expect(result.selectionValues()).toStrictEqual(new Uint32Array([1]));
-        });
+function createStringDictVector(values: (string | null)[]): StringDictionaryVector {
+    const encoder = new TextEncoder();
+    const nonNullValues = values.filter((v): v is string => v !== null);
+    const uniqueValues = Array.from(new Set(nonNullValues));
+    const encodedDict = uniqueValues.map(v => encoder.encode(v));
 
-        it("should filter duplicate values", () => {
-            const withDuplicates = createVector([10, 20, 30, 20, 50, 10]);
-            const result = filterByValue(withDuplicates, 20);
-            expect(result.selectionValues()).toStrictEqual(new Uint32Array([1, 3]));
-        });
+    const dictSize = encodedDict.reduce((sum, v) => sum + v.length, 0);
+    const offsetBuffer = new Int32Array(uniqueValues.length + 1);
+    const dataBuffer = new Uint8Array(dictSize);
 
-        it("should return empty when no match", () => {
-            const simpleVector: IntFlatVector = createVector([10, 20, 30, 40, 50, 60, 70, 80, 90]);
-            const result = filterByValue(simpleVector, 15);
-            expect(result.selectionValues()).toStrictEqual(new Uint32Array([]));
-        });
+    let currentOffset = 0;
+    offsetBuffer[0] = 0;
+    for (let i = 0; i < encodedDict.length; i++) {
+        dataBuffer.set(encodedDict[i], currentOffset);
+        currentOffset += encodedDict[i].length;
+        offsetBuffer[i + 1] = currentOffset;
+    }
 
-        it("should filter with nullability", () => {
-            const withNulls = createNullableVector([10, 20, 30, 40, 50], 0b00010111);
-            const result = filterByValue(withNulls, 30);
-            expect(result.selectionValues()).toStrictEqual(new Uint32Array([2]));
-        });
+    const indexBuffer = new Int32Array(values.length);
+    for (let i = 0; i < values.length; i++) {
+        if (values[i] !== null) {
+            indexBuffer[i] = uniqueValues.indexOf(values[i]);
+        }
+    }
+
+    return new StringDictionaryVector("test", indexBuffer, offsetBuffer, dataBuffer, undefined);
+}
+
+function createStringFsstDictVector(values: string[]): StringFsstDictionaryVector {
+    const encoder = new TextEncoder();
+    const uniqueValues = Array.from(new Set(values));
+    const encodedDict = uniqueValues.map(v => encoder.encode(v));
+
+    const compressedSize = encodedDict.reduce((sum, v) => sum + v.length * 2, 0);
+    const dictionaryBuffer = new Uint8Array(compressedSize);
+    const offsetBuffer = new Int32Array(uniqueValues.length + 1);
+    let compressedOffset = 0;
+    let decompressedOffset = 0;
+    offsetBuffer[0] = 0;
+
+    for (let i = 0; i < encodedDict.length; i++) {
+        const encoded = encodedDict[i];
+        for (let j = 0; j < encoded.length; j++) {
+            dictionaryBuffer[compressedOffset++] = 255;
+            dictionaryBuffer[compressedOffset++] = encoded[j];
+        }
+        decompressedOffset += encoded.length;
+        offsetBuffer[i + 1] = decompressedOffset;
+    }
+
+    const indexBuffer = new Int32Array(values.length);
+    const nullabilityBytes = new Uint8Array(Math.ceil(values.length / 8));
+    for (let i = 0; i < values.length; i++) {
+        indexBuffer[i] = uniqueValues.indexOf(values[i]);
+        const byteIndex = Math.floor(i / 8);
+        const bitIndex = i % 8;
+        nullabilityBytes[byteIndex] |= (1 << bitIndex);
+    }
+
+    const symbolOffsetBuffer = new Int32Array([0, 0]);
+    const symbolTableBuffer = new Uint8Array(0);
+    const bitVector = new BitVector(nullabilityBytes, values.length);
+
+    return new StringFsstDictionaryVector("test", indexBuffer, offsetBuffer, dictionaryBuffer, symbolOffsetBuffer, symbolTableBuffer, bitVector);
+}
+
+function toArray(sv: { selectionValues: () => Uint32Array }): number[] {
+    return Array.from(sv.selectionValues());
+}
+
+describe("FilterUtils Tests", () => {
+    it("filterByValue: basic filtering and nullability", () => {
+        const v1 = createIntVector([10, 20, 30, 20, 50]);
+        expect(toArray(filterByValue(v1, 20))).toEqual([1, 3]);
+
+        const v2 = createNullableIntVector([10, 20, 30, 40, 50], 0b00010111);
+        expect(toArray(filterByValue(v2, 30))).toEqual([2]);
     });
 
-    describe("filterSelected", () => {
-        it("should filter from selection", () => {
-            const simpleVector: IntFlatVector = createVector([10, 20, 30, 40, 50, 60, 70, 80, 90]);
-            const selection = new FlatSelectionVector(new Uint32Array([1, 3, 4, 6, 8]));
-            filterSelected(simpleVector, 20, selection);
-            expect(selection.selectionValues()).toEqual(new Uint32Array([1]));
-        });
-
-        it("should filter from selection with duplicates", () => {
-            const withDuplicates = createVector([10, 20, 30, 20, 50, 10]);
-            const selection = new FlatSelectionVector(new Uint32Array([0, 1, 3, 4]));
-            filterSelected(withDuplicates, 20, selection);
-            expect(selection.selectionValues()).toEqual(new Uint32Array([1, 3]));
-        });
-
-        it("should filter from selection with nullability", () => {
-            const withNulls = createNullableVector([10, 20, 30, 40, 50], 0b00010111);
-            const selection = new FlatSelectionVector(new Uint32Array([0, 2, 3, 4]));
-            filterSelected(withNulls, 30, selection);
-            expect(selection.selectionValues()).toEqual(new Uint32Array([2]));
-        });
+    it("filterByValue: StringDictionaryVector path", () => {
+        const v = createStringDictVector(["a", "b", "a", "c"]);
+        expect(toArray(filterByValue(v, "a"))).toEqual([0, 2]);
     });
 
-    describe("filterNotEqual", () => {
-        it("should filter != threshold in simple vector", () => {
-            const simpleVector: IntFlatVector = createVector([10, 20, 30, 40, 50, 60, 70, 80, 90]);
-            const result = filterNotEqual(simpleVector, 50);
-            expect(result.selectionValues()).toEqual(new Uint32Array([0, 1, 2, 3, 5, 6, 7, 8]));
-        });
-
-        it("should filter != threshold with duplicates", () => {
-            const withDuplicates = createVector([10, 20, 30, 20, 50, 10]);
-            const result = filterNotEqual(withDuplicates, 20);
-            expect(result.selectionValues()).toEqual(new Uint32Array([0, 2, 4, 5]));
-        });
-
-        it("should filter != threshold with nullability", () => {
-            const withNulls = createNullableVector([10, 20, 30, 40, 50], 0b00010111);
-            const result = filterNotEqual(withNulls, 30);
-            expect(result.selectionValues()).toEqual(new Uint32Array([0, 1, 3, 4]));
-        });
+    it("filterByValue: StringFsstDictionaryVector path", () => {
+        const v = createStringFsstDictVector(["a", "b", "a", "c"]);
+        expect(toArray(filterByValue(v, "a"))).toEqual([0, 2]);
     });
 
-    describe("filterNotEqualSelected", () => {
-        it("should filter != from selection", () => {
-            const simpleVector: IntFlatVector = createVector([10, 20, 30, 40, 50, 60, 70, 80, 90]);
-            const selection = new FlatSelectionVector(new Uint32Array([1, 3, 4, 5, 7]));
-            filterNotEqualSelected(simpleVector, 50, selection);
-            expect(selection.selectionValues()).toEqual(new Uint32Array([1, 3, 5, 7]));
-        });
+    it("filterSelected: basic filtering and nullability", () => {
+        const v1 = createIntVector([10, 20, 30, 20, 50]);
+        const sel1 = new FlatSelectionVector(new Uint32Array([0, 1, 3, 4]));
+        filterSelected(v1, 20, sel1);
+        expect(toArray(sel1)).toEqual([1, 3]);
 
-        it("should filter != from selection with duplicates", () => {
-            const withDuplicates = createVector([10, 20, 30, 20, 50, 10]);
-            const selection = new FlatSelectionVector(new Uint32Array([1, 2, 3, 4, 5]));
-            filterNotEqualSelected(withDuplicates, 20, selection);
-            expect(selection.selectionValues()).toEqual(new Uint32Array([2, 4, 5]));
-        });
-
-        it("should filter != from selection with nullability", () => {
-            const withNulls = createNullableVector([10, 20, 30, 40, 50], 0b00010111);
-            const selection = new FlatSelectionVector(new Uint32Array([0, 2, 3, 4]));
-            filterNotEqualSelected(withNulls, 30, selection);
-            expect(selection.selectionValues()).toEqual(new Uint32Array([0, 3, 4]));
-        });
+        const v2 = createNullableIntVector([10, 20, 30, 40, 50], 0b00010111);
+        const sel2 = new FlatSelectionVector(new Uint32Array([0, 2, 3, 4]));
+        filterSelected(v2, 30, sel2);
+        expect(toArray(sel2)).toEqual([2]);
     });
 
-    describe("match", () => {
-        it("should match multiple values in simple vector", () => {
-            const simpleVector: IntFlatVector = createVector([10, 20, 30, 40, 50, 60, 70, 80, 90]);
-            const result = match(simpleVector, [10, 50]);
-            expect(result.selectionValues()).toStrictEqual(new Uint32Array([0, 4]));
-        });
-
-        it("should match multiple values with duplicates", () => {
-            const withDuplicates = createVector([10, 20, 30, 20, 50, 10]);
-            const result = match(withDuplicates, [10, 50]);
-            expect(result.selectionValues()).toStrictEqual(new Uint32Array([0, 4, 5]));
-        });
-
-        it("should match with nullability", () => {
-            const withNulls = createNullableVector([10, 20, 30, 40, 50], 0b00010111);
-            const result = match(withNulls, [10, 40]);
-            expect(result.selectionValues()).toStrictEqual(new Uint32Array([0]));
-        });
+    it("filterSelected: StringDictionaryVector path", () => {
+        const v = createStringDictVector(["a", "b", "a", "c"]);
+        const sel = new FlatSelectionVector(new Uint32Array([0, 2, 3]));
+        filterSelected(v, "a", sel);
+        expect(toArray(sel)).toEqual([0, 2]);
     });
 
-    describe("matchSelected", () => {
-        it("should match from selection", () => {
-            const simpleVector: IntFlatVector = createVector([10, 20, 30, 40, 50, 60, 70, 80, 90]);
-            const selection = new FlatSelectionVector(new Uint32Array([0, 1, 3, 4, 6]));
-            matchSelected(simpleVector, [20, 40], selection);
-            expect(selection.selectionValues()).toEqual(new Uint32Array([1, 3]));
-        });
-
-        it("should match from selection with duplicates", () => {
-            const withDuplicates = createVector([10, 20, 30, 20, 50, 10]);
-            const selection = new FlatSelectionVector(new Uint32Array([1, 3, 4, 5]));
-            matchSelected(withDuplicates, [20, 50], selection);
-            expect(selection.selectionValues()).toEqual(new Uint32Array([1, 3, 4]));
-        });
-
-        it("should match from selection with nullability", () => {
-            const withNulls = createNullableVector([10, 20, 30, 40, 50], 0b00010111);
-            const selection = new FlatSelectionVector(new Uint32Array([0, 2, 3, 4]));
-            matchSelected(withNulls, [10, 50], selection);
-            expect(selection.selectionValues()).toEqual(new Uint32Array([0, 4]));
-        });
+    it("filterSelected: StringFsstDictionaryVector path", () => {
+        const v = createStringFsstDictVector(["a", "b", "a", "c"]);
+        const sel = new FlatSelectionVector(new Uint32Array([0, 2, 3]));
+        filterSelected(v, "a", sel);
+        expect(toArray(sel)).toEqual([0, 2]);
     });
 
-    describe("noneMatch", () => {
-        it("should return values not in match array", () => {
-            const simpleVector: IntFlatVector = createVector([10, 20, 30, 40, 50, 60, 70, 80, 90]);
-            const result = noneMatch(simpleVector, [20, 50, 80]);
-            expect(result.selectionValues()).toStrictEqual(new Uint32Array([0, 2, 3, 5, 6, 8]));
-        });
+    it("filterNotEqual: basic filtering and nullability", () => {
+        const v1 = createIntVector([10, 20, 30, 20, 50]);
+        expect(toArray(filterNotEqual(v1, 20))).toEqual([0, 2, 4]);
 
-        it("should handle duplicate values when none match", () => {
-            const withDuplicates = createVector([10, 20, 30, 20, 50, 10]);
-            const result = noneMatch(withDuplicates, [20, 50]);
-            expect(result.selectionValues()).toStrictEqual(new Uint32Array([0, 2, 5]));
-        });
-
-        it("should exclude null values and return non-matching", () => {
-            const withNulls = createNullableVector([10, 20, 30, 40, 50], 0b00010111);
-            const result = noneMatch(withNulls, [20, 40]);
-            expect(result.selectionValues()).toStrictEqual(new Uint32Array([0, 2, 4]));
-        });
-
-        it("should return empty when all values match", () => {
-            const simpleVector: IntFlatVector = createVector([10, 20, 30]);
-            const result = noneMatch(simpleVector, [10, 20, 30]);
-            expect(result.selectionValues()).toStrictEqual(new Uint32Array([]));
-        });
-
-        it("should return all present values when no values match", () => {
-            const simpleVector: IntFlatVector = createVector([10, 20, 30]);
-            const result = noneMatch(simpleVector, [40, 50, 60]);
-            expect(result.selectionValues()).toStrictEqual(new Uint32Array([0, 1, 2]));
-        });
+        const v2 = createNullableIntVector([10, 20, 30, 40, 50], 0b00010111);
+        expect(toArray(filterNotEqual(v2, 30))).toEqual([0, 1, 3, 4]);
     });
 
-    describe("noneMatchSelected", () => {
-        it("should filter non-matching values from selection", () => {
-            const simpleVector: IntFlatVector = createVector([10, 20, 30, 40, 50, 60, 70, 80, 90]);
-            const selection = new FlatSelectionVector(new Uint32Array([1, 3, 4, 7, 8]));
-            noneMatchSelected(simpleVector, [20, 80], selection);
-            expect(selection.selectionValues()).toEqual(new Uint32Array([3, 4, 8]));
-        });
-
-        it("should handle duplicates in selection", () => {
-            const withDuplicates = createVector([10, 20, 30, 20, 50, 10]);
-            const selection = new FlatSelectionVector(new Uint32Array([0, 1, 2, 4, 5]));
-            noneMatchSelected(withDuplicates, [20], selection);
-            expect(selection.selectionValues()).toEqual(new Uint32Array([0, 2, 4, 5]));
-        });
-
-        it("should filter from selection with nullability", () => {
-            const withNulls = createNullableVector([10, 20, 30, 40, 50], 0b00010111);
-            const selection = new FlatSelectionVector(new Uint32Array([0, 1, 2, 4]));
-            noneMatchSelected(withNulls, [10], selection);
-            expect(selection.selectionValues()).toEqual(new Uint32Array([1, 2, 4]));
-        });
+    it("filterNotEqual: StringDictionaryVector path", () => {
+        const v = createStringDictVector(["a", "b", "a", "c"]);
+        expect(toArray(filterNotEqual(v, "a"))).toEqual([1, 3]);
     });
 
-    describe("createNonNullSelectionVector", () => {
-        it("should return all indices for vector without nulls", () => {
-            const simpleVector: IntFlatVector = createVector([10, 20, 30, 40, 50, 60, 70, 80, 90]);
-            const result = createNonNullSelectionVector(simpleVector);
-            expect(result.selectionValues()).toEqual(new Uint32Array([0, 1, 2, 3, 4, 5, 6, 7, 8]));
-        });
-
-        it("should return indices of present (non-null) values", () => {
-            const withNulls = createNullableVector([10, 20, 30, 40, 50], 0b00010111);
-            const result = createNonNullSelectionVector(withNulls);
-            expect(result.selectionValues()).toEqual(new Uint32Array([0, 1, 2, 4]));
-        });
+    it("filterNotEqual: StringFsstDictionaryVector path", () => {
+        const v = createStringFsstDictVector(["a", "b", "a", "c"]);
+        expect(toArray(filterNotEqual(v, "a"))).toEqual([1, 3]);
     });
 
-    describe("filterNonNullSelected", () => {
-        it("should filter present values from selection", () => {
-            const simpleVector: IntFlatVector = createVector([10, 20, 30, 40, 50, 60, 70, 80, 90]);
-            const selection = new FlatSelectionVector(new Uint32Array([0, 2, 4, 6, 8]));
-            filterNonNullSelected(simpleVector, selection);
-            expect(selection.selectionValues()).toEqual(new Uint32Array([0, 2, 4, 6, 8]));
-        });
+    it("filterNotEqualSelected: basic filtering and nullability", () => {
+        const v1 = createIntVector([10, 20, 30, 20, 50]);
+        const sel1 = new FlatSelectionVector(new Uint32Array([1, 2, 3, 4]));
+        filterNotEqualSelected(v1, 20, sel1);
+        expect(toArray(sel1)).toEqual([2, 4]);
 
-        it("should filter out null values from selection", () => {
-            const withNulls = createNullableVector([10, 20, 30, 40, 50], 0b00010111);
-            const selection = new FlatSelectionVector(new Uint32Array([0, 2, 3, 4]));
-            filterNonNullSelected(withNulls, selection);
-            expect(selection.selectionValues()).toEqual(new Uint32Array([0, 2, 4]));
-        });
+        const v2 = createNullableIntVector([10, 20, 30, 40, 50], 0b00010111);
+        const sel2 = new FlatSelectionVector(new Uint32Array([0, 2, 3, 4]));
+        filterNotEqualSelected(v2, 30, sel2);
+        expect(toArray(sel2)).toEqual([0, 3, 4]);
     });
 
-    describe("nullableValues", () => {
-        it("should return empty array for vector without nulls", () => {
-            const simpleVector: IntFlatVector = createVector([10, 20, 30, 40, 50, 60, 70, 80, 90]);
-            const result = nullableValues(simpleVector);
-            expect(result.selectionValues()).toEqual(new Uint32Array([]));
-        });
-
-        it("should return indices of null values", () => {
-            const withNulls = createNullableVector([10, 20, 30, 40, 50], 0b00010111);
-            const result = nullableValues(withNulls);
-            expect(result.selectionValues()).toEqual(new Uint32Array([3]));
-        });
+    it("filterNotEqualSelected: StringDictionaryVector path", () => {
+        const v = createStringDictVector(["a", "b", "a", "c"]);
+        const sel = new FlatSelectionVector(new Uint32Array([0, 1, 2, 3]));
+        filterNotEqualSelected(v, "a", sel);
+        expect(toArray(sel)).toEqual([1, 3]);
     });
 
-    describe("filterNullSelected", () => {
-        it("should return empty for vector without nulls", () => {
-            const simpleVector: IntFlatVector = createVector([10, 20, 30, 40, 50, 60, 70, 80, 90]);
-            const selection = new FlatSelectionVector(new Uint32Array([0, 2, 4, 6, 8]));
-            filterNullSelected(simpleVector, selection);
-            expect(selection.selectionValues()).toEqual(new Uint32Array([]));
-        });
-
-        it("should filter only null values from selection", () => {
-            const withNulls = createNullableVector([10, 20, 30, 40, 50], 0b00010111);
-            const selection = new FlatSelectionVector(new Uint32Array([0, 2, 3, 4]));
-            filterNullSelected(withNulls, selection);
-            expect(selection.selectionValues()).toEqual(new Uint32Array([3]));
-        });
+    it("filterNotEqualSelected: StringFsstDictionaryVector path", () => {
+        const v = createStringFsstDictVector(["a", "b", "a", "c"]);
+        const sel = new FlatSelectionVector(new Uint32Array([0, 1, 2, 3]));
+        filterNotEqualSelected(v, "a", sel);
+        expect(toArray(sel)).toEqual([1, 3]);
     });
 
-    describe("get name", () => {
-        it("should return the vector name", () => {
-            const simpleVector: IntFlatVector = createVector([10, 20, 30, 40, 50, 60, 70, 80, 90], "test_name");
-            expect(simpleVector.name).toStrictEqual("test_name");
+    it("match: basic filtering and nullability", () => {
+        const v1 = createIntVector([10, 20, 30, 20, 50]);
+        expect(toArray(match(v1, [10, 50]))).toEqual([0, 4]);
 
-            const withNulls = createNullableVector([10, 20, 30, 40, 50], 0b00010111, "test_name");
-            expect(withNulls.name).toStrictEqual("test_name");
-        })
+        const v2 = createNullableIntVector([10, 20, 30, 40, 50], 0b00010111);
+        expect(toArray(match(v2, [10, 40]))).toEqual([0]);
     });
 
-    describe("has with invalid index", () => {
-        it("should return false if index is out of bounds", () => {
-            const simpleVector: IntFlatVector = createVector([10, 20, 30, 40, 50, 60, 70, 80, 90]);
-            expect(simpleVector.has(-1)).toBe(false);
-            expect(simpleVector.has(100)).toBe(false);
-        })
+    it("match: StringDictionaryVector path", () => {
+        const v = createStringDictVector(["a", "b", "c", "a"]);
+        expect(toArray(match(v, ["a", "c"]))).toEqual([0, 2, 3]);
     });
 
-    describe("getValue", () => {
-        it("should throw error if index is out of bounds", () => {
-            const simpleVector: IntFlatVector = createVector([10, 20, 30, 40, 50, 60, 70, 80, 90]);
-            expect( () => simpleVector.getValue(-1)).toThrowError("Index out of bounds");
-            expect( () => simpleVector.getValue(100)).toThrowError("Index out of bounds");
-        });
-        it("should return null for null value at valid index", () => {
-            const withNulls = createNullableVector([10, 20, 30, 40, 50], 0b00010111);
-            expect(withNulls.getValue(3)).toBe(null);  // index 3 is null
-        });
+    it("match: StringFsstDictionaryVector path", () => {
+        const v = createStringFsstDictVector(["a", "b", "c", "a"]);
+        expect(toArray(match(v, ["a", "c"]))).toEqual([0, 2, 3]);
+    });
+
+    it("matchSelected: basic filtering and nullability", () => {
+        const v1 = createIntVector([10, 20, 30, 40, 50]);
+        const sel1 = new FlatSelectionVector(new Uint32Array([0, 1, 3, 4]));
+        matchSelected(v1, [20, 40], sel1);
+        expect(toArray(sel1)).toEqual([1, 3]);
+
+        const v2 = createNullableIntVector([10, 20, 30, 40, 50], 0b00010111);
+        const sel2 = new FlatSelectionVector(new Uint32Array([0, 2, 3, 4]));
+        matchSelected(v2, [10, 50], sel2);
+        expect(toArray(sel2)).toEqual([0, 4]);
+    });
+
+    it("matchSelected: StringDictionaryVector path", () => {
+        const v = createStringDictVector(["a", "b", "c", "a"]);
+        const sel = new FlatSelectionVector(new Uint32Array([1, 2, 3]));
+        matchSelected(v, ["a", "c"], sel);
+        expect(toArray(sel)).toEqual([2, 3]);
+    });
+
+    it("matchSelected: StringFsstDictionaryVector path", () => {
+        const v = createStringFsstDictVector(["a", "b", "c", "a"]);
+        const sel = new FlatSelectionVector(new Uint32Array([1, 2, 3]));
+        matchSelected(v, ["a", "c"], sel);
+        expect(toArray(sel)).toEqual([2, 3]);
+    });
+
+    it("noneMatch: basic filtering and nullability", () => {
+        const v1 = createIntVector([10, 20, 30, 20, 50]);
+        expect(toArray(noneMatch(v1, [20, 50]))).toEqual([0, 2]);
+
+        const v2 = createNullableIntVector([10, 20, 30, 40, 50], 0b00010111);
+        expect(toArray(noneMatch(v2, [20, 40]))).toEqual([0, 2, 4]);
+    });
+
+    it("noneMatch: StringDictionaryVector path", () => {
+        const v = createStringDictVector(["a", "b", "c", "a"]);
+        expect(toArray(noneMatch(v, ["a", "c"]))).toEqual([1]);
+    });
+
+    it("noneMatch: StringFsstDictionaryVector path", () => {
+        const v = createStringFsstDictVector(["a", "b", "c", "a"]);
+        expect(toArray(noneMatch(v, ["a", "c"]))).toEqual([1]);
+    });
+
+    it("noneMatchSelected: basic filtering and nullability", () => {
+        const v1 = createIntVector([10, 20, 30, 40, 50]);
+        const sel1 = new FlatSelectionVector(new Uint32Array([1, 3, 4]));
+        noneMatchSelected(v1, [20], sel1);
+        expect(toArray(sel1)).toEqual([3, 4]);
+
+        const v2 = createNullableIntVector([10, 20, 30, 40, 50], 0b00010111);
+        const sel2 = new FlatSelectionVector(new Uint32Array([0, 1, 2, 4]));
+        noneMatchSelected(v2, [10], sel2);
+        expect(toArray(sel2)).toEqual([1, 2, 4]);
+    });
+
+    it("noneMatchSelected: StringDictionaryVector path", () => {
+        const v = createStringDictVector(["a", "b", "c", "a"]);
+        const sel = new FlatSelectionVector(new Uint32Array([0, 1, 2]));
+        noneMatchSelected(v, ["a", "c"], sel);
+        expect(toArray(sel)).toEqual([1]);
+    });
+
+    it("noneMatchSelected: StringFsstDictionaryVector path", () => {
+        const v = createStringFsstDictVector(["a", "b", "c", "a"]);
+        const sel = new FlatSelectionVector(new Uint32Array([0, 1, 2]));
+        noneMatchSelected(v, ["a", "c"], sel);
+        expect(toArray(sel)).toEqual([1]);
     });
 });

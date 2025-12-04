@@ -1,110 +1,6 @@
 import type Vector from "../vector";
 import { type SelectionVector } from "../filter/selectionVector";
 import { FlatSelectionVector } from "../filter/flatSelectionVector";
-import { StringDictionaryVector } from "../dictionary/stringDictionaryVector";
-import { StringFsstDictionaryVector } from "../fsst-dictionary/stringFsstDictionaryVector";
-import {
-    filterStringDictionaryByValue,
-    filterStringDictionarySelected,
-    filterStringDictionaryNotEqual,
-    filterStringDictionaryNotEqualSelected,
-    matchStringDictionary,
-    matchStringDictionarySelected,
-    noneMatchStringDictionary,
-    noneMatchStringDictionarySelected,
-} from "./stringDictionaryUtils";
-import {
-    filterStringFsstDictionaryByValue,
-    filterStringFsstDictionarySelected,
-    filterStringFsstDictionaryByValueNotEqual,
-    filterStringFsstDictionarySelectedNotEqual,
-    matchStringFsstDictionary,
-    matchStringFsstDictionarySelected,
-    noneMatchStringFsstDictionary,
-    noneMatchStringFsstDictionarySelected,
-} from "./stringFsstDictionaryUtil";
-
-/**
- * Returns a SelectionVector containing indices of all non-null values in the vector.
- *
- * @param vector The vector to filter
- * @returns SelectionVector with indices where values are present (non-null)
- */
-export function createNonNullSelectionVector<K>(vector: Vector<ArrayBufferView, K>): SelectionVector {
-    const selectionVector = new Uint32Array(vector.size);
-    let index = 0;
-    for (let i = 0; i < vector.size; i++) {
-        if (vector.has(i)) {
-            selectionVector[index++] = i;
-        }
-    }
-    return new FlatSelectionVector(selectionVector, index);
-}
-
-/**
- * Filters an existing SelectionVector to only include indices where the vector has non-null values.
- * Updates the SelectionVector in-place.
- *
- * @param vector The vector to check for non-null values
- * @param selectionVector The SelectionVector to filter (modified in-place)
- * @returns The filtered SelectionVector (same reference as input)
- */
-export function filterNonNullSelected<K>(
-    vector: Vector<ArrayBufferView, K>,
-    selectionVector: SelectionVector
-): SelectionVector {
-    let writeIndex = 0;
-    const vectorValues = selectionVector.selectionValues();
-    for (let i = 0; i < selectionVector.limit; i++) {
-        const index = vectorValues[i];
-        if (vector.has(index)) {
-            selectionVector.setIndex(writeIndex++, index);
-        }
-    }
-    selectionVector.setLimit(writeIndex);
-    return selectionVector;
-}
-
-/**
- * Returns a SelectionVector containing indices of all null values in the vector.
- *
- * @param vector The vector to filter
- * @returns SelectionVector with indices where values are null
- */
-export function nullableValues<K>(vector: Vector<ArrayBufferView, K>): SelectionVector {
-    const selectionVector = new Uint32Array(vector.size);
-    let index = 0;
-    for (let i = 0; i < vector.size; i++) {
-        if (!vector.has(i)) {
-            selectionVector[index++] = i;
-        }
-    }
-    return new FlatSelectionVector(selectionVector, index);
-}
-
-/**
- * Filters an existing SelectionVector to only include indices where the vector has null values.
- * Updates the SelectionVector in-place.
- *
- * @param vector The vector to check for null values
- * @param selectionVector The SelectionVector to filter (modified in-place)
- * @returns The filtered SelectionVector (same reference as input)
- */
-export function filterNullSelected<K>(
-    vector: Vector<ArrayBufferView, K>,
-    selectionVector: SelectionVector
-): SelectionVector {
-    let writeIndex = 0;
-    const vectorValues = selectionVector.selectionValues();
-    for (let i = 0; i < selectionVector.limit; i++) {
-        const index = vectorValues[i];
-        if (!vector.has(index)) {
-            selectionVector.setIndex(writeIndex++, index);
-        }
-    }
-    selectionVector.setLimit(writeIndex);
-    return selectionVector;
-}
 
 /**
  * Returns a SelectionVector containing indices where the vector value equals the specified value.
@@ -114,14 +10,6 @@ export function filterNullSelected<K>(
  * @returns SelectionVector with indices where vector[i] === value
  */
 export function filterByValue<K>(vector: Vector<ArrayBufferView, K>, value: K): SelectionVector {
-    // Optimized path for string vectors
-    if (vector instanceof StringDictionaryVector) {
-        return filterStringDictionaryByValue(vector, value as string);
-    }
-    if (vector instanceof StringFsstDictionaryVector) {
-        return filterStringFsstDictionaryByValue(vector, value as string);
-    }
-
     // Generic fallback for all other vectors
     const selectionVector = new Uint32Array(vector.size);
     let index = 0;
@@ -146,13 +34,6 @@ export function filterSelected<K>(
     value: K,
     selectionVector: SelectionVector
 ): void {
-    if (vector instanceof StringDictionaryVector) {
-        return filterStringDictionarySelected(vector, value as string, selectionVector);
-    }
-    if (vector instanceof StringFsstDictionaryVector) {
-        return filterStringFsstDictionarySelected(vector, value as string, selectionVector);
-    }
-
     // Generic fallback for all other vectors
     let writeIndex = 0;
     const vectorValues = selectionVector.selectionValues();
@@ -174,14 +55,6 @@ export function filterSelected<K>(
  * @returns SelectionVector with indices where vector[i] !== value
  */
 export function filterNotEqual<K>(vector: Vector<ArrayBufferView, K>, value: K): SelectionVector {
-    // Optimized path for string vectors
-    if (vector instanceof StringDictionaryVector) {
-        return filterStringDictionaryNotEqual(vector, value as string);
-    }
-    if (vector instanceof StringFsstDictionaryVector) {
-        return filterStringFsstDictionaryByValueNotEqual(vector, value as string);
-    }
-
     // Generic fallback for all other vectors
     const selectionVector = new Uint32Array(vector.size);
     let index = 0;
@@ -206,14 +79,6 @@ export function filterNotEqualSelected<K>(
     value: K,
     selectionVector: SelectionVector
 ): void {
-    // Optimized path for string vectors
-    if (vector instanceof StringDictionaryVector) {
-        return filterStringDictionaryNotEqualSelected(vector, value as string, selectionVector);
-    }
-    if (vector instanceof StringFsstDictionaryVector) {
-        return filterStringFsstDictionarySelectedNotEqual(vector, value as string, selectionVector);
-    }
-
     // Generic fallback for all other vectors
     let writeIndex = 0;
     const vectorValues = selectionVector.selectionValues();
@@ -235,14 +100,6 @@ export function filterNotEqualSelected<K>(
  * @returns SelectionVector with indices where vector[i] is in values array
  */
 export function match<K>(vector: Vector<ArrayBufferView, K>, values: K[]): SelectionVector {
-    // Optimized path for string vectors
-    if (vector instanceof StringDictionaryVector) {
-        return matchStringDictionary(vector, values as string[]);
-    }
-    if (vector instanceof StringFsstDictionaryVector) {
-        return matchStringFsstDictionary(vector, values as string[]);
-    }
-
     // Generic fallback for all other vectors
     const selectionVector = new Uint32Array(vector.size * values.length);
     let index = 0;
@@ -270,14 +127,6 @@ export function matchSelected<K>(
     values: K[],
     selectionVector: SelectionVector
 ): void {
-    // Optimized path for string vectors
-    if (vector instanceof StringDictionaryVector) {
-        return matchStringDictionarySelected(vector, values as string[], selectionVector);
-    }
-    if (vector instanceof StringFsstDictionaryVector) {
-        return matchStringFsstDictionarySelected(vector, values as string[], selectionVector);
-    }
-
     // Generic fallback for all other vectors
     let writeIndex = 0;
     const vectorValues = selectionVector.selectionValues();
@@ -301,14 +150,6 @@ export function matchSelected<K>(
  * @returns SelectionVector with indices where vector[i] is NOT in values array
  */
 export function noneMatch<K>(vector: Vector<ArrayBufferView, K>, values: K[]): SelectionVector {
-    // Optimized path for string vectors
-    if (vector instanceof StringDictionaryVector) {
-        return noneMatchStringDictionary(vector, values as string[]);
-    }
-    if (vector instanceof StringFsstDictionaryVector) {
-        return noneMatchStringFsstDictionary(vector, values as string[]);
-    }
-
     // Generic fallback for all other vectors
     const selectionVector = new Uint32Array(vector.size);
     let index = 0;
@@ -333,14 +174,6 @@ export function noneMatchSelected<K>(
     values: K[],
     selectionVector: SelectionVector
 ): void {
-    // Optimized path for string vectors
-    if (vector instanceof StringDictionaryVector) {
-        return noneMatchStringDictionarySelected(vector, values as string[], selectionVector);
-    }
-    if (vector instanceof StringFsstDictionaryVector) {
-        return noneMatchStringFsstDictionarySelected(vector, values as string[], selectionVector);
-    }
-
     // Generic fallback for all other vectors
     let writeIndex = 0;
     const vectorValues = selectionVector.selectionValues();

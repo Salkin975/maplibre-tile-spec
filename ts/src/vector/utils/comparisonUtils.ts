@@ -9,20 +9,6 @@ import type { LongConstVector } from "../constant/longConstVector";
 import type { IntSequenceVector } from "../sequence/intSequenceVector";
 import type { LongSequenceVector } from "../sequence/longSequenceVector";
 import { type StringFlatVector } from "../flat/stringFlatVector";
-import { StringDictionaryVector } from "../dictionary/stringDictionaryVector";
-import {
-    greaterThanOrEqualToStringDictionary,
-    greaterThanOrEqualToStringDictionarySelected,
-    smallerThanOrEqualToStringDictionary,
-    smallerThanOrEqualToStringDictionarySelected,
-} from "./stringDictionaryUtils";
-import {
-    greaterThanOrEqualToStringFsstDictionary,
-    greaterThanOrEqualToStringFsstDictionarySelected,
-    smallerThanOrEqualToStringFsstDictionary,
-    smallerThanOrEqualToStringFsstDictionarySelected,
-} from "./stringFsstDictionaryUtil";
-import { StringFsstDictionaryVector } from "../fsst-dictionary/stringFsstDictionaryVector";
 
 /**
  * Union type of all vector types that support comparison operations.
@@ -31,7 +17,6 @@ import { StringFsstDictionaryVector } from "../fsst-dictionary/stringFsstDiction
 export type ComparableVector =
     | IntFlatVector
     | StringFlatVector
-    | StringDictionaryVector
     | LongFlatVector
     | FloatFlatVector
     | DoubleFlatVector
@@ -48,14 +33,6 @@ export type ComparableVector =
  * @returns SelectionVector with indices where vector[i] >= value
  */
 export function greaterThanOrEqualTo<K>(vector: ComparableVector, value: K): SelectionVector {
-    // Optimized path for StringFlatVector
-    if (vector instanceof StringDictionaryVector) {
-        return greaterThanOrEqualToStringDictionary(vector, value as string);
-    }
-    if (vector instanceof StringFsstDictionaryVector) {
-        return greaterThanOrEqualToStringFsstDictionary(vector, value as string);
-    }
-
     // Generic fallback for numeric vectors
     const selectionVector = new Uint32Array(vector.size);
     let index = 0;
@@ -80,15 +57,7 @@ export function greaterThanOrEqualToSelected<K>(
     value: K,
     selectionVector: SelectionVector
 ): void {
-    // Optimized path for StringFlatVector
-    if (vector instanceof StringDictionaryVector) {
-        return greaterThanOrEqualToStringDictionarySelected(vector, value as string, selectionVector);
-    }
-    if (vector instanceof StringFsstDictionaryVector) {
-        return greaterThanOrEqualToStringFsstDictionarySelected(vector, value as string, selectionVector);
-    }
-
-    // Generic fallback for numeric vectors
+   // Generic fallback for numeric vectors
     let writeIndex = 0;
     const vectorValues = selectionVector.selectionValues();
     for (let i = 0; i < selectionVector.limit; i++) {
@@ -108,14 +77,6 @@ export function greaterThanOrEqualToSelected<K>(
  * @returns SelectionVector with indices where vector[i] <= value
  */
 export function smallerThanOrEqualTo<K>(vector: ComparableVector, value: K): SelectionVector {
-    // Optimized path for StringFlatVector
-    if (vector instanceof StringDictionaryVector) {
-        return smallerThanOrEqualToStringDictionary(vector, value as string);
-    }
-    if (vector instanceof StringFsstDictionaryVector) {
-        return smallerThanOrEqualToStringFsstDictionary(vector, value as string);
-    }
-
     // Generic fallback for numeric vectors
     const selectionVector = new Uint32Array(vector.size);
     let index = 0;
@@ -140,14 +101,6 @@ export function smallerThanOrEqualToSelected<K>(
     value: K,
     selectionVector: SelectionVector
 ): void {
-    // Optimized path for StringFlatVector
-    if (vector instanceof StringDictionaryVector) {
-        return smallerThanOrEqualToStringDictionarySelected(vector, value as string, selectionVector);
-    }
-    if (vector instanceof StringFsstDictionaryVector) {
-        return smallerThanOrEqualToStringFsstDictionarySelected(vector, value as string, selectionVector);
-    }
-
     // Generic fallback for numeric vectors
     let writeIndex = 0;
     const vectorValues = selectionVector.selectionValues();

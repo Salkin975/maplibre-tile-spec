@@ -16,10 +16,6 @@ export {
     matchSelected,
     noneMatch,
     noneMatchSelected,
-    createNonNullSelectionVector,
-    filterNonNullSelected,
-    nullableValues,
-    filterNullSelected,
 } from './filterUtils';
 
 export {
