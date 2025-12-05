@@ -16,10 +16,6 @@ export {
     matchSelected,
     noneMatch,
     noneMatchSelected,
-    presentValues,
-    presentValuesSelected,
-    nullableValues,
-    nullableValuesSelected,
 } from './filterUtils';
 
 export {
