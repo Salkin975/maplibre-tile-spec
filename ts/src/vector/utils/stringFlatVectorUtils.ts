@@ -2,6 +2,238 @@ import type { SelectionVector } from "../filter/selectionVector";
 import type { StringFlatVector } from "../flat/stringFlatVector";
 import { FlatSelectionVector } from "../filter/flatSelectionVector";
 
+/**
+ * Returns a SelectionVector containing indices where the string value equals the specified value.
+ * Performs byte-level comparison of UTF-8 encoded strings.
+ *
+ * @param vector The StringFlatVector to filter
+ * @param value The string value to match
+ * @returns SelectionVector with indices where vector[i] === value
+ */
+export function filterStringFlatByValue(
+    vector: StringFlatVector,
+    value: string
+): SelectionVector {
+    const encodedValue = encode(value);
+    return scanVector(vector, i =>
+        bytesEqual(vector.data, vector.offset, i, encodedValue)
+    );
+}
+
+/**
+ * Returns a SelectionVector containing indices where the string value does NOT equal the specified value.
+ * Includes null values in the result.
+ *
+ * @param vector The StringFlatVector to filter
+ * @param value The string value to exclude
+ * @returns SelectionVector with indices where vector[i] !== value
+ */
+export function filterStringFlatNotEqual(
+    vector: StringFlatVector,
+    value: string
+): SelectionVector {
+    const encodedValue = encode(value);
+    return scanVector(
+        vector,
+        i => !bytesEqual(vector.data, vector.offset, i, encodedValue),
+        true
+    );
+}
+
+/**
+ * Returns a SelectionVector containing indices where the string value matches any value in the provided array.
+ * Uses byte-level comparison with length-based optimization.
+ *
+ * @param vector The StringFlatVector to filter
+ * @param values Array of string values to match against
+ * @returns SelectionVector with indices where vector[i] is in values array
+ */
+export function matchStringFlat(
+    vector: StringFlatVector,
+    values: string[]
+): SelectionVector {
+    const byLength = groupByLength(values);
+    return scanVector(vector, i =>
+        bytesMatchAny(vector.data, vector.offset, i, byLength)
+    );
+}
+
+/**
+ * Returns a SelectionVector containing indices where the string value does NOT match any value in the provided array.
+ * Includes null values in the result.
+ *
+ * @param vector The StringFlatVector to filter
+ * @param values Array of string values to exclude
+ * @returns SelectionVector with indices where vector[i] is NOT in values array
+ */
+export function noneMatchStringFlat(
+    vector: StringFlatVector,
+    values: string[]
+): SelectionVector {
+    const byLength = groupByLength(values);
+    return scanVector(
+        vector,
+        i => !bytesMatchAny(vector.data, vector.offset, i, byLength),
+        true
+    );
+}
+
+/**
+ * Returns a SelectionVector containing indices where the string value is lexicographically greater than or equal to the specified value.
+ * Uses byte-level comparison with chunked processing for performance.
+ *
+ * @param vector The StringFlatVector to filter
+ * @param value The threshold string value
+ * @returns SelectionVector with indices where vector[i] >= value
+ */
+export function greaterThanOrEqualToStringFlat(
+    vector: StringFlatVector,
+    value: string
+): SelectionVector {
+    const encodedValue = encode(value);
+    return scanVector(vector, i =>
+        compareBytes(vector.data, vector.offset, i, encodedValue, '>=')
+    );
+}
+
+/**
+ * Returns a SelectionVector containing indices where the string value is lexicographically smaller than or equal to the specified value.
+ * Uses byte-level comparison with chunked processing for performance.
+ *
+ * @param vector The StringFlatVector to filter
+ * @param value The threshold string value
+ * @returns SelectionVector with indices where vector[i] <= value
+ */
+export function smallerThanOrEqualToStringFlat(
+    vector: StringFlatVector,
+    value: string
+): SelectionVector {
+    const encodedValue = encode(value);
+    return scanVector(vector, i =>
+        compareBytes(vector.data, vector.offset, i, encodedValue, '<=')
+    );
+}
+
+/**
+ * Filters an existing SelectionVector to only include indices where the string value equals the specified value.
+ * Updates the SelectionVector in-place.
+ *
+ * @param vector The StringFlatVector to check
+ * @param value The string value to match
+ * @param selectionVector The SelectionVector to filter (modified in-place)
+ */
+export function filterStringFlatSelected(
+    vector: StringFlatVector,
+    value: string,
+    selectionVector: SelectionVector
+): void {
+    const encodedValue = encode(value);
+    filterSelection(vector, selectionVector, i =>
+        bytesEqual(vector.data, vector.offset, i, encodedValue)
+    );
+}
+
+/**
+ * Filters an existing SelectionVector to only include indices where the string value does NOT equal the specified value.
+ * Updates the SelectionVector in-place. Includes null values in the result.
+ *
+ * @param vector The StringFlatVector to check
+ * @param value The string value to exclude
+ * @param selectionVector The SelectionVector to filter (modified in-place)
+ */
+export function filterStringFlatNotEqualSelected(
+    vector: StringFlatVector,
+    value: string,
+    selectionVector: SelectionVector
+): void {
+    const encodedValue = encode(value);
+    filterSelection(
+        vector,
+        selectionVector,
+        i => !bytesEqual(vector.data, vector.offset, i, encodedValue),
+        true
+    );
+}
+
+/**
+ * Filters an existing SelectionVector to only include indices where the string value matches any value in the provided array.
+ * Updates the SelectionVector in-place.
+ *
+ * @param vector The StringFlatVector to check
+ * @param values Array of string values to match against
+ * @param selectionVector The SelectionVector to filter (modified in-place)
+ */
+export function matchStringFlatSelected(
+    vector: StringFlatVector,
+    values: string[],
+    selectionVector: SelectionVector
+): void {
+    const byLength = groupByLength(values);
+    filterSelection(vector, selectionVector, i =>
+        bytesMatchAny(vector.data, vector.offset, i, byLength)
+    );
+}
+
+/**
+ * Filters an existing SelectionVector to only include indices where the string value does NOT match any value in the provided array.
+ * Updates the SelectionVector in-place. Includes null values in the result.
+ *
+ * @param vector The StringFlatVector to check
+ * @param values Array of string values to exclude
+ * @param selectionVector The SelectionVector to filter (modified in-place)
+ */
+export function noneMatchStringFlatSelected(
+    vector: StringFlatVector,
+    values: string[],
+    selectionVector: SelectionVector
+): void {
+    const byLength = groupByLength(values);
+    filterSelection(
+        vector,
+        selectionVector,
+        i => !bytesMatchAny(vector.data, vector.offset, i, byLength),
+        true
+    );
+}
+
+/**
+ * Filters an existing SelectionVector to only include indices where the string value is lexicographically greater than or equal to the specified value.
+ * Updates the SelectionVector in-place.
+ *
+ * @param vector The StringFlatVector to check
+ * @param value The threshold string value
+ * @param selectionVector The SelectionVector to filter (modified in-place)
+ */
+export function greaterThanOrEqualToStringFlatSelected(
+    vector: StringFlatVector,
+    value: string,
+    selectionVector: SelectionVector
+): void {
+    const encodedValue = encode(value);
+    filterSelection(vector, selectionVector, i =>
+        compareBytes(vector.data, vector.offset, i, encodedValue, '>=')
+    );
+}
+
+/**
+ * Filters an existing SelectionVector to only include indices where the string value is lexicographically smaller than or equal to the specified value.
+ * Updates the SelectionVector in-place.
+ *
+ * @param vector The StringFlatVector to check
+ * @param value The threshold string value
+ * @param selectionVector The SelectionVector to filter (modified in-place)
+ */
+export function smallerThanOrEqualToStringFlatSelected(
+    vector: StringFlatVector,
+    value: string,
+    selectionVector: SelectionVector
+): void {
+    const encodedValue = encode(value);
+    filterSelection(vector, selectionVector, i =>
+        compareBytes(vector.data, vector.offset, i, encodedValue, '<=')
+    );
+}
+
 function encode(value: string): Uint8Array {
     return new TextEncoder().encode(value);
 }
@@ -163,148 +395,4 @@ function filterSelection(
     }
 
     selectionVector.setLimit(writeIndex);
-}
-
-// ============================================================================
-// Public API
-// ============================================================================
-
-export function filterStringFlatByValue(
-    vector: StringFlatVector,
-    value: string
-): SelectionVector {
-    const encodedValue = encode(value);
-    return scanVector(vector, i =>
-        bytesEqual(vector.data, vector.offset, i, encodedValue)
-    );
-}
-
-export function filterStringFlatNotEqual(
-    vector: StringFlatVector,
-    value: string
-): SelectionVector {
-    const encodedValue = encode(value);
-    return scanVector(
-        vector,
-        i => !bytesEqual(vector.data, vector.offset, i, encodedValue),
-        true
-    );
-}
-
-export function matchStringFlat(
-    vector: StringFlatVector,
-    values: string[]
-): SelectionVector {
-    const byLength = groupByLength(values);
-    return scanVector(vector, i =>
-        bytesMatchAny(vector.data, vector.offset, i, byLength)
-    );
-}
-
-export function noneMatchStringFlat(
-    vector: StringFlatVector,
-    values: string[]
-): SelectionVector {
-    const byLength = groupByLength(values);
-    return scanVector(
-        vector,
-        i => !bytesMatchAny(vector.data, vector.offset, i, byLength),
-        true
-    );
-}
-
-export function greaterThanOrEqualToStringFlat(
-    vector: StringFlatVector,
-    value: string
-): SelectionVector {
-    const encodedValue = encode(value);
-    return scanVector(vector, i =>
-        compareBytes(vector.data, vector.offset, i, encodedValue, '>=')
-    );
-}
-
-export function smallerThanOrEqualToStringFlat(
-    vector: StringFlatVector,
-    value: string
-): SelectionVector {
-    const encodedValue = encode(value);
-    return scanVector(vector, i =>
-        compareBytes(vector.data, vector.offset, i, encodedValue, '<=')
-    );
-}
-
-// ============================================================================
-// Public API - Selection Filtering
-// ============================================================================
-
-export function filterStringFlatSelected(
-    vector: StringFlatVector,
-    value: string,
-    selectionVector: SelectionVector
-): void {
-    const encodedValue = encode(value);
-    filterSelection(vector, selectionVector, i =>
-        bytesEqual(vector.data, vector.offset, i, encodedValue)
-    );
-}
-
-export function filterStringFlatNotEqualSelected(
-    vector: StringFlatVector,
-    value: string,
-    selectionVector: SelectionVector
-): void {
-    const encodedValue = encode(value);
-    filterSelection(
-        vector,
-        selectionVector,
-        i => !bytesEqual(vector.data, vector.offset, i, encodedValue),
-        true
-    );
-}
-
-export function matchStringFlatSelected(
-    vector: StringFlatVector,
-    values: string[],
-    selectionVector: SelectionVector
-): void {
-    const byLength = groupByLength(values);
-    filterSelection(vector, selectionVector, i =>
-        bytesMatchAny(vector.data, vector.offset, i, byLength)
-    );
-}
-
-export function noneMatchStringFlatSelected(
-    vector: StringFlatVector,
-    values: string[],
-    selectionVector: SelectionVector
-): void {
-    const byLength = groupByLength(values);
-    filterSelection(
-        vector,
-        selectionVector,
-        i => !bytesMatchAny(vector.data, vector.offset, i, byLength),
-        true
-    );
-}
-
-export function greaterThanOrEqualToStringFlatSelected(
-    vector: StringFlatVector,
-    value: string,
-    selectionVector: SelectionVector
-): void {
-    const encodedValue = encode(value);
-    filterSelection(vector, selectionVector, i =>
-        compareBytes(vector.data, vector.offset, i, encodedValue, '>=')
-    );
-}
-
-export function smallerThanOrEqualToStringFlatSelected(
-    vector: StringFlatVector,
-    value: string,
-    selectionVector: SelectionVector
-): void {
-    const encodedValue = encode(value);
-    filterSelection(vector, selectionVector, i =>
-        compareBytes(vector.data, vector.offset, i, encodedValue, '<=')
-    );
 }
