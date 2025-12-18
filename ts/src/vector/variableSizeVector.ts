@@ -14,5 +14,4 @@ export abstract class VariableSizeVector<T extends ArrayBufferView, K> extends V
 
     get offset(): Int32Array {
         return this.offsetBuffer;
-    }
 }

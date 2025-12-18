@@ -39,11 +39,11 @@ export default abstract class Vector<T extends ArrayBufferView = ArrayBufferView
         return this._size;
     }
 
-    get data(): T{
+    get data(): T {
         return this.dataBuffer;
     }
 
-    get nullability(): BitVector{
+    get nullability(): BitVector {
         return this.nullabilityBuffer
     }
 

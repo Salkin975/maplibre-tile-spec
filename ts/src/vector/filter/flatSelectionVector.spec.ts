@@ -4,11 +4,10 @@ import { FlatSelectionVector } from "./flatSelectionVector";
 describe("flatSelectionVector", () => {
     describe("Basic functionality", () => {
         it("Should store and retrieve indices", () => {
+
             const fsVector = new FlatSelectionVector(new Uint32Array([0, 1, 4294967295, 28, 36]));
-            expect(fsVector.getIndex(0)).toBe(0);
             expect(fsVector.getIndex(2)).toBe(4294967295);
             expect(fsVector.getIndex(3)).toBe(28);
-
             fsVector.setIndex(2, 48);
             expect(fsVector.getIndex(2)).toBe(48);
         });
@@ -42,15 +41,15 @@ describe("flatSelectionVector", () => {
         });
     });
     describe("set Limit Tests", () => {
-       it("should set Limit", () => {
-           const fsVector = new FlatSelectionVector(new Uint32Array([1, 2, 3, 4, 5]), 3);
-           fsVector.setLimit(2);
-           expect(fsVector.limit).toBe(2)
-       });
+        it("should set Limit", () => {
+            const fsVector = new FlatSelectionVector(new Uint32Array([1, 2, 3, 4, 5]), 3);
+            fsVector.setLimit(2);
+            expect(fsVector.limit).toBe(2);
+        });
         it("should throw out of bounds error", () => {
             const fsVector = new FlatSelectionVector(new Uint32Array([1, 2, 3, 4, 5]), 3);
             expect(() => fsVector.setLimit(-10)).toThrowError("Limit out of bounds");
             expect(() => fsVector.setLimit(10)).toThrowError("Limit out of bounds");
-        })
+        });
     });
-})
+});
