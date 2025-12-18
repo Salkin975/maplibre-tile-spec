@@ -17,7 +17,7 @@ export class StringFlatVector extends VariableSizeVector<Uint8Array, string> {
     }
 }
 
-export function createNullableStringVector(values: (string | null)[], name = "test"): StringFlatVector {
+export function createNullableStringVector(values: (string | null)[], name: string): StringFlatVector {
     const encoder = new TextEncoder();
     const nonNullValues = values.map(v => v === null ? new Uint8Array(0) : encoder.encode(v));
     const totalSize = nonNullValues.reduce((sum, v) => sum + v.length, 0);
@@ -46,7 +46,7 @@ export function createNullableStringVector(values: (string | null)[], name = "te
     return new StringFlatVector(name, offsetBuffer, dataBuffer, bitVector);
 }
 
-export function createStringFlatVector(values: string[], name = "test"): StringFlatVector {
+export function createStringFlatVector(values: string[], name: string): StringFlatVector {
     const encoder = new TextEncoder();
     const encodedValues = values.map(v => encoder.encode(v));
     const totalSize = encodedValues.reduce((sum, v) => sum + v.length, 0);
