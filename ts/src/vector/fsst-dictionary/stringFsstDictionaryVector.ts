@@ -96,7 +96,7 @@ export class StringFsstDictionaryVector extends VariableSizeVector<Uint8Array, s
     }
 }
 
-export function createStringFsstDictionaryVector(values: (string | null)[], name = "test"): StringFsstDictionaryVector {
+export function createStringFsstDictionaryVector(values: (string | null)[], name: string): StringFsstDictionaryVector {
     const encoder = new TextEncoder();
     const nonNullValues = values.filter((v): v is string => v !== null);
     const uniqueValues = Array.from(new Set(nonNullValues));

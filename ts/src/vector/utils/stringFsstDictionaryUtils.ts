@@ -14,7 +14,7 @@ export function filterStringFsstDictionaryByValue(
     value: string
 ): SelectionVector {
     ensureDecoded(vector);
-    const matchingIndices = getMatchingDictIndices(vector, [encode(value)], false)
+    const matchingIndices = getMatchingDictIndices(vector, [new TextEncoder().encode(value)], false)
     return scan(vector, matchingIndices);
 }
 
@@ -31,7 +31,7 @@ export function filterStringFsstDictionaryNotEqual(
     value: string
 ): SelectionVector {
     ensureDecoded(vector);
-    const matchingIndices = getMatchingDictIndices(vector, [encode(value)], true)
+    const matchingIndices = getMatchingDictIndices(vector, [new TextEncoder().encode(value)], true)
     return scan(vector, matchingIndices);
 }
 
@@ -47,7 +47,12 @@ export function matchStringFsstDictionary(
     values: string[]
 ): SelectionVector {
     ensureDecoded(vector);
-    const matchingIndices = getMatchingDictIndices(vector, values.map(encode), false)
+    const encoder = new TextEncoder();
+    const matchingIndices = getMatchingDictIndices(
+        vector,
+        values.map(v => encoder.encode(v)),
+        false
+    );
     return scan(vector, matchingIndices);
 }
 
@@ -63,7 +68,12 @@ export function noneMatchStringFsstDictionary(
     values: string[]
 ): SelectionVector {
     ensureDecoded(vector);
-    const matchingIndices = getMatchingDictIndices(vector, values.map(encode), true)
+    const encoder = new TextEncoder();
+    const matchingIndices = getMatchingDictIndices(
+        vector,
+        values.map(v => encoder.encode(v)),
+        true
+    );
     return scan(vector, matchingIndices);
 }
 
@@ -80,7 +90,7 @@ export function greaterThanOrEqualToStringFsstDictionary(
     value: string
 ): SelectionVector {
     ensureDecoded(vector);
-    const matchingIndices = getCompareDictIndices(vector, encode(value), true)
+    const matchingIndices = getCompareDictIndices(vector, new TextEncoder().encode(value), true)
     return scan(vector, matchingIndices);
 }
 
@@ -97,7 +107,7 @@ export function smallerThanOrEqualToStringFsstDictionary(
     value: string
 ): SelectionVector {
     ensureDecoded(vector);
-    const matchingIndices = getCompareDictIndices(vector, encode(value), false)
+    const matchingIndices = getCompareDictIndices(vector, new TextEncoder().encode(value), false)
     return scan(vector, matchingIndices);
 }
 
@@ -115,7 +125,7 @@ export function filterStringFsstDictionarySelected(
     sel: SelectionVector
 ): void {
     ensureDecoded(vector);
-    const matchingIndices = getMatchingDictIndices(vector, [encode(value)], false)
+    const matchingIndices = getMatchingDictIndices(vector, [new TextEncoder().encode(value)], false)
     filterInPlace(vector, sel, matchingIndices);
 }
 
@@ -133,7 +143,7 @@ export function filterStringFsstDictionaryNotEqualSelected(
     sel: SelectionVector
 ): void {
     ensureDecoded(vector);
-    const matchingIndices = getMatchingDictIndices(vector, [encode(value)], true);
+    const matchingIndices = getMatchingDictIndices(vector, [new TextEncoder().encode(value)], true);
     filterInPlace(vector, sel, matchingIndices);
 }
 
@@ -151,7 +161,12 @@ export function matchStringFsstDictionarySelected(
     sel: SelectionVector
 ): void {
     ensureDecoded(vector);
-    const matchingIndices = getMatchingDictIndices(vector, values.map(encode), false)
+    const encoder = new TextEncoder();
+    const matchingIndices = getMatchingDictIndices(
+        vector,
+        values.map(v => encoder.encode(v)),
+        false
+    );
     filterInPlace(vector, sel, matchingIndices);
 }
 
@@ -169,7 +184,12 @@ export function noneMatchStringFsstDictionarySelected(
     sel: SelectionVector
 ): void {
     ensureDecoded(vector);
-    const matchingIndices = getMatchingDictIndices(vector, values.map(encode), true)
+    const encoder = new TextEncoder();
+    const matchingIndices = getMatchingDictIndices(
+        vector,
+        values.map(v => encoder.encode(v)),
+        true
+    );
     filterInPlace(vector, sel, matchingIndices);
 }
 
@@ -187,7 +207,7 @@ export function greaterThanOrEqualToStringFsstDictionarySelected(
     sel: SelectionVector
 ): void {
     ensureDecoded(vector);
-    const matchingIndices = getCompareDictIndices(vector, encode(value), true)
+    const matchingIndices = getCompareDictIndices(vector, new TextEncoder().encode(value), true)
     filterInPlace(vector, sel, matchingIndices);
 }
 
@@ -205,12 +225,9 @@ export function smallerThanOrEqualToStringFsstDictionarySelected(
     sel: SelectionVector
 ): void {
     ensureDecoded(vector);
-    const matchingIndices = getCompareDictIndices(vector, encode(value), false);
+    const matchingIndices = getCompareDictIndices(vector, new TextEncoder().encode(value), false);
     filterInPlace(vector, sel, matchingIndices);
 }
-
-const encoder = new TextEncoder();
-const encode = (v: string) => encoder.encode(v);
 
 function matchDictEntry(
     dictionary: Uint8Array,
