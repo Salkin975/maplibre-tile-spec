@@ -14,7 +14,7 @@ export function filterStringFlatByValue(
     vector: StringFlatVector,
     value: string
 ): SelectionVector {
-    const encodedValue = encode(value);
+    const encodedValue = new TextEncoder().encode(value);
     return scanVector(vector, i =>
         bytesEqual(vector.data, vector.offset, i, encodedValue)
     );
@@ -32,7 +32,7 @@ export function filterStringFlatNotEqual(
     vector: StringFlatVector,
     value: string
 ): SelectionVector {
-    const encodedValue = encode(value);
+    const encodedValue = new TextEncoder().encode(value);
     return scanVector(
         vector,
         i => !bytesEqual(vector.data, vector.offset, i, encodedValue),
@@ -90,7 +90,7 @@ export function greaterThanOrEqualToStringFlat(
     vector: StringFlatVector,
     value: string
 ): SelectionVector {
-    const encodedValue = encode(value);
+    const encodedValue = new TextEncoder().encode(value);
     return scanVector(vector, i =>
         compareBytes(vector.data, vector.offset, i, encodedValue, '>=')
     );
@@ -108,7 +108,7 @@ export function smallerThanOrEqualToStringFlat(
     vector: StringFlatVector,
     value: string
 ): SelectionVector {
-    const encodedValue = encode(value);
+    const encodedValue = new TextEncoder().encode(value);
     return scanVector(vector, i =>
         compareBytes(vector.data, vector.offset, i, encodedValue, '<=')
     );
@@ -127,7 +127,7 @@ export function filterStringFlatSelected(
     value: string,
     selectionVector: SelectionVector
 ): void {
-    const encodedValue = encode(value);
+    const encodedValue = new TextEncoder().encode(value);
     filterSelection(vector, selectionVector, i =>
         bytesEqual(vector.data, vector.offset, i, encodedValue)
     );
@@ -146,7 +146,7 @@ export function filterStringFlatNotEqualSelected(
     value: string,
     selectionVector: SelectionVector
 ): void {
-    const encodedValue = encode(value);
+    const encodedValue = new TextEncoder().encode(value);
     filterSelection(
         vector,
         selectionVector,
@@ -209,7 +209,7 @@ export function greaterThanOrEqualToStringFlatSelected(
     value: string,
     selectionVector: SelectionVector
 ): void {
-    const encodedValue = encode(value);
+    const encodedValue = new TextEncoder().encode(value);
     filterSelection(vector, selectionVector, i =>
         compareBytes(vector.data, vector.offset, i, encodedValue, '>=')
     );
@@ -228,20 +228,16 @@ export function smallerThanOrEqualToStringFlatSelected(
     value: string,
     selectionVector: SelectionVector
 ): void {
-    const encodedValue = encode(value);
+    const encodedValue = new TextEncoder().encode(value);
     filterSelection(vector, selectionVector, i =>
         compareBytes(vector.data, vector.offset, i, encodedValue, '<=')
     );
 }
 
-function encode(value: string): Uint8Array {
-    return new TextEncoder().encode(value);
-}
-
 function groupByLength(values: string[]): Map<number, Uint8Array[]> {
     const grouped = new Map<number, Uint8Array[]>();
     for (const value of values) {
-        const encoded = encode(value);
+        const encoded = new TextEncoder().encode(value);
         const list = grouped.get(encoded.length);
         if (list) {
             list.push(encoded);
