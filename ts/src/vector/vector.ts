@@ -39,5 +39,9 @@ export default abstract class Vector<T extends ArrayBufferView = ArrayBufferView
         return this._size;
     }
 
+    get data(): T{
+        return this.dataBuffer;
+    }
+
     protected abstract getValueFromBuffer(index: number): K;
 }
