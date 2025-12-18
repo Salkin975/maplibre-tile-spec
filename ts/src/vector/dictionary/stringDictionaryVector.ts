@@ -73,7 +73,7 @@ export function createStringDictionaryVector(values: (string | null)[], name: st
                 nullabilityBytes[Math.floor(i / 8)] |= 1 << (i % 8);
             }
         }
-        // else indexBuffer[i] remains 0 (default)
+        // Null values: indexBuffer[i] remains 0 (unused - nullability tracked by BitVector)
     }
 
     const bitVector = nullabilityBytes ? new BitVector(nullabilityBytes, values.length) : undefined;
