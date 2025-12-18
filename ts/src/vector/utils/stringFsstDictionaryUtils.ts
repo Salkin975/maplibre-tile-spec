@@ -2,6 +2,216 @@ import type { SelectionVector } from "../filter/selectionVector";
 import { FlatSelectionVector } from "../filter/flatSelectionVector";
 import type { StringFsstDictionaryVector } from "../fsst-dictionary/stringFsstDictionaryVector";
 
+/**
+ * Returns a SelectionVector containing indices where the FSST dictionary vector value equals the specified value.
+ *
+ * @param vector The FSST dictionary vector to filter
+ * @param value The value to match
+ * @returns SelectionVector with indices where vector[i] === value
+ */
+export function filterStringFsstDictionaryByValue(
+    vector: StringFsstDictionaryVector,
+    value: string
+): SelectionVector {
+    ensureDecoded(vector);
+    const matchingIndices = getMatchingDictIndices(vector, [encode(value)], false)
+    return scan(vector, matchingIndices);
+}
+
+/**
+ * Returns a SelectionVector containing indices where the FSST dictionary vector value does NOT equal the specified value.
+ * Includes null values in the result.
+ *
+ * @param vector The FSST dictionary vector to filter
+ * @param value The value to exclude
+ * @returns SelectionVector with indices where vector[i] !== value
+ */
+export function filterStringFsstDictionaryNotEqual(
+    vector: StringFsstDictionaryVector,
+    value: string
+): SelectionVector {
+    ensureDecoded(vector);
+    const matchingIndices = getMatchingDictIndices(vector, [encode(value)], true)
+    return scan(vector, matchingIndices);
+}
+
+/**
+ * Returns a SelectionVector containing indices where the FSST dictionary vector value matches any value in the provided array.
+ *
+ * @param vector The FSST dictionary vector to filter
+ * @param values Array of values to match against
+ * @returns SelectionVector with indices where vector[i] is in values array
+ */
+export function matchStringFsstDictionary(
+    vector: StringFsstDictionaryVector,
+    values: string[]
+): SelectionVector {
+    ensureDecoded(vector);
+    const matchingIndices = getMatchingDictIndices(vector, values.map(encode), false)
+    return scan(vector, matchingIndices);
+}
+
+/**
+ * Returns a SelectionVector containing indices where the FSST dictionary vector value does NOT match any value in the provided array.
+ *
+ * @param vector The FSST dictionary vector to filter
+ * @param values Array of values to exclude
+ * @returns SelectionVector with indices where vector[i] is NOT in values array
+ */
+export function noneMatchStringFsstDictionary(
+    vector: StringFsstDictionaryVector,
+    values: string[]
+): SelectionVector {
+    ensureDecoded(vector);
+    const matchingIndices = getMatchingDictIndices(vector, values.map(encode), true)
+    return scan(vector, matchingIndices);
+}
+
+/**
+ * Returns a SelectionVector containing indices where the FSST dictionary vector value is greater than or equal to the specified value.
+ * Uses lexicographic (byte-wise) comparison.
+ *
+ * @param vector The FSST dictionary vector to filter
+ * @param value The value to compare against
+ * @returns SelectionVector with indices where vector[i] >= value
+ */
+export function greaterThanOrEqualToStringFsstDictionary(
+    vector: StringFsstDictionaryVector,
+    value: string
+): SelectionVector {
+    ensureDecoded(vector);
+    const matchingIndices = getCompareDictIndices(vector, encode(value), true)
+    return scan(vector, matchingIndices);
+}
+
+/**
+ * Returns a SelectionVector containing indices where the FSST dictionary vector value is less than or equal to the specified value.
+ * Uses lexicographic (byte-wise) comparison.
+ *
+ * @param vector The FSST dictionary vector to filter
+ * @param value The value to compare against
+ * @returns SelectionVector with indices where vector[i] <= value
+ */
+export function smallerThanOrEqualToStringFsstDictionary(
+    vector: StringFsstDictionaryVector,
+    value: string
+): SelectionVector {
+    ensureDecoded(vector);
+    const matchingIndices = getCompareDictIndices(vector, encode(value), false)
+    return scan(vector, matchingIndices);
+}
+
+/**
+ * Filters an existing SelectionVector to only include indices where the FSST dictionary vector value equals the specified value.
+ * Updates the SelectionVector in-place.
+ *
+ * @param vector The FSST dictionary vector to check
+ * @param value The value to match
+ * @param sel The SelectionVector to filter (modified in-place)
+ */
+export function filterStringFsstDictionarySelected(
+    vector: StringFsstDictionaryVector,
+    value: string,
+    sel: SelectionVector
+): void {
+    ensureDecoded(vector);
+    const matchingIndices = getMatchingDictIndices(vector, [encode(value)], false)
+    filterInPlace(vector, sel, matchingIndices);
+}
+
+/**
+ * Filters an existing SelectionVector to only include indices where the FSST dictionary vector value does NOT equal the specified value.
+ * Updates the SelectionVector in-place.
+ *
+ * @param vector The FSST dictionary vector to check
+ * @param value The value to exclude
+ * @param sel The SelectionVector to filter (modified in-place)
+ */
+export function filterStringFsstDictionaryNotEqualSelected(
+    vector: StringFsstDictionaryVector,
+    value: string,
+    sel: SelectionVector
+): void {
+    ensureDecoded(vector);
+    const matchingIndices = getMatchingDictIndices(vector, [encode(value)], true);
+    filterInPlace(vector, sel, matchingIndices);
+}
+
+/**
+ * Filters an existing SelectionVector to only include indices where the FSST dictionary vector value matches any value in the provided array.
+ * Updates the SelectionVector in-place.
+ *
+ * @param vector The FSST dictionary vector to check
+ * @param values Array of values to match against
+ * @param sel The SelectionVector to filter (modified in-place)
+ */
+export function matchStringFsstDictionarySelected(
+    vector: StringFsstDictionaryVector,
+    values: string[],
+    sel: SelectionVector
+): void {
+    ensureDecoded(vector);
+    const matchingIndices = getMatchingDictIndices(vector, values.map(encode), false)
+    filterInPlace(vector, sel, matchingIndices);
+}
+
+/**
+ * Filters an existing SelectionVector to only include indices where the FSST dictionary vector value does NOT match any value in the provided array.
+ * Updates the SelectionVector in-place.
+ *
+ * @param vector The FSST dictionary vector to check
+ * @param values Array of values to exclude
+ * @param sel The SelectionVector to filter (modified in-place)
+ */
+export function noneMatchStringFsstDictionarySelected(
+    vector: StringFsstDictionaryVector,
+    values: string[],
+    sel: SelectionVector
+): void {
+    ensureDecoded(vector);
+    const matchingIndices = getMatchingDictIndices(vector, values.map(encode), true)
+    filterInPlace(vector, sel, matchingIndices);
+}
+
+/**
+ * Filters an existing SelectionVector to only include indices where the FSST dictionary vector value is greater than or equal to the specified value.
+ * Updates the SelectionVector in-place. Uses lexicographic (byte-wise) comparison.
+ *
+ * @param vector The FSST dictionary vector to check
+ * @param value The value to compare against
+ * @param sel The SelectionVector to filter (modified in-place)
+ */
+export function greaterThanOrEqualToStringFsstDictionarySelected(
+    vector: StringFsstDictionaryVector,
+    value: string,
+    sel: SelectionVector
+): void {
+    ensureDecoded(vector);
+    const matchingIndices = getCompareDictIndices(vector, encode(value), true)
+    filterInPlace(vector, sel, matchingIndices);
+}
+
+/**
+ * Filters an existing SelectionVector to only include indices where the FSST dictionary vector value is less than or equal to the specified value.
+ * Updates the SelectionVector in-place. Uses lexicographic (byte-wise) comparison.
+ *
+ * @param vector The FSST dictionary vector to check
+ * @param value The value to compare against
+ * @param sel The SelectionVector to filter (modified in-place)
+ */
+export function smallerThanOrEqualToStringFsstDictionarySelected(
+    vector: StringFsstDictionaryVector,
+    value: string,
+    sel: SelectionVector
+): void {
+    ensureDecoded(vector);
+    const matchingIndices = getCompareDictIndices(vector, encode(value), false);
+    filterInPlace(vector, sel, matchingIndices);
+}
+
+const encoder = new TextEncoder();
+const encode = (v: string) => encoder.encode(v);
+
 function matchDictEntry(
     dictionary: Uint8Array,
     start: number,
@@ -128,125 +338,4 @@ function filterInPlace(
     }
 
     selectionVector.setLimit(w);
-}
-
-// ============================================================================
-// Public API
-// ============================================================================
-
-const encoder = new TextEncoder();
-const encode = (v: string) => encoder.encode(v);
-
-export function filterStringFsstDictionaryByValue(
-    vector: StringFsstDictionaryVector,
-    value: string
-): SelectionVector {
-    ensureDecoded(vector);
-    const matchingIndices = getMatchingDictIndices(vector, [encode(value)], false)
-    return scan(vector, matchingIndices);
-}
-
-export function filterStringFsstDictionaryNotEqual(
-    vector: StringFsstDictionaryVector,
-    value: string
-): SelectionVector {
-    ensureDecoded(vector);
-    const matchingIndices = getMatchingDictIndices(vector, [encode(value)], true)
-    return scan(vector, matchingIndices);
-}
-
-export function matchStringFsstDictionary(
-    vector: StringFsstDictionaryVector,
-    values: string[]
-): SelectionVector {
-    ensureDecoded(vector);
-    const matchingIndices = getMatchingDictIndices(vector, values.map(encode), false)
-    return scan(vector, matchingIndices);
-}
-
-export function noneMatchStringFsstDictionary(
-    vector: StringFsstDictionaryVector,
-    values: string[]
-): SelectionVector {
-    ensureDecoded(vector);
-    const matchingIndices = getMatchingDictIndices(vector, values.map(encode), true)
-    return scan(vector, matchingIndices);
-}
-
-export function greaterThanOrEqualToStringFsstDictionary(
-    vector: StringFsstDictionaryVector,
-    value: string
-): SelectionVector {
-    ensureDecoded(vector);
-    const matchingIndices = getCompareDictIndices(vector, encode(value), true)
-    return scan(vector, matchingIndices);
-}
-
-export function smallerThanOrEqualToStringFsstDictionary(
-    vector: StringFsstDictionaryVector,
-    value: string
-): SelectionVector {
-    ensureDecoded(vector);
-    const matchingIndices = getCompareDictIndices(vector, encode(value), false)
-    return scan(vector, matchingIndices);
-}
-
-export function filterStringFsstDictionarySelected(
-    vector: StringFsstDictionaryVector,
-    value: string,
-    sel: SelectionVector
-): void {
-    ensureDecoded(vector);
-    const matchingIndices = getMatchingDictIndices(vector, [encode(value)], false)
-    filterInPlace(vector, sel, matchingIndices);
-}
-
-export function filterStringFsstDictionaryNotEqualSelected(
-    vector: StringFsstDictionaryVector,
-    value: string,
-    sel: SelectionVector
-): void {
-    ensureDecoded(vector);
-    const matchingIndices = getMatchingDictIndices(vector, [encode(value)], true);
-    filterInPlace(vector, sel, matchingIndices);
-}
-
-export function matchStringFsstDictionarySelected(
-    vector: StringFsstDictionaryVector,
-    values: string[],
-    sel: SelectionVector
-): void {
-    ensureDecoded(vector);
-    const matchingIndices = getMatchingDictIndices(vector, values.map(encode), false)
-    filterInPlace(vector, sel, matchingIndices);
-}
-
-export function noneMatchStringFsstDictionarySelected(
-    vector: StringFsstDictionaryVector,
-    values: string[],
-    sel: SelectionVector
-): void {
-    ensureDecoded(vector);
-    const matchingIndices = getMatchingDictIndices(vector, values.map(encode), true)
-    filterInPlace(vector, sel, matchingIndices);
-}
-
-export function greaterThanOrEqualToStringFsstDictionarySelected(
-    vector: StringFsstDictionaryVector,
-    value: string,
-    sel: SelectionVector
-): void {
-    ensureDecoded(vector);
-    const matchingIndices = getCompareDictIndices(vector, encode(value), true)
-    filterInPlace(vector, sel, matchingIndices);
-}
-
-export function smallerThanOrEqualToStringFsstDictionarySelected(
-    vector: StringFsstDictionaryVector,
-    value: string,
-    sel: SelectionVector
-): void {
-    ensureDecoded(vector);
-    const matchingIndices = getCompareDictIndices(vector, encode(value), false);
-    filterInPlace(vector, sel, matchingIndices);
 }
