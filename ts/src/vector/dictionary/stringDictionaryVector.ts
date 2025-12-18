@@ -40,7 +40,7 @@ export class StringDictionaryVector extends VariableSizeVector<Uint8Array, strin
     }
 }
 
-export function createStringDictionaryVector(values: (string | null)[]): StringDictionaryVector {
+export function createStringDictionaryVector(values: (string | null)[], name: string): StringDictionaryVector {
     const encoder = new TextEncoder();
 
     // Build unique dictionary
@@ -78,6 +78,6 @@ export function createStringDictionaryVector(values: (string | null)[]): StringD
 
     const bitVector = nullabilityBytes ? new BitVector(nullabilityBytes, values.length) : undefined;
 
-    return new StringDictionaryVector("test", indexBuffer, offsetBuffer, dataBuffer, bitVector);
+    return new StringDictionaryVector(name, indexBuffer, offsetBuffer, dataBuffer, bitVector);
 }
 

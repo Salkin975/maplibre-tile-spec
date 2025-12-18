@@ -22,78 +22,78 @@ import {
 describe("StringDictionaryUtil Tests", () => {
     describe("Core operations", () => {
         it("filters by value", () => {
-            const v = createStringDictionaryVector(["a", "b", "a", "c"]);
+            const v = createStringDictionaryVector(["a", "b", "a", "c"], "test");
             expect(filterStringDictionaryByValue(v, "a").selectionValues())
                 .toEqual(new Uint32Array([0, 2]));
         });
 
         it("filters not equal values", () => {
-            const v = createStringDictionaryVector(["a", "b", "a", "c"]);
+            const v = createStringDictionaryVector(["a", "b", "a", "c"], "test");
             expect(filterStringDictionaryNotEqual(v, "a").selectionValues())
                 .toEqual(new Uint32Array([1, 3]));
         });
 
         it("matches values from list", () => {
-            const v = createStringDictionaryVector(["a", "b", "c", "a", "d"]);
+            const v = createStringDictionaryVector(["a", "b", "c", "a", "d"], "test");
             expect(matchStringDictionary(v, ["a", "c"]).selectionValues())
                 .toEqual(new Uint32Array([0, 2, 3]));
         });
 
         it("excludes values from list with noneMatch", () => {
-            const v = createStringDictionaryVector(["a", "b", "c", "a", "d"]);
+            const v = createStringDictionaryVector(["a", "b", "c", "a", "d"], "test");
             expect(noneMatchStringDictionary(v, ["a", "c"]).selectionValues())
                 .toEqual(new Uint32Array([1, 4]));
         });
 
         it("filters by >= comparison", () => {
-            const v = createStringDictionaryVector(["apple", "banana", "cherry", "date"]);
+            const v = createStringDictionaryVector(["apple", "banana", "cherry", "date"], "test");
             expect(greaterThanOrEqualToStringDictionary(v, "cherry").selectionValues())
                 .toEqual(new Uint32Array([2, 3]));
         });
 
         it("filters by <= comparison", () => {
-            const v = createStringDictionaryVector(["apple", "banana", "cherry", "date"]);
+            const v = createStringDictionaryVector(["apple", "banana", "cherry", "date"], "test");
             expect(smallerThanOrEqualToStringDictionary(v, "banana").selectionValues())
                 .toEqual(new Uint32Array([0, 1]));
         });
 
         it("filters selection by value", () => {
-            const v = createStringDictionaryVector(["a", "b", "a", "c", "a"]);
+            const v = createStringDictionaryVector(["a", "b", "a", "c", "a"], "test");
             const sel = new FlatSelectionVector(new Uint32Array([0, 2, 3, 4]));
             filterStringDictionarySelected(v, "a", sel);
             expect(sel.selectionValues()).toEqual(new Uint32Array([0, 2, 4]));
         });
 
         it("filters selection for not equal values", () => {
-            const v = createStringDictionaryVector(["a", "b", "a", "c", "a"]);
+            const v = createStringDictionaryVector(["a", "b", "a", "c", "a"], "test");
             const sel = new FlatSelectionVector(new Uint32Array([0, 1, 2, 3]));
             filterStringDictionaryNotEqualSelected(v, "a", sel);
             expect(sel.selectionValues()).toEqual(new Uint32Array([1, 3]));
         });
 
         it("filters selection by match list", () => {
-            const v = createStringDictionaryVector(["a", "b", "c", "a", "d"]);
+            const v = createStringDictionaryVector(["a", "b", "c", "a", "d"], "test");
             const sel = new FlatSelectionVector(new Uint32Array([1, 2, 3, 4]));
             matchStringDictionarySelected(v, ["a", "c"], sel);
             expect(sel.selectionValues()).toEqual(new Uint32Array([2, 3]));
         });
 
         it("filters selection by noneMatch list", () => {
-            const v = createStringDictionaryVector(["a", "b", "c", "a", "d"]);
+            const v = createStringDictionaryVector(["a", "b", "c", "a", "d"], "test");
             const sel = new FlatSelectionVector(new Uint32Array([0, 1, 2]));
             noneMatchStringDictionarySelected(v, ["a", "c"], sel);
             expect(sel.selectionValues()).toEqual(new Uint32Array([1]));
         });
 
         it("filters selection by >= comparison", () => {
-            const v = createStringDictionaryVector(["apple", "banana", "cherry", "date"]);
+            const v = createStringDictionaryVector(["apple", "banana", "cherry", "date"], "test");
             const sel = new FlatSelectionVector(new Uint32Array([1, 2, 3]));
             greaterThanOrEqualToStringDictionarySelected(v, "cherry", sel);
             expect(sel.selectionValues()).toEqual(new Uint32Array([2, 3]));
         });
 
         it("filters selection by <= comparison", () => {
-            const v = createStringDictionaryVector(["apple", "banana", "cherry", "date"]);
+            const v = createStringDictionaryVector(["apple", "banana", "cherry", "date"], "test");
             const sel = new FlatSelectionVector(new Uint32Array([0, 1, 2]));
             smallerThanOrEqualToStringDictionarySelected(v, "banana", sel);
             expect(sel.selectionValues()).toEqual(new Uint32Array([0, 1]));
@@ -186,7 +186,7 @@ describe("StringDictionaryUtil Tests", () => {
 
         it("finds dictionary index using linear scan for unsorted vectors", () => {
             const encoder = new TextEncoder();
-            const unsorted = createStringDictionaryVector(["cherry", "apple", "banana"]);
+            const unsorted = createStringDictionaryVector(["cherry", "apple", "banana"], "test");
 
             expect(findDictionaryIndex(unsorted, encoder.encode("apple"))).toBe(1);
             expect(findDictionaryIndex(unsorted, encoder.encode("notfound"))).toBe(-1);
@@ -194,7 +194,7 @@ describe("StringDictionaryUtil Tests", () => {
 
         it("returns -1 for binary search on unsorted vector", () => {
             const encoder = new TextEncoder();
-            const unsorted = createStringDictionaryVector(["cherry", "apple", "banana"]);
+            const unsorted = createStringDictionaryVector(["cherry", "apple", "banana"], "test");
 
             expect(binarySearchDictionary(unsorted, encoder.encode("apple"))).toBe(-1);
         });
@@ -202,13 +202,13 @@ describe("StringDictionaryUtil Tests", () => {
 
     describe("Edge cases", () => {
         it("handles empty vector", () => {
-            const empty = createStringDictionaryVector([]);
+            const empty = createStringDictionaryVector([], "test");
             expect(filterStringDictionaryByValue(empty, "a").selectionValues())
                 .toEqual(new Uint32Array([]));
         });
 
         it("handles all null values", () => {
-            const allNulls = createStringDictionaryVector([null, null, null]);
+            const allNulls = createStringDictionaryVector([null, null, null], "test");
             expect(filterStringDictionaryByValue(allNulls, "a").selectionValues())
                 .toEqual(new Uint32Array([]));
             expect(filterStringDictionaryNotEqual(allNulls, "a").selectionValues())
@@ -216,21 +216,21 @@ describe("StringDictionaryUtil Tests", () => {
         });
 
         it("includes nulls in filterInPlace when includeNulls=true", () => {
-            const v = createStringDictionaryVector(["a", null, "b", null, "c"]);
+            const v = createStringDictionaryVector(["a", null, "b", null, "c"], "test");
             const sel = new FlatSelectionVector(new Uint32Array([1, 3, 4]));
             filterStringDictionaryNotEqualSelected(v, "a", sel);
             expect(sel.selectionValues()).toEqual(new Uint32Array([1, 3, 4]));
         });
 
         it("includes nulls in noneMatch selection", () => {
-            const v = createStringDictionaryVector([null, "a", "b", null, "c"]);
+            const v = createStringDictionaryVector([null, "a", "b", null, "c"], "test");
             const sel = new FlatSelectionVector(new Uint32Array([0, 1, 2, 3, 4]));
             noneMatchStringDictionarySelected(v, ["a"], sel);
             expect(sel.selectionValues()).toEqual(new Uint32Array([0, 2, 3, 4]));
         });
 
         it("returns empty selection when value not found", () => {
-            const v = createStringDictionaryVector(["a", "b", "c"]);
+            const v = createStringDictionaryVector(["a", "b", "c"], "test");
             expect(filterStringDictionaryByValue(v, "x").selectionValues())
                 .toEqual(new Uint32Array([]));
 
@@ -240,7 +240,7 @@ describe("StringDictionaryUtil Tests", () => {
         });
 
         it("handles empty match/noneMatch arrays", () => {
-            const v = createStringDictionaryVector(["a", "b", "c"]);
+            const v = createStringDictionaryVector(["a", "b", "c"], "test");
             expect(matchStringDictionary(v, []).selectionValues())
                 .toEqual(new Uint32Array([]));
             expect(noneMatchStringDictionary(v, []).selectionValues())
@@ -248,21 +248,21 @@ describe("StringDictionaryUtil Tests", () => {
         });
 
         it("handles empty match array in Selected version (tests filterInPlace early exit)", () => {
-            const v = createStringDictionaryVector(["a", "b", "c"]);
+            const v = createStringDictionaryVector(["a", "b", "c"], "test");
             const sel = new FlatSelectionVector(new Uint32Array([0, 1, 2]));
             matchStringDictionarySelected(v, [], sel);
             expect(sel.selectionValues()).toEqual(new Uint32Array([]));
         });
 
         it("filters selection with matching values (tests filterInPlace main loop)", () => {
-            const v = createStringDictionaryVector(["a", "b", "c", "d"]);
+            const v = createStringDictionaryVector(["a", "b", "c", "d"], "test");
             const sel = new FlatSelectionVector(new Uint32Array([0, 1, 2, 3]));
             matchStringDictionarySelected(v, ["b", "d"], sel);
             expect(sel.selectionValues()).toEqual(new Uint32Array([1, 3]));
         });
 
         it("handles comparison with value between dictionary entries", () => {
-            const v = createStringDictionaryVector(["apple", "cherry"]);
+            const v = createStringDictionaryVector(["apple", "cherry"], "test");
             expect(greaterThanOrEqualToStringDictionary(v, "banana").selectionValues())
                 .toEqual(new Uint32Array([1]));
             expect(smallerThanOrEqualToStringDictionary(v, "banana").selectionValues())
@@ -270,13 +270,13 @@ describe("StringDictionaryUtil Tests", () => {
         });
 
         it("handles >= comparison with exact match", () => {
-            const v = createStringDictionaryVector(["apple", "banana", "banana", "cherry"]);
+            const v = createStringDictionaryVector(["apple", "banana", "banana", "cherry"], "test");
             expect(greaterThanOrEqualToStringDictionary(v, "banana").selectionValues())
                 .toEqual(new Uint32Array([1, 2, 3]));
         });
 
         it("skips nulls in comparison operations", () => {
-            const v = createStringDictionaryVector([null, "a", "b", null]);
+            const v = createStringDictionaryVector([null, "a", "b", null], "test");
             expect(greaterThanOrEqualToStringDictionary(v, "a").selectionValues())
                 .toEqual(new Uint32Array([1, 2]));
         });
@@ -302,13 +302,13 @@ describe("StringDictionaryUtil Tests", () => {
         });
 
         it("handles >= comparison when all dictionary values are smaller", () => {
-            const v = createStringDictionaryVector(["a", "b", "c"]);
+            const v = createStringDictionaryVector(["a", "b", "c"], "test");
             expect(greaterThanOrEqualToStringDictionary(v, "z").selectionValues())
                 .toEqual(new Uint32Array([]));
         });
 
         it("handles <= comparison when all dictionary values are larger", () => {
-            const v = createStringDictionaryVector(["x", "y", "z"]);
+            const v = createStringDictionaryVector(["x", "y", "z"], "test");
             expect(smallerThanOrEqualToStringDictionary(v, "a").selectionValues())
                 .toEqual(new Uint32Array([]));
         });

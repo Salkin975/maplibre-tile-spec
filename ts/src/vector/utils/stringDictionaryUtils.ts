@@ -112,7 +112,7 @@ export function filterStringDictionaryByValue(
     vector: StringDictionaryVector,
     value: string
 ): SelectionVector {
-    const dictIdx = findDictionaryIndex(vector, encode(value));
+    const dictIdx = findDictionaryIndex(vector, new TextEncoder().encode(value));
     if (dictIdx === -1) return new FlatSelectionVector(new Uint32Array());
     return scan(vector, new Uint32Array([dictIdx]));
 }
@@ -129,7 +129,7 @@ export function filterStringDictionaryNotEqual(
     vector: StringDictionaryVector,
     value: string
 ): SelectionVector {
-    const matchingIndices = getMatchingDictIndices(vector, encode(value), '!=');
+    const matchingIndices = getMatchingDictIndices(vector, new TextEncoder().encode(value), 0);
     return scan(vector, matchingIndices, true);
 }
 
@@ -182,7 +182,7 @@ export function greaterThanOrEqualToStringDictionary(
     vector: StringDictionaryVector,
     value: string
 ): SelectionVector {
-    const matchingIndices = getMatchingDictIndices(vector, encode(value), '>=');
+    const matchingIndices = getMatchingDictIndices(vector, new TextEncoder().encode(value), 1);
     return scan(vector, matchingIndices);
 }
 
@@ -197,7 +197,7 @@ export function smallerThanOrEqualToStringDictionary(
     vector: StringDictionaryVector,
     value: string
 ): SelectionVector {
-    const matchingIndices = getMatchingDictIndices(vector, encode(value), '<=');
+    const matchingIndices = getMatchingDictIndices(vector, new TextEncoder().encode(value), 2);
     return scan(vector, matchingIndices);
 }
 
@@ -214,7 +214,7 @@ export function filterStringDictionarySelected(
     value: string,
     selectionVector: SelectionVector
 ): void {
-    const dictIdx = findDictionaryIndex(vector, encode(value));
+    const dictIdx = findDictionaryIndex(vector, new TextEncoder().encode(value));
     if (dictIdx === -1) {
         selectionVector.setLimit(0);
         return;
@@ -235,7 +235,7 @@ export function filterStringDictionaryNotEqualSelected(
     value: string,
     selectionVector: SelectionVector
 ): void {
-    const matchingIndices = getMatchingDictIndices(vector, encode(value), '!=');
+    const matchingIndices = getMatchingDictIndices(vector, new TextEncoder().encode(value), 0);
     filterInPlace(vector, selectionVector, matchingIndices, true);
 }
 
@@ -294,7 +294,7 @@ export function greaterThanOrEqualToStringDictionarySelected(
     value: string,
     selectionVector: SelectionVector
 ): void {
-    const matchingIndices = getMatchingDictIndices(vector, encode(value), '>=');
+    const matchingIndices = getMatchingDictIndices(vector, new TextEncoder().encode(value), 1);
     filterInPlace(vector, selectionVector, matchingIndices);
 }
 
@@ -311,12 +311,8 @@ export function smallerThanOrEqualToStringDictionarySelected(
     value: string,
     selectionVector: SelectionVector
 ): void {
-    const matchingIndices = getMatchingDictIndices(vector, encode(value), '<=');
+    const matchingIndices = getMatchingDictIndices(vector, new TextEncoder().encode(value), 2);
     filterInPlace(vector, selectionVector, matchingIndices);
-}
-
-function encode(value: string): Uint8Array {
-    return new TextEncoder().encode(value);
 }
 
 function compareUtf8(a: Uint8Array, b: Uint8Array): number {
@@ -343,15 +339,21 @@ function findDictionaryIndices(
     values: string[]
 ): Uint32Array {
     const indices = values
-        .map(v => findDictionaryIndex(vector, encode(v)))
+        .map(v => findDictionaryIndex(vector, new TextEncoder().encode(v)))
         .filter(i => i !== -1);  // Remove -1 entries for values not found
     return new Uint32Array(indices).sort();
+}
+
+const enum ComparisonOperator {
+    NotEqual = 0,
+    GreaterThanOrEqual = 1,
+    LessThanOrEqual = 2
 }
 
 function getMatchingDictIndices(
     vector: StringDictionaryVector,
     encodedValue: Uint8Array,
-    operator: '!=' | '>=' | '<='
+    operator: ComparisonOperator
 ): Uint32Array {
     const { offset, data } = vector;
     const dictSize = offset.length - 1;
@@ -364,14 +366,14 @@ function getMatchingDictIndices(
 
         // Check if entry matches the operator condition
         let match = false;
-        if (operator === '!=') match = cmp !== 0;
-        else if (operator === '>=') match = cmp >= 0;
-        else match = cmp <= 0;  // operator === '<='
+        if (operator === ComparisonOperator.NotEqual) match = cmp !== 0;
+        else if (operator === ComparisonOperator.GreaterThanOrEqual) match = cmp >= 0;
+        else match = cmp <= 0;
 
         if (match) result.push(dictIdx);
     }
 
-    return new Uint32Array(result).sort();  // Sort for binary search in scan()
+    return new Uint32Array(result).sort();
 }
 
 function scan(
