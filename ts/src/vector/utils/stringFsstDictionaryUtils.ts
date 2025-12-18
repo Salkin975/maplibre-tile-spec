@@ -315,16 +315,21 @@ function ensureDecoded(vector: StringFsstDictionaryVector): void {
     if (vector.decoded == null && vector.size > 0) vector.getValue(0);
 }
 
-function scan(
+function matchesCondition(
     vector: StringFsstDictionaryVector,
+    idx: number,
     matchingIndices: Set<number>
-): SelectionVector {
-    const { index, size } = vector;
+): boolean {
+    return vector.has(idx) && matchingIndices.has(vector.index[idx]);
+}
+
+function scan(vector: StringFsstDictionaryVector, matchingIndices: Set<number>): SelectionVector {
+    const { size } = vector;
     const result = new Uint32Array(size);
     let w = 0;
 
     for (let i = 0; i < size; i++) {
-        if (vector.has(i) && matchingIndices.has(index[i])) {
+        if (matchesCondition(vector, i, matchingIndices)) {
             result[w++] = i;
         }
     }
@@ -342,14 +347,13 @@ function filterInPlace(
         return;
     }
 
-    const { index } = vector;
     const values = selectionVector.selectionValues();
     const limit = selectionVector.limit;
     let w = 0;
 
     for (let i = 0; i < limit; i++) {
         const idx = values[i];
-        if (vector.has(idx) && matchingIndices.has(index[idx])) {
+        if (matchesCondition(vector, idx, matchingIndices)) {
             values[w++] = idx;
         }
     }
