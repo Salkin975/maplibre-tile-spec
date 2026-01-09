@@ -1,5 +1,8 @@
+import { type SelectionVector } from "../filter/selectionVector";
 import { GpuVector } from "./gpuVector";
+import { type SINGLE_PART_GEOMETRY_TYPE } from "./geometryType";
 import type TopologyVector from "./topologyVector";
+import {ConstSelectionVector} from "../filter/constSelectionVector";
 
 export function createConstGpuVector(
     numGeometries: number,
@@ -31,6 +34,19 @@ export class ConstGpuVector extends GpuVector {
 
     get numGeometries(): number {
         return this._numGeometries;
+    }
+
+    filter(geometryType: SINGLE_PART_GEOMETRY_TYPE): SelectionVector {
+        if (geometryType !== this._geometryType && geometryType + 3 !== this._geometryType) {
+            return ConstSelectionVector.empty(this.numGeometries);
+        }
+        return ConstSelectionVector.full(this.numGeometries);
+    }
+
+    filterSelected(geometryType: SINGLE_PART_GEOMETRY_TYPE, selectionVector: SelectionVector) {
+        if (geometryType !== this._geometryType && geometryType + 3 !== this._geometryType) {
+            selectionVector.setLimit(0);
+        }
     }
 
     containsSingleGeometryType(): boolean {

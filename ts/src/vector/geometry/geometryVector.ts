@@ -1,9 +1,10 @@
 import type TopologyVector from "../../vector/geometry/topologyVector";
 import { convertGeometryVector } from "./geometryVectorConverter";
 import { decodeZOrderCurve } from "./zOrderCurve";
-import { type GEOMETRY_TYPE } from "./geometryType";
+import { type GEOMETRY_TYPE, type SINGLE_PART_GEOMETRY_TYPE } from "./geometryType";
 import { type VertexBufferType } from "./vertexBufferType";
 import type Point from "@mapbox/point-geometry";
+import { type SelectionVector } from "../filter/selectionVector";
 
 export type CoordinatesArray = Array<Array<Point>>;
 
@@ -25,6 +26,10 @@ export abstract class GeometryVector implements Iterable<Geometry> {
         private readonly _vertexBuffer: Int32Array,
         private readonly _mortonSettings?: MortonSettings,
     ) {}
+
+    abstract filter(geometryType: SINGLE_PART_GEOMETRY_TYPE): SelectionVector;
+
+    abstract filterSelected(geometryType: SINGLE_PART_GEOMETRY_TYPE, selectionVector: SelectionVector);
 
     get vertexBufferType(): VertexBufferType {
         return this._vertexBufferType;
