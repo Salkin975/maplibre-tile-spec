@@ -1,7 +1,8 @@
 import { GeometryVector, type MortonSettings } from "./geometryVector";
 import type TopologyVector from "../../vector/geometry/topologyVector";
-import { GEOMETRY_TYPE } from "./geometryType";
+import { GEOMETRY_TYPE, type SINGLE_PART_GEOMETRY_TYPE } from "./geometryType";
 import { VertexBufferType } from "./vertexBufferType";
+import { type SelectionVector } from "../filter/selectionVector";
 
 export function createFlatGeometryVector(
     geometryTypes: Int32Array,
@@ -31,6 +32,12 @@ export function createFlatGeometryVectorMortonEncoded(
 }
 
 export class FlatGeometryVector extends GeometryVector {
+    filter(geometryType: SINGLE_PART_GEOMETRY_TYPE): SelectionVector {
+        throw new Error("Method not implemented.");
+    }
+    filterSelected(geometryType: SINGLE_PART_GEOMETRY_TYPE, selectionVector: SelectionVector) {
+        throw new Error("Method not implemented.");
+    }
     constructor(
         vertexBufferType: VertexBufferType,
         //TODO: refactor -> use UInt8Array

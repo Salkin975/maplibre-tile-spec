@@ -1,7 +1,8 @@
 import { GeometryVector, type MortonSettings } from "./geometryVector";
 import type TopologyVector from "../../vector/geometry/topologyVector";
-import { GEOMETRY_TYPE } from "./geometryType";
+import { GEOMETRY_TYPE, type SINGLE_PART_GEOMETRY_TYPE } from "./geometryType";
 import { VertexBufferType } from "./vertexBufferType";
+import { type SelectionVector } from "../filter/selectionVector";
 
 export function createConstGeometryVector(
     numGeometries: number,
@@ -40,6 +41,12 @@ export function createMortonEncodedConstGeometryVector(
 }
 
 export class ConstGeometryVector extends GeometryVector {
+    filter(geometryType: SINGLE_PART_GEOMETRY_TYPE): SelectionVector {
+        throw new Error("Method not implemented.");
+    }
+    filterSelected(geometryType: SINGLE_PART_GEOMETRY_TYPE, selectionVector: SelectionVector) {
+        throw new Error("Method not implemented.");
+    }
     constructor(
         private readonly _numGeometries: number,
         private readonly _geometryType: number,

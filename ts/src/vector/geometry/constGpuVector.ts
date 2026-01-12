@@ -1,3 +1,5 @@
+import { type SelectionVector } from "../filter/selectionVector";
+import { type SINGLE_PART_GEOMETRY_TYPE } from "./geometryType";
 import { GpuVector } from "./gpuVector";
 import type TopologyVector from "./topologyVector";
 
@@ -14,6 +16,12 @@ export function createConstGpuVector(
 
 //TODO: extend from GeometryVector -> make topology vector optional
 export class ConstGpuVector extends GpuVector {
+    filter(geometryType: SINGLE_PART_GEOMETRY_TYPE): SelectionVector {
+        throw new Error("Method not implemented.");
+    }
+    filterSelected(geometryType: SINGLE_PART_GEOMETRY_TYPE, selectionVector: SelectionVector) {
+        throw new Error("Method not implemented.");
+    }
     constructor(
         private readonly _numGeometries: number,
         private readonly _geometryType: number,
