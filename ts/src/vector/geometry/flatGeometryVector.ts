@@ -1,8 +1,10 @@
 import { GeometryVector, type MortonSettings } from "./geometryVector";
 import type TopologyVector from "../../vector/geometry/topologyVector";
+import { type SelectionVector } from "../filter/selectionVector";
+import { FlatSelectionVector } from "../filter/flatSelectionVector";
 import { GEOMETRY_TYPE, type SINGLE_PART_GEOMETRY_TYPE } from "./geometryType";
 import { VertexBufferType } from "./vertexBufferType";
-import { type SelectionVector } from "../filter/selectionVector";
+import { ConstSelectionVector } from "../filter/constSelectionVector";
 
 export function createFlatGeometryVector(
     geometryTypes: Int32Array,
@@ -32,12 +34,6 @@ export function createFlatGeometryVectorMortonEncoded(
 }
 
 export class FlatGeometryVector extends GeometryVector {
-    filter(geometryType: SINGLE_PART_GEOMETRY_TYPE): SelectionVector {
-        throw new Error("Method not implemented.");
-    }
-    filterSelected(geometryType: SINGLE_PART_GEOMETRY_TYPE, selectionVector: SelectionVector) {
-        throw new Error("Method not implemented.");
-    }
     constructor(
         vertexBufferType: VertexBufferType,
         //TODO: refactor -> use UInt8Array
@@ -65,6 +61,37 @@ export class FlatGeometryVector extends GeometryVector {
             }
         }
         return false;
+    }
+
+    filter(geometryType: SINGLE_PART_GEOMETRY_TYPE): SelectionVector {
+        const selectionVector = new Uint32Array(this.numGeometries);
+        let index = 0;
+        for (let i = 0; i < this.numGeometries; i++) {
+            if (this.geometryType(i) === geometryType || this.geometryType(i) === geometryType + 3) {
+                selectionVector[index++] = i;
+            }
+        }
+        if (index === 0) {
+            return ConstSelectionVector.empty(this.numGeometries);
+        }
+        if (index === this.numGeometries) {
+            return ConstSelectionVector.full(this.numGeometries);
+        }
+        return new FlatSelectionVector(selectionVector.subarray(0, index));
+    }
+
+    filterSelected(predicateGeometryType: SINGLE_PART_GEOMETRY_TYPE, selectionVector: SelectionVector) {
+        let limit = 0;
+        const vector = selectionVector.selectionValues();
+        for (let i = 0; i < selectionVector.limit; i++) {
+            const index = vector[i];
+            const geometryType = this.geometryType(index);
+            if (predicateGeometryType === geometryType || predicateGeometryType + 3 === geometryType) {
+                vector[limit++] = index;
+            }
+        }
+
+        selectionVector.setLimit(limit);
     }
 
     containsSingleGeometryType(): boolean {
