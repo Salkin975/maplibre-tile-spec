@@ -5,7 +5,7 @@ import { type IGpuVector } from "./gpuVector";
 
 export class GpuVectorUtils {
 
-    static getGeometries(gpuVector: IGpuVector): CoordinatesArray[] {
+    getGeometries(gpuVector: IGpuVector): CoordinatesArray[] {
         const topologyVector = gpuVector.topologyVector;
         if (!topologyVector) {
             throw new Error("Cannot convert GpuVector to coordinates without topology information");

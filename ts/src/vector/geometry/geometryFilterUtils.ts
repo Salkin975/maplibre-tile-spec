@@ -5,7 +5,7 @@ import { FlatSelectionVector } from "../filter/flatSelectionVector";
 
 export class GeometryFilterUtils {
 
-    static filterConst(
+    filterConst(
         targetType: SINGLE_PART_GEOMETRY_TYPE,
         actualType: number,
         numGeometries: number
@@ -17,7 +17,7 @@ export class GeometryFilterUtils {
         return ConstSelectionVector.full(numGeometries);
     }
 
-    static filterSelectedConst(
+    filterSelectedConst(
         targetType: SINGLE_PART_GEOMETRY_TYPE,
         actualType: number,
         selectionVector: SelectionVector
@@ -27,7 +27,7 @@ export class GeometryFilterUtils {
         }
     }
 
-    static filterFlat(
+    filterFlat(
         targetType: SINGLE_PART_GEOMETRY_TYPE,
         geometryTypes: Int32Array,
         numGeometries: number
@@ -52,7 +52,7 @@ export class GeometryFilterUtils {
         return new FlatSelectionVector(selectionVector.subarray(0, index));
     }
 
-    static filterSelectedFlat(
+    filterSelectedFlat(
         targetType: SINGLE_PART_GEOMETRY_TYPE,
         geometryTypes: Int32Array,
         selectionVector: SelectionVector
@@ -71,11 +71,11 @@ export class GeometryFilterUtils {
         selectionVector.setLimit(limit);
     }
 
-    static containsPolygonGeometryConst(geometryType: number): boolean {
+    containsPolygonGeometryConst(geometryType: number): boolean {
         return geometryType === GEOMETRY_TYPE.POLYGON || geometryType === GEOMETRY_TYPE.MULTIPOLYGON;
     }
 
-    static containsPolygonGeometryFlat(geometryTypes: Int32Array): boolean {
+    containsPolygonGeometryFlat(geometryTypes: Int32Array): boolean {
         for (let i = 0; i < geometryTypes.length; i++) {
             if (geometryTypes[i] === GEOMETRY_TYPE.POLYGON || geometryTypes[i] === GEOMETRY_TYPE.MULTIPOLYGON) {
                 return true;
@@ -84,11 +84,11 @@ export class GeometryFilterUtils {
         return false;
     }
 
-    static containsSingleGeometryTypeConst(): boolean {
+    containsSingleGeometryTypeConst(): boolean {
         return true;
     }
 
-    static containsSingleGeometryTypeFlat(): boolean {
+    containsSingleGeometryTypeFlat(): boolean {
         return false;
     }
 }

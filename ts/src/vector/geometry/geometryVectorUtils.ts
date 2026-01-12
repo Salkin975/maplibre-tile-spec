@@ -32,7 +32,7 @@ class MvtGeometryFactory {
 
 export class GeometryVectorUtils {
 
-    static getSimpleEncodedVertex(
+    getSimpleEncodedVertex(
         index: number,
         vertexOffsets: Int32Array | null,
         vertexBuffer: Int32Array,
@@ -43,7 +43,7 @@ export class GeometryVectorUtils {
         return [x, y];
     }
 
-    static getVertex(
+    getVertex(
         index: number,
         vertexOffsets: Int32Array | null,
         vertexBuffer: Int32Array,
@@ -66,7 +66,7 @@ export class GeometryVectorUtils {
         return [x, y];
     }
 
-    static convertGeometryVector(geometryVector: IGeometryVector): CoordinatesArray[] {
+    convertGeometryVector(geometryVector: IGeometryVector): CoordinatesArray[] {
         const geometries: CoordinatesArray[] = new Array(geometryVector.numGeometries);
         let partOffsetCounter = 1;
         let ringOffsetsCounter = 1;
