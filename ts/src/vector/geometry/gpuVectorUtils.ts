@@ -4,36 +4,27 @@ import { type CoordinatesArray } from "./geometryVector";
 import { type IGpuVector } from "./gpuVector";
 
 /**
- * Utility functions for converting GPU vectors to coordinate arrays.
+ * Converts a GPU vector to an array of coordinate arrays.
  *
- * GPU vectors contain pre-tessellated polygon data optimized for GPU rendering.
- * These utilities extract coordinate representations from the flattened vertex buffers
- * using topology information.
+ * Only supports POLYGON and MULTIPOLYGON geometry types, as GPU vectors
+ * are specifically designed for tessellated polygon rendering.
+ *
+ * The vertex buffer contains flattened x,y coordinates that are reconstructed
+ * into rings using the topology vector offsets. Polygon rings are automatically
+ * closed (last vertex duplicates first) per MVT format requirements.
+ *
+ * @param gpuVector - The GPU vector containing tessellated geometry data
+ * @returns Array of coordinate arrays, one per geometry
+ * @throws Error if the GPU vector lacks topology information
+ *
+ * @example
+ * ```typescript
+ * // GPU vector with one polygon (outer ring + hole)
+ * const geometries = getGeometries(gpuVector);
+ * // geometries[0] = [outerRing, holeRing]
+ * ```
  */
-export const GpuVectorUtils = {
-
-    /**
-     * Converts a GPU vector to an array of coordinate arrays.
-     *
-     * Only supports POLYGON and MULTIPOLYGON geometry types, as GPU vectors
-     * are specifically designed for tessellated polygon rendering.
-     *
-     * The vertex buffer contains flattened x,y coordinates that are reconstructed
-     * into rings using the topology vector offsets. Polygon rings are automatically
-     * closed (last vertex duplicates first) per MVT format requirements.
-     *
-     * @param gpuVector - The GPU vector containing tessellated geometry data
-     * @returns Array of coordinate arrays, one per geometry
-     * @throws Error if the GPU vector lacks topology information
-     *
-     * @example
-     * ```typescript
-     * // GPU vector with one polygon (outer ring + hole)
-     * const geometries = GpuVectorUtils.getGeometries(gpuVector);
-     * // geometries[0] = [outerRing, holeRing]
-     * ```
-     */
-    getGeometries(gpuVector: IGpuVector): CoordinatesArray[] {
+export function getGeometries(gpuVector: IGpuVector): CoordinatesArray[] {
         const topologyVector = gpuVector.topologyVector;
         if (!topologyVector) {
             throw new Error("Cannot convert GpuVector to coordinates without topology information");
@@ -124,4 +115,3 @@ export const GpuVectorUtils = {
         }
         return geometries;
     }
-}

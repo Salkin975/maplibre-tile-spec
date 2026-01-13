@@ -3,7 +3,7 @@ import type TopologyVector from "./topologyVector";
 import { type IGeometryCollection } from "./geometryCollection";
 
 
-export interface IGpuVector extends IGeometryCollection, Iterable<CoordinatesArray> {
+export interface IGpuVector extends IGeometryCollection {
 
     readonly triangleOffsets: Int32Array;
 
