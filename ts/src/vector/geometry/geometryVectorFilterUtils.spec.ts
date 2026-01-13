@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { GeometryFilterUtils } from "./geometryFilterUtils";
+import { GeometryVectorFilterUtils } from "./geometryVectorFilterUtils";
 import { GEOMETRY_TYPE, SINGLE_PART_GEOMETRY_TYPE } from "./geometryType";
 import { FlatSelectionVector } from "../filter/flatSelectionVector";
 import { ConstSelectionVector } from "../filter/constSelectionVector";
@@ -8,7 +8,7 @@ import { ConstGeometryVector } from "./constGeometryVector";
 describe("GeometryFilterUtils", () => {
     describe("filterConst", () => {
         it("should return full selection for exact match", () => {
-            const result = GeometryFilterUtils.filterConst(
+            const result = GeometryVectorFilterUtils.filterConst(
                 SINGLE_PART_GEOMETRY_TYPE.POINT,
                 GEOMETRY_TYPE.POINT,
                 10
@@ -18,7 +18,7 @@ describe("GeometryFilterUtils", () => {
         });
 
         it("should return full selection for multi-type match", () => {
-            const result = GeometryFilterUtils.filterConst(
+            const result = GeometryVectorFilterUtils.filterConst(
                 SINGLE_PART_GEOMETRY_TYPE.POINT,
                 GEOMETRY_TYPE.MULTIPOINT,
                 5
@@ -28,7 +28,7 @@ describe("GeometryFilterUtils", () => {
         });
 
         it("should return empty selection for no match", () => {
-            const result = GeometryFilterUtils.filterConst(
+            const result = GeometryVectorFilterUtils.filterConst(
                 SINGLE_PART_GEOMETRY_TYPE.POINT,
                 GEOMETRY_TYPE.LINESTRING,
                 10
@@ -41,7 +41,7 @@ describe("GeometryFilterUtils", () => {
     describe("filterSelectedConst", () => {
         it("should not modify limit for exact match", () => {
             const selectionVector = new FlatSelectionVector(new Uint32Array([0, 1, 2, 3, 4]));
-            GeometryFilterUtils.filterSelectedConst(
+            GeometryVectorFilterUtils.filterSelectedConst(
                 SINGLE_PART_GEOMETRY_TYPE.POINT,
                 GEOMETRY_TYPE.POINT,
                 selectionVector
@@ -51,7 +51,7 @@ describe("GeometryFilterUtils", () => {
 
         it("should not modify limit for multi-type match", () => {
             const selectionVector = new FlatSelectionVector(new Uint32Array([0, 1, 2]));
-            GeometryFilterUtils.filterSelectedConst(
+            GeometryVectorFilterUtils.filterSelectedConst(
                 SINGLE_PART_GEOMETRY_TYPE.POINT,
                 GEOMETRY_TYPE.MULTIPOINT,
                 selectionVector
@@ -61,7 +61,7 @@ describe("GeometryFilterUtils", () => {
 
         it("should set limit to 0 for no match", () => {
             const selectionVector = new FlatSelectionVector(new Uint32Array([0, 1, 2, 3]));
-            GeometryFilterUtils.filterSelectedConst(
+            GeometryVectorFilterUtils.filterSelectedConst(
                 SINGLE_PART_GEOMETRY_TYPE.POINT,
                 GEOMETRY_TYPE.LINESTRING,
                 selectionVector
@@ -73,7 +73,7 @@ describe("GeometryFilterUtils", () => {
     describe("filterFlat", () => {
         it("should return ConstSelectionVector.full when all match exactly", () => {
             const geometryTypes = new Int32Array([GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.POINT]);
-            const result = GeometryFilterUtils.filterFlat(
+            const result = GeometryVectorFilterUtils.filterFlat(
                 SINGLE_PART_GEOMETRY_TYPE.POINT,
                 geometryTypes,
                 3
@@ -84,7 +84,7 @@ describe("GeometryFilterUtils", () => {
 
         it("should return ConstSelectionVector.full when all match with multi-types", () => {
             const geometryTypes = new Int32Array([GEOMETRY_TYPE.MULTIPOINT, GEOMETRY_TYPE.MULTIPOINT]);
-            const result = GeometryFilterUtils.filterFlat(
+            const result = GeometryVectorFilterUtils.filterFlat(
                 SINGLE_PART_GEOMETRY_TYPE.POINT,
                 geometryTypes,
                 2
@@ -94,7 +94,7 @@ describe("GeometryFilterUtils", () => {
 
         it("should return ConstSelectionVector.full when all match with mixed exact and multi-type", () => {
             const geometryTypes = new Int32Array([GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.MULTIPOINT, GEOMETRY_TYPE.POINT]);
-            const result = GeometryFilterUtils.filterFlat(
+            const result = GeometryVectorFilterUtils.filterFlat(
                 SINGLE_PART_GEOMETRY_TYPE.POINT,
                 geometryTypes,
                 3
@@ -104,7 +104,7 @@ describe("GeometryFilterUtils", () => {
 
         it("should return ConstSelectionVector.empty when none match", () => {
             const geometryTypes = new Int32Array([GEOMETRY_TYPE.LINESTRING, GEOMETRY_TYPE.POLYGON, GEOMETRY_TYPE.MULTILINESTRING]);
-            const result = GeometryFilterUtils.filterFlat(
+            const result = GeometryVectorFilterUtils.filterFlat(
                 SINGLE_PART_GEOMETRY_TYPE.POINT,
                 geometryTypes,
                 3
@@ -117,7 +117,7 @@ describe("GeometryFilterUtils", () => {
             const geometryTypes = new Int32Array([
                 GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.LINESTRING,
                 GEOMETRY_TYPE.MULTIPOINT, GEOMETRY_TYPE.POLYGON, GEOMETRY_TYPE.POINT]);
-            const result = GeometryFilterUtils.filterFlat(
+            const result = GeometryVectorFilterUtils.filterFlat(
                 SINGLE_PART_GEOMETRY_TYPE.POINT,
                 geometryTypes,
                 5
@@ -134,7 +134,7 @@ describe("GeometryFilterUtils", () => {
             const geometryTypes = new Int32Array([GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.LINESTRING, GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.POLYGON]);
             const selectionVector = new FlatSelectionVector(new Uint32Array([0, 2]));
 
-            GeometryFilterUtils.filterSelectedFlat(
+            GeometryVectorFilterUtils.filterSelectedFlat(
                 SINGLE_PART_GEOMETRY_TYPE.POINT,
                 geometryTypes,
                 selectionVector
@@ -151,7 +151,7 @@ describe("GeometryFilterUtils", () => {
                 GEOMETRY_TYPE.MULTIPOINT, GEOMETRY_TYPE.POLYGON, GEOMETRY_TYPE.POINT]);
             const selectionVector = new FlatSelectionVector(new Uint32Array([0, 1, 2, 3, 4]));
 
-            GeometryFilterUtils.filterSelectedFlat(
+            GeometryVectorFilterUtils.filterSelectedFlat(
                 SINGLE_PART_GEOMETRY_TYPE.POINT,
                 geometryTypes,
                 selectionVector
@@ -167,7 +167,7 @@ describe("GeometryFilterUtils", () => {
             const geometryTypes = new Int32Array([GEOMETRY_TYPE.LINESTRING, GEOMETRY_TYPE.POLYGON, GEOMETRY_TYPE.MULTILINESTRING]);
             const selectionVector = new FlatSelectionVector(new Uint32Array([0, 1, 2]));
 
-            GeometryFilterUtils.filterSelectedFlat(
+            GeometryVectorFilterUtils.filterSelectedFlat(
                 SINGLE_PART_GEOMETRY_TYPE.POINT,
                 geometryTypes,
                 selectionVector
@@ -180,7 +180,7 @@ describe("GeometryFilterUtils", () => {
             const geometryTypes = new Int32Array([GEOMETRY_TYPE.MULTIPOINT, GEOMETRY_TYPE.LINESTRING, GEOMETRY_TYPE.POINT]);
             const selectionVector = new FlatSelectionVector(new Uint32Array([0, 1, 2]));
 
-            GeometryFilterUtils.filterSelectedFlat(
+            GeometryVectorFilterUtils.filterSelectedFlat(
                 SINGLE_PART_GEOMETRY_TYPE.POINT,
                 geometryTypes,
                 selectionVector
@@ -195,7 +195,7 @@ describe("GeometryFilterUtils", () => {
             const geometryTypes = new Int32Array([GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.LINESTRING, GEOMETRY_TYPE.POLYGON, GEOMETRY_TYPE.MULTILINESTRING]);
             const selectionVector = new FlatSelectionVector(new Uint32Array([1, 2]));
 
-            GeometryFilterUtils.filterSelectedFlat(
+            GeometryVectorFilterUtils.filterSelectedFlat(
                 SINGLE_PART_GEOMETRY_TYPE.LINESTRING,
                 geometryTypes,
                 selectionVector
@@ -208,27 +208,27 @@ describe("GeometryFilterUtils", () => {
 
     describe("containsPolygonGeometryConst", () => {
         it("should return true for POLYGON", () => {
-            expect(GeometryFilterUtils.containsPolygonGeometryConst(GEOMETRY_TYPE.POLYGON)).toBe(true);
+            expect(GeometryVectorFilterUtils.containsPolygonGeometryConst(GEOMETRY_TYPE.POLYGON)).toBe(true);
         });
 
         it("should return true for MULTIPOLYGON", () => {
-            expect(GeometryFilterUtils.containsPolygonGeometryConst(GEOMETRY_TYPE.MULTIPOLYGON)).toBe(true);
+            expect(GeometryVectorFilterUtils.containsPolygonGeometryConst(GEOMETRY_TYPE.MULTIPOLYGON)).toBe(true);
         });
 
         it("should return false for POINT", () => {
-            expect(GeometryFilterUtils.containsPolygonGeometryConst(GEOMETRY_TYPE.POINT)).toBe(false);
+            expect(GeometryVectorFilterUtils.containsPolygonGeometryConst(GEOMETRY_TYPE.POINT)).toBe(false);
         });
 
         it("should return false for MULTIPOINT", () => {
-            expect(GeometryFilterUtils.containsPolygonGeometryConst(GEOMETRY_TYPE.MULTIPOINT)).toBe(false);
+            expect(GeometryVectorFilterUtils.containsPolygonGeometryConst(GEOMETRY_TYPE.MULTIPOINT)).toBe(false);
         });
 
         it("should return false for LINESTRING", () => {
-            expect(GeometryFilterUtils.containsPolygonGeometryConst(GEOMETRY_TYPE.LINESTRING)).toBe(false);
+            expect(GeometryVectorFilterUtils.containsPolygonGeometryConst(GEOMETRY_TYPE.LINESTRING)).toBe(false);
         });
 
         it("should return false for MULTILINESTRING", () => {
-            expect(GeometryFilterUtils.containsPolygonGeometryConst(GEOMETRY_TYPE.MULTILINESTRING)).toBe(false);
+            expect(GeometryVectorFilterUtils.containsPolygonGeometryConst(GEOMETRY_TYPE.MULTILINESTRING)).toBe(false);
         });
     });
 
@@ -237,35 +237,35 @@ describe("GeometryFilterUtils", () => {
             const geometryTypes1 = new Int32Array([GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.POLYGON, GEOMETRY_TYPE.LINESTRING]);
             const geometryTypes2 = new Int32Array([GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.MULTIPOLYGON, GEOMETRY_TYPE.LINESTRING]);
 
-            expect(GeometryFilterUtils.containsPolygonGeometryFlat(geometryTypes1)).toBe(true);
-            expect(GeometryFilterUtils.containsPolygonGeometryFlat(geometryTypes2)).toBe(true);
+            expect(GeometryVectorFilterUtils.containsPolygonGeometryFlat(geometryTypes1)).toBe(true);
+            expect(GeometryVectorFilterUtils.containsPolygonGeometryFlat(geometryTypes2)).toBe(true);
         });
 
         it("should return true when array contains both POLYGON and MULTIPOLYGON", () => {
             const geometryTypes = new Int32Array([GEOMETRY_TYPE.POLYGON, GEOMETRY_TYPE.MULTIPOLYGON]);
-            expect(GeometryFilterUtils.containsPolygonGeometryFlat(geometryTypes)).toBe(true);
+            expect(GeometryVectorFilterUtils.containsPolygonGeometryFlat(geometryTypes)).toBe(true);
         });
 
         it("should return false when array contains no polygons", () => {
             const geometryTypes = new Int32Array([GEOMETRY_TYPE.POINT,GEOMETRY_TYPE.LINESTRING,GEOMETRY_TYPE.MULTIPOINT,GEOMETRY_TYPE.MULTILINESTRING]);
-            expect(GeometryFilterUtils.containsPolygonGeometryFlat(geometryTypes)).toBe(false);
+            expect(GeometryVectorFilterUtils.containsPolygonGeometryFlat(geometryTypes)).toBe(false);
         });
 
         it("should return false for empty array", () => {
             const geometryTypes = new Int32Array([]);
-            expect(GeometryFilterUtils.containsPolygonGeometryFlat(geometryTypes)).toBe(false);
+            expect(GeometryVectorFilterUtils.containsPolygonGeometryFlat(geometryTypes)).toBe(false);
         });
     });
 
     describe("containsSingleGeometryTypeConst", () => {
         it("should always return true", () => {
-            expect(GeometryFilterUtils.containsSingleGeometryTypeConst()).toBe(true);
+            expect(GeometryVectorFilterUtils.containsSingleGeometryTypeConst()).toBe(true);
         });
     });
 
     describe("containsSingleGeometryTypeFlat", () => {
         it("should always return false", () => {
-            expect(GeometryFilterUtils.containsSingleGeometryTypeFlat()).toBe(false);
+            expect(GeometryVectorFilterUtils.containsSingleGeometryTypeFlat()).toBe(false);
         });
     });
 });

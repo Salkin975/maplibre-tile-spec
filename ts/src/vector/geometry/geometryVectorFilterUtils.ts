@@ -3,7 +3,7 @@ import { type SelectionVector } from "../filter/selectionVector";
 import { ConstSelectionVector } from "../filter/constSelectionVector";
 import { FlatSelectionVector } from "../filter/flatSelectionVector";
 
-export const GeometryFilterUtils = {
+export const GeometryVectorFilterUtils = {
 
     filterConst(
         targetType: SINGLE_PART_GEOMETRY_TYPE,
