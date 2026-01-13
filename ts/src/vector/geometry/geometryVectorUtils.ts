@@ -30,7 +30,7 @@ class MvtGeometryFactory {
     }
 }
 
-export class GeometryVectorUtils {
+export const GeometryVectorUtils = {
 
     getSimpleEncodedVertex(
         index: number,
@@ -41,7 +41,7 @@ export class GeometryVectorUtils {
         const x = vertexBuffer[offset];
         const y = vertexBuffer[offset + 1];
         return [x, y];
-    }
+    },
 
     getVertex(
         index: number,
@@ -64,7 +64,7 @@ export class GeometryVectorUtils {
         const x = vertexBuffer[offset];
         const y = vertexBuffer[offset + 1];
         return [x, y];
-    }
+    },
 
     convertGeometryVector(geometryVector: IGeometryVector): CoordinatesArray[] {
         const geometries: CoordinatesArray[] = new Array(geometryVector.numGeometries);

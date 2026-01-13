@@ -3,7 +3,7 @@ import { type SelectionVector } from "../filter/selectionVector";
 import { ConstSelectionVector } from "../filter/constSelectionVector";
 import { FlatSelectionVector } from "../filter/flatSelectionVector";
 
-export class GeometryFilterUtils {
+export const GeometryFilterUtils = {
 
     filterConst(
         targetType: SINGLE_PART_GEOMETRY_TYPE,
@@ -15,7 +15,7 @@ export class GeometryFilterUtils {
             return ConstSelectionVector.empty(numGeometries);
         }
         return ConstSelectionVector.full(numGeometries);
-    }
+    },
 
     filterSelectedConst(
         targetType: SINGLE_PART_GEOMETRY_TYPE,
@@ -25,7 +25,7 @@ export class GeometryFilterUtils {
         if (targetType !== actualType && targetType + 3 !== actualType) {
             selectionVector.setLimit(0);
         }
-    }
+    },
 
     filterFlat(
         targetType: SINGLE_PART_GEOMETRY_TYPE,
@@ -50,7 +50,7 @@ export class GeometryFilterUtils {
             return ConstSelectionVector.full(numGeometries);
         }
         return new FlatSelectionVector(selectionVector.subarray(0, index));
-    }
+    },
 
     filterSelectedFlat(
         targetType: SINGLE_PART_GEOMETRY_TYPE,
@@ -69,11 +69,11 @@ export class GeometryFilterUtils {
         }
 
         selectionVector.setLimit(limit);
-    }
+    },
 
     containsPolygonGeometryConst(geometryType: number): boolean {
         return geometryType === GEOMETRY_TYPE.POLYGON || geometryType === GEOMETRY_TYPE.MULTIPOLYGON;
-    }
+    },
 
     containsPolygonGeometryFlat(geometryTypes: Int32Array): boolean {
         for (let i = 0; i < geometryTypes.length; i++) {
@@ -82,11 +82,11 @@ export class GeometryFilterUtils {
             }
         }
         return false;
-    }
+    },
 
     containsSingleGeometryTypeConst(): boolean {
         return true;
-    }
+    },
 
     containsSingleGeometryTypeFlat(): boolean {
         return false;

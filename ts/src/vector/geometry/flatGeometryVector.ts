@@ -1,7 +1,10 @@
-import { GeometryVector, type MortonSettings } from "./geometryVector";
+import { type IGeometryVector, type MortonSettings, type Geometry } from "./geometryVector";
 import type TopologyVector from "../../vector/geometry/topologyVector";
-import { GEOMETRY_TYPE } from "./geometryType";
+import { type SelectionVector } from "../filter/selectionVector";
+import { type SINGLE_PART_GEOMETRY_TYPE } from "./geometryType";
 import { VertexBufferType } from "./vertexBufferType";
+import { GeometryFilterUtils } from "./geometryFilterUtils";
+import { GeometryVectorUtils } from "./geometryVectorUtils";
 
 export function createFlatGeometryVector(
     geometryTypes: Int32Array,
@@ -30,18 +33,16 @@ export function createFlatGeometryVectorMortonEncoded(
     );
 }
 
-export class FlatGeometryVector extends GeometryVector {
+export class FlatGeometryVector implements IGeometryVector {
     constructor(
-        vertexBufferType: VertexBufferType,
+        private readonly _vertexBufferType: VertexBufferType,
         //TODO: refactor -> use UInt8Array
         private readonly _geometryTypes: Int32Array,
-        topologyVector: TopologyVector,
-        vertexOffsets: Int32Array,
-        vertexBuffer: Int32Array,
-        mortonSettings?: MortonSettings,
-    ) {
-        super(vertexBufferType, topologyVector, vertexOffsets, vertexBuffer, mortonSettings);
-    }
+        private readonly _topologyVector: TopologyVector,
+        private readonly _vertexOffsets: Int32Array,
+        private readonly _vertexBuffer: Int32Array,
+        private readonly _mortonSettings?: MortonSettings,
+    ) {}
 
     geometryType(index: number): number {
         return this._geometryTypes[index];
@@ -51,16 +52,61 @@ export class FlatGeometryVector extends GeometryVector {
         return this._geometryTypes.length;
     }
 
-    containsPolygonGeometry(): boolean {
-        for (let i = 0; i < this.numGeometries; i++) {
-            if (this.geometryType(i) === GEOMETRY_TYPE.POLYGON || this.geometryType(i) === GEOMETRY_TYPE.MULTIPOLYGON) {
-                return true;
-            }
+    get vertexBufferType(): VertexBufferType {
+        return this._vertexBufferType;
+    }
+
+    get topologyVector(): TopologyVector {
+        return this._topologyVector;
+    }
+
+    get vertexOffsets(): Int32Array {
+        return this._vertexOffsets;
+    }
+
+    get vertexBuffer(): Int32Array {
+        return this._vertexBuffer;
+    }
+
+    get mortonSettings(): MortonSettings | undefined {
+        return this._mortonSettings;
+    }
+
+    getVertex(index: number): [number, number] {
+        return GeometryVectorUtils.getVertex(index, this._vertexOffsets, this._vertexBuffer, this._mortonSettings);
+    }
+
+    getSimpleEncodedVertex(index: number): [number, number] {
+        return GeometryVectorUtils.getSimpleEncodedVertex(index, this._vertexOffsets, this._vertexBuffer);
+    }
+
+    getGeometries() {
+        return GeometryVectorUtils.convertGeometryVector(this);
+    }
+
+    *[Symbol.iterator](): Iterator<Geometry> {
+        const geometries = GeometryVectorUtils.convertGeometryVector(this);
+        let index = 0;
+
+        while (index < this.numGeometries) {
+            yield { coordinates: geometries[index], type: this.geometryType(index) };
+            index++;
         }
-        return false;
+    }
+
+    containsPolygonGeometry(): boolean {
+        return GeometryFilterUtils.containsPolygonGeometryFlat(this._geometryTypes);
+    }
+
+    filter(geometryType: SINGLE_PART_GEOMETRY_TYPE): SelectionVector {
+        return GeometryFilterUtils.filterFlat(geometryType, this._geometryTypes, this.numGeometries);
+    }
+
+    filterSelected(geometryType: SINGLE_PART_GEOMETRY_TYPE, selectionVector: SelectionVector): void {
+        GeometryFilterUtils.filterSelectedFlat(geometryType, this._geometryTypes, selectionVector);
     }
 
     containsSingleGeometryType(): boolean {
-        return false;
+        return GeometryFilterUtils.containsSingleGeometryTypeFlat();
     }
 }
