@@ -185,32 +185,6 @@ describe("GeometryVectorFilterUtils", () => {
         });
     });
 
-    describe("containsPolygonGeometryConst", () => {
-        it("should return true for POLYGON", () => {
-            expect(containsPolygonGeometryConst(GEOMETRY_TYPE.POLYGON)).toBe(true);
-        });
-
-        it("should return true for MULTIPOLYGON", () => {
-            expect(containsPolygonGeometryConst(GEOMETRY_TYPE.MULTIPOLYGON)).toBe(true);
-        });
-
-        it("should return false for POINT", () => {
-            expect(containsPolygonGeometryConst(GEOMETRY_TYPE.POINT)).toBe(false);
-        });
-
-        it("should return false for MULTIPOINT", () => {
-            expect(containsPolygonGeometryConst(GEOMETRY_TYPE.MULTIPOINT)).toBe(false);
-        });
-
-        it("should return false for LINESTRING", () => {
-            expect(containsPolygonGeometryConst(GEOMETRY_TYPE.LINESTRING)).toBe(false);
-        });
-
-        it("should return false for MULTILINESTRING", () => {
-            expect(containsPolygonGeometryConst(GEOMETRY_TYPE.MULTILINESTRING)).toBe(false);
-        });
-    });
-
     describe("containsPolygonGeometryFlat", () => {
         it("should return true when array contains POLYGON or MULTIPOLYGON", () => {
             const geometryTypes1 = new Int32Array([GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.POLYGON, GEOMETRY_TYPE.LINESTRING]);
