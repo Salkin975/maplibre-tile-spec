@@ -2,30 +2,27 @@ import { type SINGLE_PART_GEOMETRY_TYPE, GEOMETRY_TYPE } from "./geometryType";
 import { type SelectionVector } from "../filter/selectionVector";
 import { ConstSelectionVector } from "../filter/constSelectionVector";
 import { FlatSelectionVector } from "../filter/flatSelectionVector";
-import { type ConstGeometryVector } from "./constGeometryVector";
-import { type ConstGpuVector } from "./constGpuVector";
-import { type FlatGeometryVector } from "./flatGeometryVector";
-import { type FlatGpuVector } from "./flatGpuVector";
 
 /**
- * Filters a const geometry vector by type, returning a selection vector.
+ * Creates a selection vector for a const geometry vector filtered by type.
  *
  * For const vectors, all geometries have the same type, so either all match or none match.
  * Geometry type matching includes both exact matches and multi-type variants (e.g., POINT matches MULTIPOINT).
  *
  * @param targetType - The single-part geometry type to filter for (POINT, LINESTRING, or POLYGON)
- * @param vector - The Vector that calls this method
+ * @param vectorType - The geometry type of all geometries in the vector
+ * @param numVectorGeometries - Total number of geometries in the vector
  * @returns ConstSelectionVector.full if types match, ConstSelectionVector.empty otherwise
  */
-export function filterByTypeConst(
+export function createSelectionVectorByTypeConst(
     targetType: SINGLE_PART_GEOMETRY_TYPE,
-    vector: ConstGeometryVector | ConstGpuVector,
+    vectorType: number,
+    numVectorGeometries: number
 ): SelectionVector {
-    // Check for exact match or multi-type match (e.g., POINT matches MULTIPOINT which is POINT + 3)
-    if (targetType !== vector.geometryType() && targetType + 3 !== vector.geometryType()) {
-        return ConstSelectionVector.empty(vector.numGeometries);
+    if (targetType !== vectorType && targetType + 3 !== vectorType) {
+        return ConstSelectionVector.empty(numVectorGeometries);
     }
-    return ConstSelectionVector.full(vector.numGeometries);
+    return ConstSelectionVector.full(numVectorGeometries);
 }
 
 /**
@@ -35,50 +32,51 @@ export function filterByTypeConst(
  * If types don't match, sets selection limit to 0.
  *
  * @param targetType - The single-part geometry type to filter for
- * @param vector - The Vector that calls this method
+ * @param vectorType - The geometry type of all geometries in the vector
  * @param selectionVector - Selection vector to modify in-place
  */
-export function filterSelectedConst(
+export function filterSelectedByTypeConst(
     targetType: SINGLE_PART_GEOMETRY_TYPE,
-    vector: ConstGeometryVector | ConstGpuVector,
+    vectorType: number,
     selectionVector: SelectionVector
 ): void {
-    if (targetType !== vector.geometryType() && targetType + 3 !== vector.geometryType()) {
+    if (targetType !== vectorType && targetType + 3 !== vectorType) {
         selectionVector.setLimit(0);
     }
 }
 
 /**
- * Filters a flat geometry vector by type, returning a selection vector of matching indices.
+ * Creates a selection vector for a flat geometry vector filtered by type.
  *
  * Scans through all geometries and collects indices where the type matches.
  * Optimizes return type based on match count (empty, full, or flat selection).
  * Geometry type matching includes both exact matches and multi-type variants (e.g., POINT matches MULTIPOINT).
  *
  * @param targetType - The single-part geometry type to filter for
- * @param vector - The Vector that calls this method
+ * @param vectorGeometryTypes - Array of geometry types (one per geometry)
+ * @param numVectorGeometries - Total number of geometries in the vector
  * @returns Selection vector containing indices of matching geometries
  */
-export function filterByTypeFlat(
+export function createSelectionVectorByTypeFlat(
     targetType: SINGLE_PART_GEOMETRY_TYPE,
-    vector: FlatGeometryVector | FlatGpuVector,
+    vectorGeometryTypes: number[],
+    numVectorGeometries: number
 ): SelectionVector {
-    const selectionVector = new Uint32Array(vector.numGeometries);
+    const selectionVector = new Uint32Array(numVectorGeometries);
     let index = 0;
 
-    for (let i = 0; i < vector.numGeometries; i++) {
-        const type = vector.geometryType(i);
+    for (let i = 0; i < numVectorGeometries; i++) {
+        const type = vectorGeometryTypes[i];
         if (type === targetType || type === targetType + 3) {
             selectionVector[index++] = i;
         }
     }
 
-    // Optimize return type based on match count
     if (index === 0) {
-        return ConstSelectionVector.empty(vector.numGeometries);
+        return ConstSelectionVector.empty(numVectorGeometries);
     }
-    if (index === vector.numGeometries) {
-        return ConstSelectionVector.full(vector.numGeometries);
+    if (index === numVectorGeometries) {
+        return ConstSelectionVector.full(numVectorGeometries);
     }
     return new FlatSelectionVector(selectionVector.subarray(0, index));
 }
@@ -90,20 +88,20 @@ export function filterByTypeFlat(
  * to the front of the selection array and updating the limit.
  *
  * @param targetType - The single-part geometry type to filter for
- * @param vector - The Vector that calls this method
+ * @param vectorGeometryTypes - Array of geometry types (one per geometry)
  * @param selectionVector - Selection vector to modify in-place
  */
-export function filterSelectedFlat(
+export function filterSelectedByTypeFlat(
     targetType: SINGLE_PART_GEOMETRY_TYPE,
-    vector: FlatGeometryVector | FlatGpuVector,
+    vectorGeometryTypes: number[],
     selectionVector: SelectionVector
 ): void {
     let limit = 0;
-    const selectedValues = selectionVector.selectionValues();
+    const vector = selectionVector.selectionValues();
 
     for (let i = 0; i < selectionVector.limit; i++) {
-        const index = selectedValues[i];
-        const geometryType = vector.geometryType(index);
+        const index = vector[i]; // bug fix: was vectorGeometryTypes[i]
+        const geometryType = vectorGeometryTypes[index];
         if (targetType === geometryType || targetType + 3 === geometryType) {
             vector[limit++] = index;
         }
@@ -132,7 +130,9 @@ export function containsPolygonGeometryConst(geometryType: number): boolean {
  */
 export function containsPolygonGeometryFlat(geometryTypes: Int32Array): boolean {
     for (let i = 0; i < geometryTypes.length; i++) {
-        containsPolygonGeometryConst(geometryTypes[i]);
+        if (containsPolygonGeometryConst(geometryTypes[i])) {
+            return true; // bug fix: was ignoring return value
+        }
     }
     return false;
 }

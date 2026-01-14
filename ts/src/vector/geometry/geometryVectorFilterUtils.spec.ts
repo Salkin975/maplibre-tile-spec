@@ -2,11 +2,10 @@ import { describe, it, expect } from "vitest";
 import { GEOMETRY_TYPE, SINGLE_PART_GEOMETRY_TYPE } from "./geometryType";
 import { FlatSelectionVector } from "../filter/flatSelectionVector";
 import {
-    filterByTypeConst,
-    filterSelectedConst,
-    filterByTypeFlat,
-    filterSelectedFlat,
-    containsPolygonGeometryConst,
+    createSelectionVectorByTypeConst,
+    filterSelectedByTypeConst,
+    createSelectionVectorByTypeFlat,
+    filterSelectedByTypeFlat,
     containsPolygonGeometryFlat
 } from "./geometryVectorFilterUtils";
 import { createConstGeometryVector } from "./constGeometryVector";
@@ -41,75 +40,75 @@ function createFlatVector(geometryTypes: Int32Array) {
 }
 
 describe("GeometryVectorFilterUtils", () => {
-    describe("filterByTypeConst", () => {
+    describe("createSelectionVectorByTypeConst", () => {
         it("should return full selection for exact match", () => {
             const vector = createConstVector(10, GEOMETRY_TYPE.POINT);
-            const result = filterByTypeConst(SINGLE_PART_GEOMETRY_TYPE.POINT, vector);
+            const result = createSelectionVectorByTypeConst(SINGLE_PART_GEOMETRY_TYPE.POINT, vector.geometryType(), vector.numGeometries);
             expect(result.limit).toBe(10);
             expect(result.capacity).toBe(10);
         });
 
         it("should return full selection for multi-type match", () => {
             const vector = createConstVector(5, GEOMETRY_TYPE.MULTIPOINT);
-            const result = filterByTypeConst(SINGLE_PART_GEOMETRY_TYPE.POINT, vector);
+            const result = createSelectionVectorByTypeConst(SINGLE_PART_GEOMETRY_TYPE.POINT, vector.geometryType(), vector.numGeometries);
             expect(result.limit).toBe(5);
             expect(result.capacity).toBe(5);
         });
 
         it("should return empty selection for no match", () => {
             const vector = createConstVector(10, GEOMETRY_TYPE.LINESTRING);
-            const result = filterByTypeConst(SINGLE_PART_GEOMETRY_TYPE.POINT, vector);
+            const result = createSelectionVectorByTypeConst(SINGLE_PART_GEOMETRY_TYPE.POINT, vector.geometryType(), vector.numGeometries);
             expect(result.limit).toBe(0);
             expect(result.capacity).toBe(10);
         });
     });
 
-    describe("filterSelectedConst", () => {
+    describe("filterSelectedByTypeConst", () => {
         it("should not modify limit for exact match", () => {
             const vector = createConstVector(5, GEOMETRY_TYPE.POINT);
             const selectionVector = new FlatSelectionVector(new Uint32Array([0, 1, 2, 3, 4]));
-            filterSelectedConst(SINGLE_PART_GEOMETRY_TYPE.POINT, vector, selectionVector);
+            filterSelectedByTypeConst(SINGLE_PART_GEOMETRY_TYPE.POINT, vector.geometryType(), selectionVector);
             expect(selectionVector.limit).toBe(5);
         });
 
         it("should not modify limit for multi-type match", () => {
             const vector = createConstVector(3, GEOMETRY_TYPE.MULTIPOINT);
             const selectionVector = new FlatSelectionVector(new Uint32Array([0, 1, 2]));
-            filterSelectedConst(SINGLE_PART_GEOMETRY_TYPE.POINT, vector, selectionVector);
+            filterSelectedByTypeConst(SINGLE_PART_GEOMETRY_TYPE.POINT, vector.geometryType(), selectionVector);
             expect(selectionVector.limit).toBe(3);
         });
 
         it("should set limit to 0 for no match", () => {
             const vector = createConstVector(4, GEOMETRY_TYPE.LINESTRING);
             const selectionVector = new FlatSelectionVector(new Uint32Array([0, 1, 2, 3]));
-            filterSelectedConst(SINGLE_PART_GEOMETRY_TYPE.POINT, vector, selectionVector);
+            filterSelectedByTypeConst(SINGLE_PART_GEOMETRY_TYPE.POINT, vector.geometryType(), selectionVector);
             expect(selectionVector.limit).toBe(0);
         });
     });
 
-    describe("filterByTypeFlat", () => {
+    describe("createSelectionVectorByTypeFlat", () => {
         it("should return ConstSelectionVector.full when all match exactly", () => {
             const vector = createFlatVector(new Int32Array([GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.POINT]));
-            const result = filterByTypeFlat(SINGLE_PART_GEOMETRY_TYPE.POINT, vector);
+            const result = createSelectionVectorByTypeFlat(SINGLE_PART_GEOMETRY_TYPE.POINT, vector.geometryTypes, vector.numGeometries);
             expect(result.limit).toBe(3);
             expect(result.capacity).toBe(3);
         });
 
         it("should return ConstSelectionVector.full when all match with multi-types", () => {
             const vector = createFlatVector(new Int32Array([GEOMETRY_TYPE.MULTIPOINT, GEOMETRY_TYPE.MULTIPOINT]));
-            const result = filterByTypeFlat(SINGLE_PART_GEOMETRY_TYPE.POINT, vector);
+            const result = createSelectionVectorByTypeFlat(SINGLE_PART_GEOMETRY_TYPE.POINT, vector.geometryTypes, vector.numGeometries);
             expect(result.limit).toBe(2);
         });
 
         it("should return ConstSelectionVector.full when all match with mixed exact and multi-type", () => {
             const vector = createFlatVector(new Int32Array([GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.MULTIPOINT, GEOMETRY_TYPE.POINT]));
-            const result = filterByTypeFlat(SINGLE_PART_GEOMETRY_TYPE.POINT, vector);
+            const result = createSelectionVectorByTypeFlat(SINGLE_PART_GEOMETRY_TYPE.POINT, vector.geometryTypes, vector.numGeometries);
             expect(result.limit).toBe(3);
         });
 
         it("should return ConstSelectionVector.empty when none match", () => {
             const vector = createFlatVector(new Int32Array([GEOMETRY_TYPE.LINESTRING, GEOMETRY_TYPE.POLYGON, GEOMETRY_TYPE.MULTILINESTRING]));
-            const result = filterByTypeFlat(SINGLE_PART_GEOMETRY_TYPE.POINT, vector);
+            const result = createSelectionVectorByTypeFlat(SINGLE_PART_GEOMETRY_TYPE.POINT, vector.geometryTypes, vector.numGeometries);
             expect(result.limit).toBe(0);
             expect(result.capacity).toBe(3);
         });
@@ -119,7 +118,7 @@ describe("GeometryVectorFilterUtils", () => {
                 GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.LINESTRING,
                 GEOMETRY_TYPE.MULTIPOINT, GEOMETRY_TYPE.POLYGON, GEOMETRY_TYPE.POINT
             ]));
-            const result = filterByTypeFlat(SINGLE_PART_GEOMETRY_TYPE.POINT, vector);
+            const result = createSelectionVectorByTypeFlat(SINGLE_PART_GEOMETRY_TYPE.POINT, vector.geometryTypes, vector.numGeometries);
             expect(result.limit).toBe(3);
             expect(result.getIndex(0)).toBe(0);
             expect(result.getIndex(1)).toBe(2);
@@ -127,12 +126,12 @@ describe("GeometryVectorFilterUtils", () => {
         });
     });
 
-    describe("filterSelectedFlat", () => {
+    describe("filterSelectedByTypeFlat", () => {
         it("should filter selection vector correctly with all matching", () => {
             const vector = createFlatVector(new Int32Array([GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.LINESTRING, GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.POLYGON]));
             const selectionVector = new FlatSelectionVector(new Uint32Array([0, 2]));
 
-            filterSelectedFlat(SINGLE_PART_GEOMETRY_TYPE.POINT, vector, selectionVector);
+            filterSelectedByTypeFlat(SINGLE_PART_GEOMETRY_TYPE.POINT, vector.geometryTypes, selectionVector);
 
             expect(selectionVector.limit).toBe(2);
             expect(selectionVector.getIndex(0)).toBe(0);
@@ -146,7 +145,7 @@ describe("GeometryVectorFilterUtils", () => {
             ]));
             const selectionVector = new FlatSelectionVector(new Uint32Array([0, 1, 2, 3, 4]));
 
-            filterSelectedFlat(SINGLE_PART_GEOMETRY_TYPE.POINT, vector, selectionVector);
+            filterSelectedByTypeFlat(SINGLE_PART_GEOMETRY_TYPE.POINT, vector.geometryTypes, selectionVector);
 
             expect(selectionVector.limit).toBe(3);
             expect(selectionVector.getIndex(0)).toBe(0);
@@ -158,7 +157,7 @@ describe("GeometryVectorFilterUtils", () => {
             const vector = createFlatVector(new Int32Array([GEOMETRY_TYPE.LINESTRING, GEOMETRY_TYPE.POLYGON, GEOMETRY_TYPE.MULTILINESTRING]));
             const selectionVector = new FlatSelectionVector(new Uint32Array([0, 1, 2]));
 
-            filterSelectedFlat(SINGLE_PART_GEOMETRY_TYPE.POINT, vector, selectionVector);
+            filterSelectedByTypeFlat(SINGLE_PART_GEOMETRY_TYPE.POINT, vector.geometryTypes, selectionVector);
 
             expect(selectionVector.limit).toBe(0);
         });
@@ -167,7 +166,7 @@ describe("GeometryVectorFilterUtils", () => {
             const vector = createFlatVector(new Int32Array([GEOMETRY_TYPE.MULTIPOINT, GEOMETRY_TYPE.LINESTRING, GEOMETRY_TYPE.POINT]));
             const selectionVector = new FlatSelectionVector(new Uint32Array([0, 1, 2]));
 
-            filterSelectedFlat(SINGLE_PART_GEOMETRY_TYPE.POINT, vector, selectionVector);
+            filterSelectedByTypeFlat(SINGLE_PART_GEOMETRY_TYPE.POINT, vector.geometryTypes, selectionVector);
 
             expect(selectionVector.limit).toBe(2);
             expect(selectionVector.getIndex(0)).toBe(0);
@@ -178,7 +177,7 @@ describe("GeometryVectorFilterUtils", () => {
             const vector = createFlatVector(new Int32Array([GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.LINESTRING, GEOMETRY_TYPE.POLYGON, GEOMETRY_TYPE.MULTILINESTRING]));
             const selectionVector = new FlatSelectionVector(new Uint32Array([1, 2]));
 
-            filterSelectedFlat(SINGLE_PART_GEOMETRY_TYPE.LINESTRING, vector, selectionVector);
+            filterSelectedByTypeFlat(SINGLE_PART_GEOMETRY_TYPE.LINESTRING, vector.geometryTypes, selectionVector);
 
             expect(selectionVector.limit).toBe(1);
             expect(selectionVector.getIndex(0)).toBe(1);
