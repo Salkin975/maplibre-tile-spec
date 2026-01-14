@@ -12,33 +12,6 @@ import { createConstGeometryVector } from "./constGeometryVector";
 import { createFlatGeometryVector } from "./flatGeometryVector";
 import TopologyVector from "./topologyVector";
 
-function createSimpleTopology(numGeometries: number): TopologyVector {
-    const offsets = new Int32Array(numGeometries + 1);
-    for (let i = 0; i <= numGeometries; i++) {
-        offsets[i] = i;
-    }
-    return new TopologyVector(offsets, offsets, offsets);
-}
-
-function createConstVector(numGeometries: number, geometryType: number) {
-    return createConstGeometryVector(
-        numGeometries,
-        geometryType,
-        createSimpleTopology(numGeometries),
-        new Int32Array([]),
-        new Int32Array([])
-    );
-}
-
-function createFlatVector(geometryTypes: Int32Array) {
-    return createFlatGeometryVector(
-        geometryTypes,
-        createSimpleTopology(geometryTypes.length),
-        new Int32Array([]),
-        new Int32Array([])
-    );
-}
-
 describe("GeometryVectorFilterUtils", () => {
     describe("createSelectionVectorByTypeConst", () => {
         it("should return full selection for exact match", () => {
@@ -66,6 +39,7 @@ describe("GeometryVectorFilterUtils", () => {
     describe("filterSelectedByTypeConst", () => {
         it("should not modify limit for exact match", () => {
             const vector = createConstVector(5, GEOMETRY_TYPE.POINT);
+            // Selected feature indices
             const selectionVector = new FlatSelectionVector(new Uint32Array([0, 1, 2, 3, 4]));
             filterSelectedByTypeConst(SINGLE_PART_GEOMETRY_TYPE.POINT, vector.geometryType(), selectionVector);
             expect(selectionVector.limit).toBe(5);
@@ -73,6 +47,7 @@ describe("GeometryVectorFilterUtils", () => {
 
         it("should not modify limit for multi-type match", () => {
             const vector = createConstVector(3, GEOMETRY_TYPE.MULTIPOINT);
+            // Selected feature indices
             const selectionVector = new FlatSelectionVector(new Uint32Array([0, 1, 2]));
             filterSelectedByTypeConst(SINGLE_PART_GEOMETRY_TYPE.POINT, vector.geometryType(), selectionVector);
             expect(selectionVector.limit).toBe(3);
@@ -80,6 +55,7 @@ describe("GeometryVectorFilterUtils", () => {
 
         it("should set limit to 0 for no match", () => {
             const vector = createConstVector(4, GEOMETRY_TYPE.LINESTRING);
+            // Selected feature indices
             const selectionVector = new FlatSelectionVector(new Uint32Array([0, 1, 2, 3]));
             filterSelectedByTypeConst(SINGLE_PART_GEOMETRY_TYPE.POINT, vector.geometryType(), selectionVector);
             expect(selectionVector.limit).toBe(0);
@@ -129,6 +105,7 @@ describe("GeometryVectorFilterUtils", () => {
     describe("filterSelectedByTypeFlat", () => {
         it("should filter selection vector correctly with all matching", () => {
             const vector = createFlatVector(new Int32Array([GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.LINESTRING, GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.POLYGON]));
+            // Selected feature indices
             const selectionVector = new FlatSelectionVector(new Uint32Array([0, 2]));
 
             filterSelectedByTypeFlat(SINGLE_PART_GEOMETRY_TYPE.POINT, vector.geometryTypes, selectionVector);
@@ -143,6 +120,7 @@ describe("GeometryVectorFilterUtils", () => {
                 GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.LINESTRING,
                 GEOMETRY_TYPE.MULTIPOINT, GEOMETRY_TYPE.POLYGON, GEOMETRY_TYPE.POINT
             ]));
+            // Selected feature indices
             const selectionVector = new FlatSelectionVector(new Uint32Array([0, 1, 2, 3, 4]));
 
             filterSelectedByTypeFlat(SINGLE_PART_GEOMETRY_TYPE.POINT, vector.geometryTypes, selectionVector);
@@ -155,6 +133,7 @@ describe("GeometryVectorFilterUtils", () => {
 
         it("should set limit to 0 when no geometries match", () => {
             const vector = createFlatVector(new Int32Array([GEOMETRY_TYPE.LINESTRING, GEOMETRY_TYPE.POLYGON, GEOMETRY_TYPE.MULTILINESTRING]));
+            // Selected feature indices
             const selectionVector = new FlatSelectionVector(new Uint32Array([0, 1, 2]));
 
             filterSelectedByTypeFlat(SINGLE_PART_GEOMETRY_TYPE.POINT, vector.geometryTypes, selectionVector);
@@ -164,6 +143,7 @@ describe("GeometryVectorFilterUtils", () => {
 
         it("should handle multi-type matches", () => {
             const vector = createFlatVector(new Int32Array([GEOMETRY_TYPE.MULTIPOINT, GEOMETRY_TYPE.LINESTRING, GEOMETRY_TYPE.POINT]));
+            // Selected feature indices
             const selectionVector = new FlatSelectionVector(new Uint32Array([0, 1, 2]));
 
             filterSelectedByTypeFlat(SINGLE_PART_GEOMETRY_TYPE.POINT, vector.geometryTypes, selectionVector);
@@ -175,6 +155,7 @@ describe("GeometryVectorFilterUtils", () => {
 
         it("should respect selectionVector", () => {
             const vector = createFlatVector(new Int32Array([GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.LINESTRING, GEOMETRY_TYPE.POLYGON, GEOMETRY_TYPE.MULTILINESTRING]));
+            // Selected feature indices
             const selectionVector = new FlatSelectionVector(new Uint32Array([1, 2]));
 
             filterSelectedByTypeFlat(SINGLE_PART_GEOMETRY_TYPE.LINESTRING, vector.geometryTypes, selectionVector);
@@ -209,3 +190,45 @@ describe("GeometryVectorFilterUtils", () => {
         });
     });
 });
+
+/**
+ * Creates a constGeometryVector for testing purposes
+ *
+ * @returns constGeometryVector with custom length and type
+ *
+ * @param numGeometries - number of geometries
+ * @param geometryType - type of geometries
+ */
+function createConstVector(numGeometries: number, geometryType: number) {
+    return createConstGeometryVector(
+        numGeometries,
+        geometryType,
+        createSimpleTopology(numGeometries),
+        new Int32Array([]),
+        new Int32Array([])
+    );
+}
+
+/**
+ * Creates a flatGeometryVector for testing purposes
+ *
+ * @returns flatGeometryVector with custom length and types
+ *
+ * @param geometryTypes - array of geometryTypes of Geometries in the vector
+ */
+function createFlatVector(geometryTypes: Int32Array) {
+    return createFlatGeometryVector(
+        geometryTypes,
+        createSimpleTopology(geometryTypes.length),
+        new Int32Array([]),
+        new Int32Array([])
+    );
+}
+
+function createSimpleTopology(numGeometries: number): TopologyVector {
+    const offsets = new Int32Array(numGeometries + 1);
+    for (let i = 0; i <= numGeometries; i++) {
+        offsets[i] = i;
+    }
+    return new TopologyVector(offsets, offsets, offsets);
+}
