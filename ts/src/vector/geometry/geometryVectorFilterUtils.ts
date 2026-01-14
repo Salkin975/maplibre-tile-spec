@@ -59,7 +59,7 @@ export function filterSelectedByTypeConst(
  */
 export function createSelectionVectorByTypeFlat(
     targetType: SINGLE_PART_GEOMETRY_TYPE,
-    vectorGeometryTypes: number[],
+    vectorGeometryTypes: Int32Array,
     numVectorGeometries: number
 ): SelectionVector {
     const selectionVector = new Uint32Array(numVectorGeometries);
@@ -93,14 +93,14 @@ export function createSelectionVectorByTypeFlat(
  */
 export function filterSelectedByTypeFlat(
     targetType: SINGLE_PART_GEOMETRY_TYPE,
-    vectorGeometryTypes: number[],
+    vectorGeometryTypes: Int32Array,
     selectionVector: SelectionVector
 ): void {
     let limit = 0;
     const vector = selectionVector.selectionValues();
 
     for (let i = 0; i < selectionVector.limit; i++) {
-        const index = vector[i]; // bug fix: was vectorGeometryTypes[i]
+        const index = vector[i];
         const geometryType = vectorGeometryTypes[index];
         if (targetType === geometryType || targetType + 3 === geometryType) {
             vector[limit++] = index;
@@ -131,7 +131,7 @@ export function containsPolygonGeometryConst(geometryType: number): boolean {
 export function containsPolygonGeometryFlat(geometryTypes: Int32Array): boolean {
     for (let i = 0; i < geometryTypes.length; i++) {
         if (containsPolygonGeometryConst(geometryTypes[i])) {
-            return true; // bug fix: was ignoring return value
+            return true;
         }
     }
     return false;
