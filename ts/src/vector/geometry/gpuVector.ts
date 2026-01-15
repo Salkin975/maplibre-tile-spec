@@ -5,7 +5,7 @@ import { type IGeometryCollection } from "./geometryCollection";
 
 export interface IGpuVector extends IGeometryCollection {
 
-    readonly triangleOffsets: Int32Array;
+    readonly triangleOffsets: Uint32Array;
 
     readonly indexBuffer: Int32Array;
 
