@@ -91,7 +91,9 @@ export function greaterThanOrEqualToStringFlat(
     value: string
 ): SelectionVector {
     const encodedValue = new TextEncoder().encode(value);
-    return scanVector(vector, (i) => compareBytes(vector.data, vector.offset, i, encodedValue, ">="));
+    return scanVector(vector, (i) =>
+        compareBytes(vector.data, vector.offset, i, encodedValue, '>=')
+    );
 }
 
 /**
@@ -167,7 +169,9 @@ export function matchStringFlatSelected(
     selectionVector: SelectionVector
 ): void {
     const byLength = groupByLength(values);
-    filterSelection(vector, selectionVector, (i) => bytesMatchAny(vector.data, vector.offset, i, byLength));
+    filterSelection(vector, selectionVector, (i) =>
+        bytesMatchAny(vector.data, vector.offset, i, byLength)
+    );
 }
 
 /**
@@ -293,7 +297,7 @@ function compareBytes(
     offsetBuffer: Uint32Array,
     index: number,
     encodedValue: Uint8Array,
-    operator: ">=" | "<="
+    operator: '>=' | '<='
 ): boolean {
     const start = offsetBuffer[index];
     const length = offsetBuffer[index + 1] - start;
