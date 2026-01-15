@@ -1,7 +1,8 @@
-import { GeometryVector, type MortonSettings } from "./geometryVector";
+import { type CoordinatesArray, type IGeometryVector, type MortonSettings } from "./geometryVector";
 import type TopologyVector from "../../vector/geometry/topologyVector";
-import { GEOMETRY_TYPE } from "./geometryType";
+import { GEOMETRY_TYPE, type SINGLE_PART_GEOMETRY_TYPE } from "./geometryType";
 import { VertexBufferType } from "./vertexBufferType";
+import { type SelectionVector } from "../filter/selectionVector";
 
 export function createConstGeometryVector(
     numGeometries: number,
@@ -39,7 +40,7 @@ export function createMortonEncodedConstGeometryVector(
     );
 }
 
-export class ConstGeometryVector extends GeometryVector {
+export class ConstGeometryVector implements IGeometryVector {
     constructor(
         private readonly _numGeometries: number,
         private readonly _geometryType: number,
@@ -48,11 +49,29 @@ export class ConstGeometryVector extends GeometryVector {
         vertexOffsets: Int32Array,
         vertexBuffer: Int32Array,
         mortonSettings?: MortonSettings,
-    ) {
-        super(vertexBufferType, topologyVector, vertexOffsets, vertexBuffer, mortonSettings);
+    ) {}
+    vertexBufferType: VertexBufferType;
+    topologyVector: TopologyVector;
+    vertexOffsets: Int32Array<ArrayBufferLike>;
+    vertexBuffer: Int32Array<ArrayBufferLike>;
+    mortonSettings: MortonSettings;
+    getVertex(index: number): [number, number] {
+        throw new Error("Method not implemented.");
+    }
+    getSimpleEncodedVertex(index: number): [number, number] {
+        throw new Error("Method not implemented.");
+    }
+    getGeometries(): CoordinatesArray[] {
+        throw new Error("Method not implemented.");
+    }
+    filter(geometryType: SINGLE_PART_GEOMETRY_TYPE): SelectionVector {
+        throw new Error("Method not implemented.");
+    }
+    filterSelected(geometryType: SINGLE_PART_GEOMETRY_TYPE, selectionVector: SelectionVector): void {
+        throw new Error("Method not implemented.");
     }
 
-    geometryType(index: number): number {
+    geometryType(index?: number): number {
         return this._geometryType;
     }
 

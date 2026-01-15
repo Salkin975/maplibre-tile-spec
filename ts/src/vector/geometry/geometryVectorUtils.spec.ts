@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { GeometryVectorUtils } from "./geometryVectorUtils";
+import { convertGeometryVector, getSimpleEncodedVertex, getVertex } from "./geometryVectorUtils";
 import { GEOMETRY_TYPE } from "./geometryType";
 import TopologyVector from "./topologyVector";
 import { type MortonSettings } from "./geometryVector";
@@ -25,10 +25,10 @@ describe("GeometryVectorUtils", () => {
     describe("getSimpleEncodedVertex", () => {
         it("should decode vertex without and with vertexOffsets", () => {
             const vertexBuffer = new Int32Array([10, 20, 30, 40, 50, 60]);
-            expect(GeometryVectorUtils.getSimpleEncodedVertex(1, null, vertexBuffer)).toEqual([30, 40]);
+            expect(getSimpleEncodedVertex(1, null, vertexBuffer)).toEqual([30, 40]);
 
             const vertexOffsets = new Int32Array([0, 2, 1]);
-            expect(GeometryVectorUtils.getSimpleEncodedVertex(1, vertexOffsets, vertexBuffer)).toEqual([50, 60]);
+            expect(getSimpleEncodedVertex(1, vertexOffsets, vertexBuffer)).toEqual([50, 60]);
         });
     });
 
@@ -36,14 +36,14 @@ describe("GeometryVectorUtils", () => {
         it("should decode vertex with different configurations", () => {
             const vertexBuffer = new Int32Array([10, 20, 30, 40, 50, 60]);
 
-            expect(GeometryVectorUtils.getVertex(1, null, vertexBuffer)).toEqual([30, 40]);
-            expect(GeometryVectorUtils.getVertex(0, null, vertexBuffer, mortonSettings)).toEqual([10, 20]);
+            expect(getVertex(1, null, vertexBuffer)).toEqual([30, 40]);
+            expect(getVertex(0, null, vertexBuffer, mortonSettings)).toEqual([10, 20]);
 
             const vertexOffsets = new Int32Array([0, 2, 1]);
-            expect(GeometryVectorUtils.getVertex(1, vertexOffsets, vertexBuffer)).toEqual([50, 60]);
+            expect(getVertex(1, vertexOffsets, vertexBuffer)).toEqual([50, 60]);
 
             const morton = encodeMorton(100, 200, 15);
-            expect(GeometryVectorUtils.getVertex(0, new Int32Array([0]), new Int32Array([morton]), mortonSettings)).toEqual([100, 200]);
+            expect(getVertex(0, new Int32Array([0]), new Int32Array([morton]), mortonSettings)).toEqual([100, 200]);
         });
     });
 
@@ -74,28 +74,28 @@ describe("GeometryVectorUtils", () => {
             it("should convert points with various encodings", () => {
                 const flat = createFlatGeometryVector(
                     new Int32Array([GEOMETRY_TYPE.POINT]),
-                    new TopologyVector(new Int32Array([0, 1]), new Int32Array([0, 1]), new Int32Array([0, 1])),
+                    new TopologyVector(new Uint32Array([0, 1]), new Uint32Array([0, 1]), new Uint32Array([0, 1])),
                     new Int32Array([]),
                     new Int32Array([10, 20])
                 );
-                expect(GeometryVectorUtils.convertGeometryVector(flat)[0]).toEqual([[new Point(10, 20)]]);
+                expect(convertGeometryVector(flat)[0]).toEqual([[new Point(10, 20)]]);
 
                 const withOffsets = createFlatGeometryVector(
                     new Int32Array([GEOMETRY_TYPE.POINT]),
-                    new TopologyVector(new Int32Array([0, 1]), new Int32Array([0, 1]), new Int32Array([0, 1])),
+                    new TopologyVector(new Uint32Array([0, 1]), new Uint32Array([0, 1]), new Uint32Array([0, 1])),
                     new Int32Array([1]),
                     new Int32Array([10, 20, 30, 40])
                 );
-                expect(GeometryVectorUtils.convertGeometryVector(withOffsets)[0]).toEqual([[new Point(30, 40)]]);
+                expect(convertGeometryVector(withOffsets)[0]).toEqual([[new Point(30, 40)]]);
 
                 const morton = createFlatGeometryVectorMortonEncoded(
                     new Int32Array([GEOMETRY_TYPE.POINT]),
-                    new TopologyVector(new Int32Array([0, 1]), new Int32Array([0, 1]), new Int32Array([0, 1])),
+                    new TopologyVector(new Uint32Array([0, 1]), new Uint32Array([0, 1]), new Uint32Array([0, 1])),
                     new Int32Array([0]),
                     new Int32Array([encodeMorton(100, 200, 15)]),
                     mortonSettings
                 );
-                expect(GeometryVectorUtils.convertGeometryVector(morton)[0]).toEqual([[new Point(100, 200)]]);
+                expect(convertGeometryVector(morton)[0]).toEqual([[new Point(100, 200)]]);
             });
         });
 
@@ -103,19 +103,19 @@ describe("GeometryVectorUtils", () => {
             it("should convert multipoints", () => {
                 const flat = createFlatGeometryVector(
                     new Int32Array([GEOMETRY_TYPE.MULTIPOINT]),
-                    new TopologyVector(new Int32Array([0, 2]), new Int32Array([0]), new Int32Array([0])),
+                    new TopologyVector(new Uint32Array([0, 2]), new Uint32Array([0]), new Uint32Array([0])),
                     new Int32Array([]),
                     new Int32Array([10, 20, 30, 40])
                 );
-                expect(GeometryVectorUtils.convertGeometryVector(flat)[0]).toEqual([[new Point(10, 20)], [new Point(30, 40)]]);
+                expect(convertGeometryVector(flat)[0]).toEqual([[new Point(10, 20)], [new Point(30, 40)]]);
 
                 const withOffsets = createFlatGeometryVector(
                     new Int32Array([GEOMETRY_TYPE.MULTIPOINT]),
-                    new TopologyVector(new Int32Array([0, 2]), new Int32Array([0]), new Int32Array([0])),
+                    new TopologyVector(new Uint32Array([0, 2]), new Uint32Array([0]), new Uint32Array([0])),
                     new Int32Array([0, 2]),
                     new Int32Array([10, 20, 30, 40, 50, 60])
                 );
-                expect(GeometryVectorUtils.convertGeometryVector(withOffsets)[0]).toEqual([[new Point(10, 20)], [new Point(50, 60)]]);
+                expect(convertGeometryVector(withOffsets)[0]).toEqual([[new Point(10, 20)], [new Point(50, 60)]]);
             });
         });
 
@@ -123,40 +123,40 @@ describe("GeometryVectorUtils", () => {
             it("should convert linestrings with containsPolygon=false", () => {
                 const flat = createFlatGeometryVector(
                     new Int32Array([GEOMETRY_TYPE.LINESTRING]),
-                    new TopologyVector(new Int32Array([0, 1]), new Int32Array([0, 3]), new Int32Array([0])),
+                    new TopologyVector(new Uint32Array([0, 1]), new Uint32Array([0, 3]), new Uint32Array([0])),
                     new Int32Array([]),
                     new Int32Array([10, 20, 30, 40, 50, 60])
                 );
-                expect(GeometryVectorUtils.convertGeometryVector(flat)[0]).toEqual([[new Point(10, 20), new Point(30, 40), new Point(50, 60)]]);
+                expect(convertGeometryVector(flat)[0]).toEqual([[new Point(10, 20), new Point(30, 40), new Point(50, 60)]]);
             });
 
             it("should convert linestrings with containsPolygon=true", () => {
                 const withPolygon = createFlatGeometryVector(
                     new Int32Array([GEOMETRY_TYPE.POLYGON, GEOMETRY_TYPE.LINESTRING]),
-                    new TopologyVector(new Int32Array([0, 1, 2]), new Int32Array([0, 1, 2]), new Int32Array([0, 1, 3])),
+                    new TopologyVector(new Uint32Array([0, 1, 2]), new Uint32Array([0, 1, 2]), new Uint32Array([0, 1, 3])),
                     new Int32Array([]),
                     new Int32Array([0, 0, 10, 20, 30, 40])
                 );
-                expect(GeometryVectorUtils.convertGeometryVector(withPolygon)[1]).toEqual([[new Point(10, 20), new Point(30, 40)]]);
+                expect(convertGeometryVector(withPolygon)[1]).toEqual([[new Point(10, 20), new Point(30, 40)]]);
             });
 
             it("should convert linestrings with offsets and Morton", () => {
                 const withOffsets = createFlatGeometryVector(
                     new Int32Array([GEOMETRY_TYPE.LINESTRING]),
-                    new TopologyVector(new Int32Array([0, 1]), new Int32Array([0, 3]), new Int32Array([0])),
+                    new TopologyVector(new Uint32Array([0, 1]), new Uint32Array([0, 3]), new Uint32Array([0])),
                     new Int32Array([0, 1, 2]),
                     new Int32Array([10, 20, 30, 40, 50, 60])
                 );
-                expect(GeometryVectorUtils.convertGeometryVector(withOffsets)[0]).toEqual([[new Point(10, 20), new Point(30, 40), new Point(50, 60)]]);
+                expect(convertGeometryVector(withOffsets)[0]).toEqual([[new Point(10, 20), new Point(30, 40), new Point(50, 60)]]);
 
                 const morton = createFlatGeometryVectorMortonEncoded(
                     new Int32Array([GEOMETRY_TYPE.LINESTRING]),
-                    new TopologyVector(new Int32Array([0, 1]), new Int32Array([0, 2]), new Int32Array([0])),
+                    new TopologyVector(new Uint32Array([0, 1]), new Uint32Array([0, 2]), new Uint32Array([0])),
                     new Int32Array([0, 1]),
                     new Int32Array([encodeMorton(10, 20, 15), encodeMorton(30, 40, 15)]),
                     mortonSettings
                 );
-                expect(GeometryVectorUtils.convertGeometryVector(morton)[0]).toEqual([[new Point(10, 20), new Point(30, 40)]]);
+                expect(convertGeometryVector(morton)[0]).toEqual([[new Point(10, 20), new Point(30, 40)]]);
             });
         });
 
@@ -164,11 +164,11 @@ describe("GeometryVectorUtils", () => {
             it("should convert polygon without offsets", () => {
                 const poly = createFlatGeometryVector(
                     new Int32Array([GEOMETRY_TYPE.POLYGON]),
-                    new TopologyVector(new Int32Array([0, 1]), new Int32Array([0, 2]), new Int32Array([0, 4, 8])),
+                    new TopologyVector(new Uint32Array([0, 1]), new Uint32Array([0, 2]), new Uint32Array([0, 4, 8])),
                     new Int32Array([]),
                     new Int32Array([0, 0, 10, 0, 10, 10, 0, 10, 2, 2, 8, 2, 8, 8, 2, 8])
                 );
-                const result = GeometryVectorUtils.convertGeometryVector(poly);
+                const result = convertGeometryVector(poly);
                 expect(result[0][0]).toEqual([new Point(0, 0), new Point(10, 0), new Point(10, 10), new Point(0, 10), new Point(0, 0)]);
                 expect(result[0][1]).toEqual([new Point(2, 2), new Point(8, 2), new Point(8, 8), new Point(2, 8), new Point(2, 2)]);
             });
@@ -176,21 +176,21 @@ describe("GeometryVectorUtils", () => {
             it("should convert polygon with VEC_2 offsets single ring", () => {
                 const poly = createFlatGeometryVector(
                     new Int32Array([GEOMETRY_TYPE.POLYGON]),
-                    new TopologyVector(new Int32Array([0, 1]), new Int32Array([0, 1]), new Int32Array([0, 3])),
+                    new TopologyVector(new Uint32Array([0, 1]), new Uint32Array([0, 1]), new Uint32Array([0, 3])),
                     new Int32Array([0, 1, 2]),
                     new Int32Array([0, 0, 10, 0, 10, 10])
                 );
-                expect(GeometryVectorUtils.convertGeometryVector(poly)[0][0]).toEqual([new Point(0, 0), new Point(10, 0), new Point(10, 10), new Point(0, 0)]);
+                expect(convertGeometryVector(poly)[0][0]).toEqual([new Point(0, 0), new Point(10, 0), new Point(10, 10), new Point(0, 0)]);
             });
 
             it("should convert polygon with VEC_2 offsets multiple rings", () => {
                 const poly = createFlatGeometryVector(
                     new Int32Array([GEOMETRY_TYPE.POLYGON]),
-                    new TopologyVector(new Int32Array([0, 1]), new Int32Array([0, 2]), new Int32Array([0, 4, 8])),
+                    new TopologyVector(new Uint32Array([0, 1]), new Uint32Array([0, 2]), new Uint32Array([0, 4, 8])),
                     new Int32Array([0, 1, 2, 3, 4, 5, 6, 7]),
                     new Int32Array([0, 0, 10, 0, 10, 10, 0, 10, 2, 2, 8, 2, 8, 8, 2, 8])
                 );
-                const result = GeometryVectorUtils.convertGeometryVector(poly);
+                const result = convertGeometryVector(poly);
                 expect(result[0][0]).toEqual([new Point(0, 0), new Point(10, 0), new Point(10, 10), new Point(0, 10), new Point(0, 0)]);
                 expect(result[0][1]).toEqual([new Point(2, 2), new Point(8, 2), new Point(8, 8), new Point(2, 8), new Point(2, 2)]);
             });
@@ -198,16 +198,16 @@ describe("GeometryVectorUtils", () => {
             it("should convert polygon with Morton encoding", () => {
                 const singleRing = createFlatGeometryVectorMortonEncoded(
                     new Int32Array([GEOMETRY_TYPE.POLYGON]),
-                    new TopologyVector(new Int32Array([0, 1]), new Int32Array([0, 1]), new Int32Array([0, 3])),
+                    new TopologyVector(new Uint32Array([0, 1]), new Uint32Array([0, 1]), new Uint32Array([0, 3])),
                     new Int32Array([0, 1, 2]),
                     new Int32Array([encodeMorton(0, 0, 15), encodeMorton(10, 0, 15), encodeMorton(10, 10, 15)]),
                     mortonSettings
                 );
-                expect(GeometryVectorUtils.convertGeometryVector(singleRing)[0][0]).toEqual([new Point(0, 0), new Point(10, 0), new Point(10, 10), new Point(0, 0)]);
+                expect(convertGeometryVector(singleRing)[0][0]).toEqual([new Point(0, 0), new Point(10, 0), new Point(10, 10), new Point(0, 0)]);
 
                 const multiRing = createFlatGeometryVectorMortonEncoded(
                     new Int32Array([GEOMETRY_TYPE.POLYGON]),
-                    new TopologyVector(new Int32Array([0, 1]), new Int32Array([0, 2]), new Int32Array([0, 4, 8])),
+                    new TopologyVector(new Uint32Array([0, 1]), new Uint32Array([0, 2]), new Uint32Array([0, 4, 8])),
                     new Int32Array([0, 1, 2, 3, 4, 5, 6, 7]),
                     new Int32Array([
                         encodeMorton(0, 0, 15), encodeMorton(10, 0, 15), encodeMorton(10, 10, 15), encodeMorton(0, 10, 15),
@@ -215,7 +215,7 @@ describe("GeometryVectorUtils", () => {
                     ]),
                     mortonSettings
                 );
-                const result = GeometryVectorUtils.convertGeometryVector(multiRing);
+                const result = convertGeometryVector(multiRing);
                 expect(result[0][0]).toEqual([new Point(0, 0), new Point(10, 0), new Point(10, 10), new Point(0, 10), new Point(0, 0)]);
                 expect(result[0][1]).toEqual([new Point(2, 2), new Point(8, 2), new Point(8, 8), new Point(2, 8), new Point(2, 2)]);
             });
@@ -225,11 +225,11 @@ describe("GeometryVectorUtils", () => {
             it("should convert multilinestring without polygon", () => {
                 const mls = createFlatGeometryVector(
                     new Int32Array([GEOMETRY_TYPE.MULTILINESTRING]),
-                    new TopologyVector(new Int32Array([0, 2]), new Int32Array([0, 2, 4]), new Int32Array([0])),
+                    new TopologyVector(new Uint32Array([0, 2]), new Uint32Array([0, 2, 4]), new Uint32Array([0])),
                     new Int32Array([]),
                     new Int32Array([10, 20, 30, 40, 50, 60, 70, 80])
                 );
-                const result = GeometryVectorUtils.convertGeometryVector(mls);
+                const result = convertGeometryVector(mls);
                 expect(result[0][0]).toEqual([new Point(10, 20), new Point(30, 40)]);
                 expect(result[0][1]).toEqual([new Point(50, 60), new Point(70, 80)]);
             });
@@ -237,11 +237,11 @@ describe("GeometryVectorUtils", () => {
             it("should convert multilinestring with polygon", () => {
                 const mls = createFlatGeometryVector(
                     new Int32Array([GEOMETRY_TYPE.POLYGON, GEOMETRY_TYPE.MULTILINESTRING]),
-                    new TopologyVector(new Int32Array([0, 1, 3]), new Int32Array([0, 1, 2, 3]), new Int32Array([0, 1, 3, 5])),
+                    new TopologyVector(new Uint32Array([0, 1, 3]), new Uint32Array([0, 1, 2, 3]), new Uint32Array([0, 1, 3, 5])),
                     new Int32Array([0, 1, 2, 3, 4]),
                     new Int32Array([0, 0, 10, 20, 30, 40, 50, 60, 70, 80])
                 );
-                const result = GeometryVectorUtils.convertGeometryVector(mls);
+                const result = convertGeometryVector(mls);
                 expect(result[1][0]).toEqual([new Point(10, 20), new Point(30, 40)]);
                 expect(result[1][1]).toEqual([new Point(50, 60), new Point(70, 80)]);
             });
@@ -249,23 +249,23 @@ describe("GeometryVectorUtils", () => {
             it("should convert multilinestring with Morton", () => {
                 const mls = createFlatGeometryVectorMortonEncoded(
                     new Int32Array([GEOMETRY_TYPE.MULTILINESTRING]),
-                    new TopologyVector(new Int32Array([0, 2]), new Int32Array([0, 2, 4]), new Int32Array([0])),
+                    new TopologyVector(new Uint32Array([0, 2]), new Uint32Array([0, 2, 4]), new Uint32Array([0])),
                     new Int32Array([0, 1, 2, 3]),
                     new Int32Array([encodeMorton(10, 20, 15), encodeMorton(30, 40, 15), encodeMorton(50, 60, 15), encodeMorton(70, 80, 15)]),
                     mortonSettings
                 );
-                const result = GeometryVectorUtils.convertGeometryVector(mls);
+                const result = convertGeometryVector(mls);
                 expect(result[0][0]).toEqual([new Point(10, 20), new Point(30, 40)]);
                 expect(result[0][1]).toEqual([new Point(50, 60), new Point(70, 80)]);
 
                 const mlsWithPoly = createFlatGeometryVectorMortonEncoded(
                     new Int32Array([GEOMETRY_TYPE.POLYGON, GEOMETRY_TYPE.MULTILINESTRING]),
-                    new TopologyVector(new Int32Array([0, 1, 2]), new Int32Array([0, 1, 2]), new Int32Array([0, 1, 3])),
+                    new TopologyVector(new Uint32Array([0, 1, 2]), new Uint32Array([0, 1, 2]), new Uint32Array([0, 1, 3])),
                     new Int32Array([0, 1, 2]),
                     new Int32Array([encodeMorton(0, 0, 15), encodeMorton(10, 20, 15), encodeMorton(30, 40, 15)]),
                     mortonSettings
                 );
-                expect(GeometryVectorUtils.convertGeometryVector(mlsWithPoly)[1][0]).toEqual([new Point(10, 20), new Point(30, 40)]);
+                expect(convertGeometryVector(mlsWithPoly)[1][0]).toEqual([new Point(10, 20), new Point(30, 40)]);
             });
         });
 
@@ -273,11 +273,11 @@ describe("GeometryVectorUtils", () => {
             it("should convert multipolygon without offsets", () => {
                 const mp = createFlatGeometryVector(
                     new Int32Array([GEOMETRY_TYPE.MULTIPOLYGON]),
-                    new TopologyVector(new Int32Array([0, 2]), new Int32Array([0, 1, 2]), new Int32Array([0, 4, 8])),
+                    new TopologyVector(new Uint32Array([0, 2]), new Uint32Array([0, 1, 2]), new Uint32Array([0, 4, 8])),
                     new Int32Array([]),
                     new Int32Array([0, 0, 10, 0, 10, 10, 0, 10, 20, 20, 30, 20, 30, 30, 20, 30])
                 );
-                const result = GeometryVectorUtils.convertGeometryVector(mp);
+                const result = convertGeometryVector(mp);
                 expect(result[0][0]).toEqual([new Point(0, 0), new Point(10, 0), new Point(10, 10), new Point(0, 10), new Point(0, 0)]);
                 expect(result[0][1]).toEqual([new Point(20, 20), new Point(30, 20), new Point(30, 30), new Point(20, 30), new Point(20, 20)]);
             });
@@ -285,11 +285,11 @@ describe("GeometryVectorUtils", () => {
             it("should convert multipolygon with offsets and multiple rings", () => {
                 const mp = createFlatGeometryVector(
                     new Int32Array([GEOMETRY_TYPE.MULTIPOLYGON]),
-                    new TopologyVector(new Int32Array([0, 1]), new Int32Array([0, 2]), new Int32Array([0, 4, 8])),
+                    new TopologyVector(new Uint32Array([0, 1]), new Uint32Array([0, 2]), new Uint32Array([0, 4, 8])),
                     new Int32Array([0, 1, 2, 3, 4, 5, 6, 7]),
                     new Int32Array([0, 0, 10, 0, 10, 10, 0, 10, 2, 2, 8, 2, 8, 8, 2, 8])
                 );
-                const result = GeometryVectorUtils.convertGeometryVector(mp);
+                const result = convertGeometryVector(mp);
                 expect(result[0][0]).toEqual([new Point(0, 0), new Point(10, 0), new Point(10, 10), new Point(0, 10), new Point(0, 0)]);
                 expect(result[0][1]).toEqual([new Point(2, 2), new Point(8, 2), new Point(8, 8), new Point(2, 8), new Point(2, 2)]);
             });
@@ -297,16 +297,16 @@ describe("GeometryVectorUtils", () => {
             it("should convert multipolygon with Morton", () => {
                 const mp = createFlatGeometryVectorMortonEncoded(
                     new Int32Array([GEOMETRY_TYPE.MULTIPOLYGON]),
-                    new TopologyVector(new Int32Array([0, 1]), new Int32Array([0, 1]), new Int32Array([0, 4])),
+                    new TopologyVector(new Uint32Array([0, 1]), new Uint32Array([0, 1]), new Uint32Array([0, 4])),
                     new Int32Array([0, 1, 2, 3]),
                     new Int32Array([encodeMorton(0, 0, 15), encodeMorton(10, 0, 15), encodeMorton(10, 10, 15), encodeMorton(0, 10, 15)]),
                     mortonSettings
                 );
-                expect(GeometryVectorUtils.convertGeometryVector(mp)[0][0]).toEqual([new Point(0, 0), new Point(10, 0), new Point(10, 10), new Point(0, 10), new Point(0, 0)]);
+                expect(convertGeometryVector(mp)[0][0]).toEqual([new Point(0, 0), new Point(10, 0), new Point(10, 10), new Point(0, 10), new Point(0, 0)]);
 
                 const mpRings = createFlatGeometryVectorMortonEncoded(
                     new Int32Array([GEOMETRY_TYPE.MULTIPOLYGON]),
-                    new TopologyVector(new Int32Array([0, 1]), new Int32Array([0, 2]), new Int32Array([0, 4, 8])),
+                    new TopologyVector(new Uint32Array([0, 1]), new Uint32Array([0, 2]), new Uint32Array([0, 4, 8])),
                     new Int32Array([0, 1, 2, 3, 4, 5, 6, 7]),
                     new Int32Array([
                         encodeMorton(0, 0, 15), encodeMorton(10, 0, 15), encodeMorton(10, 10, 15), encodeMorton(0, 10, 15),
@@ -314,7 +314,7 @@ describe("GeometryVectorUtils", () => {
                     ]),
                     mortonSettings
                 );
-                const result = GeometryVectorUtils.convertGeometryVector(mpRings);
+                const result = convertGeometryVector(mpRings);
                 expect(result[0][0]).toEqual([new Point(0, 0), new Point(10, 0), new Point(10, 10), new Point(0, 10), new Point(0, 0)]);
                 expect(result[0][1]).toEqual([new Point(2, 2), new Point(8, 2), new Point(8, 8), new Point(2, 8), new Point(2, 2)]);
             });
@@ -324,23 +324,23 @@ describe("GeometryVectorUtils", () => {
             it("should convert const vectors", () => {
                 const vec = createConstGeometryVector(
                     3, GEOMETRY_TYPE.POINT,
-                    new TopologyVector(new Int32Array([0, 1, 2, 3]), new Int32Array([0, 1, 2, 3]), new Int32Array([0, 1, 2, 3])),
+                    new TopologyVector(new Uint32Array([0, 1, 2, 3]), new Uint32Array([0, 1, 2, 3]), new Uint32Array([0, 1, 2, 3])),
                     new Int32Array([0, 1, 2]),
                     new Int32Array([10, 20, 30, 40, 50, 60])
                 );
-                const result = GeometryVectorUtils.convertGeometryVector(vec);
+                const result = convertGeometryVector(vec);
                 expect(result[0]).toEqual([[new Point(10, 20)]]);
                 expect(result[1]).toEqual([[new Point(30, 40)]]);
                 expect(result[2]).toEqual([[new Point(50, 60)]]);
 
                 const morton = createMortonEncodedConstGeometryVector(
                     2, GEOMETRY_TYPE.POINT,
-                    new TopologyVector(new Int32Array([0, 1, 2]), new Int32Array([0, 1, 2]), new Int32Array([0, 1, 2])),
+                    new TopologyVector(new Uint32Array([0, 1, 2]), new Uint32Array([0, 1, 2]), new Uint32Array([0, 1, 2])),
                     new Int32Array([0, 1]),
                     new Int32Array([encodeMorton(10, 20, 15), encodeMorton(30, 40, 15)]),
                     mortonSettings
                 );
-                const mortonResult = GeometryVectorUtils.convertGeometryVector(morton);
+                const mortonResult = convertGeometryVector(morton);
                 expect(mortonResult[0]).toEqual([[new Point(10, 20)]]);
                 expect(mortonResult[1]).toEqual([[new Point(30, 40)]]);
             });
@@ -349,11 +349,11 @@ describe("GeometryVectorUtils", () => {
         it("should throw error for unsupported geometry type", () => {
             const vec = createFlatGeometryVector(
                 new Int32Array([99]),
-                new TopologyVector(new Int32Array([0, 1]), new Int32Array([0]), new Int32Array([0])),
-                new Int32Array([]),
-                new Int32Array([])
+                new TopologyVector(new Uint32Array([0, 1]), new Uint32Array([0, 2]), new Uint32Array([0, 4, 8])),
+                new Int32Array([0, 1, 2, 3, 4, 5, 6, 7]),
+                new Int32Array([0, 0, 10, 0, 10, 10, 0, 10, 2, 2, 8, 2, 8, 8, 2, 8])
             );
-            expect(() => GeometryVectorUtils.convertGeometryVector(vec)).toThrow("The specified geometry type is currently not supported.");
+            expect(() => convertGeometryVector(vec)).toThrow("The specified geometry type is currently not supported.");
         });
     });
 });

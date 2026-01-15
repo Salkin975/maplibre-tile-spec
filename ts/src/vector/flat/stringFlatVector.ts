@@ -22,7 +22,7 @@ export function createNullableStringVector(values: (string | null)[], name: stri
     const nonNullValues = values.map(v => v === null ? new Uint8Array(0) : encoder.encode(v));
     const totalSize = nonNullValues.reduce((sum, v) => sum + v.length, 0);
 
-    const offsetBuffer = new Int32Array(values.length + 1);
+    const offsetBuffer = new Uint32Array(values.length + 1);
     const dataBuffer = new Uint8Array(totalSize);
     const nullabilityBytes = new Uint8Array(Math.ceil(values.length / 8));
 
@@ -51,7 +51,7 @@ export function createStringFlatVector(values: string[], name: string): StringFl
     const encodedValues = values.map(v => encoder.encode(v));
     const totalSize = encodedValues.reduce((sum, v) => sum + v.length, 0);
 
-    const offsetBuffer = new Int32Array(values.length + 1);
+    const offsetBuffer = new Uint32Array(values.length + 1);
     const dataBuffer = new Uint8Array(totalSize);
 
     let currentOffset = 0;

@@ -127,7 +127,7 @@ describe("StringDictionaryUtil Tests", () => {
             const sortedValues = ["apple", "banana", "cherry"];
             const sortedEncoded = sortedValues.map(v => encoder.encode(v));
             const sortedDictSize = sortedEncoded.reduce((sum, v) => sum + v.length, 0);
-            const sortedOffsetBuffer = new Int32Array(sortedValues.length + 1);
+            const sortedOffsetBuffer = new Uint32Array(sortedValues.length + 1);
             const sortedDataBuffer = new Uint8Array(sortedDictSize);
 
             let sortedOffset = 0;
@@ -159,7 +159,7 @@ describe("StringDictionaryUtil Tests", () => {
             const sortedValues = ["apple", "banana", "cherry"];
             const sortedEncoded = sortedValues.map(v => encoder.encode(v));
             const sortedDictSize = sortedEncoded.reduce((sum, v) => sum + v.length, 0);
-            const sortedOffsetBuffer = new Int32Array(sortedValues.length + 1);
+            const sortedOffsetBuffer = new Uint32Array(sortedValues.length + 1);
             const sortedDataBuffer = new Uint8Array(sortedDictSize);
 
             let sortedOffset = 0;

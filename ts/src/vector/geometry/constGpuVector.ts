@@ -1,4 +1,7 @@
-import { GpuVector } from "./gpuVector";
+import { type SelectionVector } from "../filter/selectionVector";
+import { type SINGLE_PART_GEOMETRY_TYPE } from "./geometryType";
+import { type CoordinatesArray } from "./geometryVector";
+import { type IGpuVector } from "./gpuVector";
 import type TopologyVector from "./topologyVector";
 
 export function createConstGpuVector(
@@ -8,12 +11,12 @@ export function createConstGpuVector(
     indexBuffer: Int32Array,
     vertexBuffer: Int32Array,
     topologyVector?: TopologyVector | null,
-): GpuVector {
+): IGpuVector {
     return new ConstGpuVector(numGeometries, geometryType, triangleOffsets, indexBuffer, vertexBuffer, topologyVector);
 }
 
 //TODO: extend from GeometryVector -> make topology vector optional
-export class ConstGpuVector extends GpuVector {
+export class ConstGpuVector implements IGpuVector {
     constructor(
         private readonly _numGeometries: number,
         private readonly _geometryType: number,
@@ -21,8 +24,19 @@ export class ConstGpuVector extends GpuVector {
         indexBuffer: Int32Array,
         vertexBuffer: Int32Array,
         topologyVector?: TopologyVector | null,
-    ) {
-        super(triangleOffsets, indexBuffer, vertexBuffer, topologyVector);
+    ) {}
+    triangleOffsets: Uint32Array<ArrayBufferLike>;
+    indexBuffer: Int32Array<ArrayBufferLike>;
+    vertexBuffer: Int32Array<ArrayBufferLike>;
+    topologyVector: TopologyVector;
+    getGeometries(): CoordinatesArray[] {
+        throw new Error("Method not implemented.");
+    }
+    filter(geometryType: SINGLE_PART_GEOMETRY_TYPE): SelectionVector {
+        throw new Error("Method not implemented.");
+    }
+    filterSelected(geometryType: SINGLE_PART_GEOMETRY_TYPE, selectionVector: SelectionVector): void {
+        throw new Error("Method not implemented.");
     }
 
     geometryType(index: number): number {
