@@ -1,7 +1,8 @@
-import { GeometryVector, type MortonSettings } from "./geometryVector";
+import { type CoordinatesArray, type IGeometryVector, type MortonSettings } from "./geometryVector";
 import type TopologyVector from "../../vector/geometry/topologyVector";
-import { GEOMETRY_TYPE } from "./geometryType";
+import { GEOMETRY_TYPE, type SINGLE_PART_GEOMETRY_TYPE } from "./geometryType";
 import { VertexBufferType } from "./vertexBufferType";
+import { type SelectionVector } from "../filter/selectionVector";
 
 export function createFlatGeometryVector(
     geometryTypes: Int32Array,
@@ -30,7 +31,7 @@ export function createFlatGeometryVectorMortonEncoded(
     );
 }
 
-export class FlatGeometryVector extends GeometryVector {
+export class FlatGeometryVector implements IGeometryVector {
     constructor(
         vertexBufferType: VertexBufferType,
         //TODO: refactor -> use UInt8Array
@@ -39,8 +40,31 @@ export class FlatGeometryVector extends GeometryVector {
         vertexOffsets: Int32Array,
         vertexBuffer: Int32Array,
         mortonSettings?: MortonSettings,
-    ) {
-        super(vertexBufferType, topologyVector, vertexOffsets, vertexBuffer, mortonSettings);
+    ) {}
+    vertexBufferType: VertexBufferType;
+    topologyVector: TopologyVector;
+    vertexOffsets: Int32Array<ArrayBufferLike>;
+    vertexBuffer: Int32Array<ArrayBufferLike>;
+    mortonSettings: MortonSettings;
+
+    get geometryTypes(): Int32Array {
+        return this._geometryTypes;
+    }
+
+    getVertex(index: number): [number, number] {
+        throw new Error("Method not implemented.");
+    }
+    getSimpleEncodedVertex(index: number): [number, number] {
+        throw new Error("Method not implemented.");
+    }
+    getGeometries(): CoordinatesArray[] {
+        throw new Error("Method not implemented.");
+    }
+    filter(geometryType: SINGLE_PART_GEOMETRY_TYPE): SelectionVector {
+        throw new Error("Method not implemented.");
+    }
+    filterSelected(geometryType: SINGLE_PART_GEOMETRY_TYPE, selectionVector: SelectionVector): void {
+        throw new Error("Method not implemented.");
     }
 
     geometryType(index: number): number {

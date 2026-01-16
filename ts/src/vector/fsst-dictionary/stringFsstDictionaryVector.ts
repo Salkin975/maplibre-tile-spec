@@ -105,7 +105,7 @@ export function createStringFsstDictionaryVector(values: (string | null)[], name
     // Create FSST-compressed dictionary
     const compressedSize = encodedDict.reduce((sum, v) => sum + v.length * 2, 0);
     const dictionaryBuffer = new Uint8Array(compressedSize);
-    const offsetBuffer = new Int32Array(uniqueValues.length + 1);
+    const offsetBuffer = new Uint32Array(uniqueValues.length + 1);
     let compressedOffset = 0;
     let decompressedOffset = 0;
     offsetBuffer[0] = 0;
@@ -135,7 +135,7 @@ export function createStringFsstDictionaryVector(values: (string | null)[], name
         }
     }
 
-    const symbolOffsetBuffer = new Int32Array([0, 0]);
+    const symbolOffsetBuffer = new Uint32Array([0, 0]);
     const symbolTableBuffer = new Uint8Array(0);
     const bitVector = new BitVector(nullabilityBytes, values.length);
 

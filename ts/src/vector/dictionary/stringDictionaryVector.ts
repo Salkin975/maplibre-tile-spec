@@ -50,7 +50,7 @@ export function createStringDictionaryVector(values: (string | null)[], name: st
 
     // Create dictionary buffers
     const dictSize = encodedDict.reduce((sum, v) => sum + v.length, 0);
-    const offsetBuffer = new Int32Array(uniqueValues.length + 1);
+    const offsetBuffer = new Uint32Array(uniqueValues.length + 1);
     const dataBuffer = new Uint8Array(dictSize);
 
     let currentOffset = 0;

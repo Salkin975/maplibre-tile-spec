@@ -226,7 +226,7 @@ function createFlatVector(geometryTypes: Int32Array) {
 }
 
 function createSimpleTopology(numGeometries: number): TopologyVector {
-    const offsets = new Int32Array(numGeometries + 1);
+    const offsets = new Uint32Array(numGeometries + 1);
     for (let i = 0; i <= numGeometries; i++) {
         offsets[i] = i;
     }

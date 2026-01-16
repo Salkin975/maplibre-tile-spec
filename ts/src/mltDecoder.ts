@@ -30,9 +30,9 @@ import { DoubleFlatVector } from "./vector/flat/doubleFlatVector";
 import { decodeEmbeddedTileSetMetadata } from "./metadata/tileset/embeddedTilesetMetadataDecoder";
 import { hasStreamCount } from "./metadata/tileset/typeMap";
 import { type StreamMetadata } from "./metadata/tile/streamMetadataDecoder";
-import { type GeometryVector } from "./vector/geometry/geometryVector";
+import { type IGeometryVector } from "./vector/geometry/geometryVector";
 import type Vector from "./vector/vector";
-import { type GpuVector } from "./vector/geometry/gpuVector";
+import { type IGpuVector } from "./vector/geometry/gpuVector";
 
 const ID_COLUMN_NAME = "id";
 const GEOMETRY_COLUMN_NAME = "geometry";
@@ -76,7 +76,7 @@ export default function decodeTile(
 
         // Decode columns from streams
         let idVector: IntVector | null = null;
-        let geometryVector: GeometryVector | GpuVector | null = null;
+        let geometryVector: IGeometryVector | IGpuVector | null = null;
         const propertyVectors: Vector[] = [];
         let numFeatures = 0;
 

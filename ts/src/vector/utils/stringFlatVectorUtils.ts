@@ -91,7 +91,7 @@ export function greaterThanOrEqualToStringFlat(
     value: string
 ): SelectionVector {
     const encodedValue = new TextEncoder().encode(value);
-    return scanVector(vector, i =>
+    return scanVector(vector, (i) =>
         compareBytes(vector.data, vector.offset, i, encodedValue, '>=')
     );
 }
@@ -169,7 +169,7 @@ export function matchStringFlatSelected(
     selectionVector: SelectionVector
 ): void {
     const byLength = groupByLength(values);
-    filterSelection(vector, selectionVector, i =>
+    filterSelection(vector, selectionVector, (i) =>
         bytesMatchAny(vector.data, vector.offset, i, byLength)
     );
 }
@@ -250,7 +250,7 @@ function groupByLength(values: string[]): Map<number, Uint8Array[]> {
 
 function bytesEqual(
     dataBuffer: Uint8Array,
-    offsetBuffer: Int32Array,
+    offsetBuffer: Uint32Array,
     index: number,
     encodedValue: Uint8Array
 ): boolean {
@@ -269,7 +269,7 @@ function bytesEqual(
 
 function bytesMatchAny(
     dataBuffer: Uint8Array,
-    offsetBuffer: Int32Array,
+    offsetBuffer: Uint32Array,
     index: number,
     encodedValuesByLength: Map<number, Uint8Array[]>
 ): boolean {
@@ -294,7 +294,7 @@ function bytesMatchAny(
 
 function compareBytes(
     dataBuffer: Uint8Array,
-    offsetBuffer: Int32Array,
+    offsetBuffer: Uint32Array,
     index: number,
     encodedValue: Uint8Array,
     operator: '>=' | '<='
