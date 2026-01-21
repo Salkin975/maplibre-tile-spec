@@ -1,8 +1,18 @@
-import { type CoordinatesArray, type IGeometryVector, type MortonSettings } from "./geometryVector";
+import { type IGeometryVector, type MortonSettings } from "./geometryVector";
 import type TopologyVector from "../../vector/geometry/topologyVector";
-import { GEOMETRY_TYPE, type SINGLE_PART_GEOMETRY_TYPE } from "./geometryType";
-import { VertexBufferType } from "./vertexBufferType";
 import { type SelectionVector } from "../filter/selectionVector";
+import { type SINGLE_PART_GEOMETRY_TYPE } from "./geometryType";
+import { VertexBufferType } from "./vertexBufferType";
+import {
+    containsPolygonGeometryConst,
+    createSelectionVectorByTypeConst,
+    filterSelectedByTypeConst,
+} from "./geometryVectorFilterUtils";
+import {
+    convertGeometryVector,
+    getSimpleEncodedVertex,
+    getVertex
+} from "./geometryVectorUtils";
 
 export function createConstGeometryVector(
     numGeometries: number,
@@ -42,45 +52,41 @@ export function createMortonEncodedConstGeometryVector(
 
 export class ConstGeometryVector implements IGeometryVector {
     constructor(
-        private readonly _numGeometries: number,
-        private readonly _geometryType: number,
-        vertexBufferType: VertexBufferType,
-        topologyVector: TopologyVector,
-        vertexOffsets: Int32Array,
-        vertexBuffer: Int32Array,
-        mortonSettings?: MortonSettings,
+        public readonly numGeometries: number,
+        public readonly constGeometryType: number,
+        public readonly vertexBufferType: VertexBufferType,
+        public readonly topologyVector: TopologyVector,
+        public readonly vertexOffsets: Int32Array,
+        public readonly vertexBuffer: Int32Array,
+        public readonly mortonSettings: MortonSettings | undefined = undefined,
     ) {}
-    vertexBufferType: VertexBufferType;
-    topologyVector: TopologyVector;
-    vertexOffsets: Int32Array<ArrayBufferLike>;
-    vertexBuffer: Int32Array<ArrayBufferLike>;
-    mortonSettings: MortonSettings;
-    getVertex(index: number): [number, number] {
-        throw new Error("Method not implemented.");
-    }
-    getSimpleEncodedVertex(index: number): [number, number] {
-        throw new Error("Method not implemented.");
-    }
-    getGeometries(): CoordinatesArray[] {
-        throw new Error("Method not implemented.");
-    }
-    filter(geometryType: SINGLE_PART_GEOMETRY_TYPE): SelectionVector {
-        throw new Error("Method not implemented.");
-    }
-    filterSelected(geometryType: SINGLE_PART_GEOMETRY_TYPE, selectionVector: SelectionVector): void {
-        throw new Error("Method not implemented.");
-    }
 
     geometryType(index?: number): number {
-        return this._geometryType;
+        return this.constGeometryType;
     }
 
-    get numGeometries(): number {
-        return this._numGeometries;
+    getVertex(index: number): [number, number] {
+        return getVertex(index, this.vertexOffsets, this.vertexBuffer, this.mortonSettings);
+    }
+
+    getSimpleEncodedVertex(index: number): [number, number] {
+        return getSimpleEncodedVertex(index, this.vertexOffsets, this.vertexBuffer);
+    }
+
+    getGeometries() {
+        return convertGeometryVector(this);
     }
 
     containsPolygonGeometry(): boolean {
-        return this._geometryType === GEOMETRY_TYPE.POLYGON || this._geometryType === GEOMETRY_TYPE.MULTIPOLYGON;
+        return containsPolygonGeometryConst(this.constGeometryType);
+    }
+
+    filter(geometryType: SINGLE_PART_GEOMETRY_TYPE): SelectionVector {
+        return createSelectionVectorByTypeConst(geometryType, this.constGeometryType, this.numGeometries);
+    }
+
+    filterSelected(geometryType: SINGLE_PART_GEOMETRY_TYPE, selectionVector: SelectionVector): void {
+        filterSelectedByTypeConst(geometryType, this.constGeometryType, selectionVector);
     }
 
     containsSingleGeometryType(): boolean {

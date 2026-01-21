@@ -1,8 +1,13 @@
 import { type SelectionVector } from "../filter/selectionVector";
 import { type SINGLE_PART_GEOMETRY_TYPE } from "./geometryType";
-import { type CoordinatesArray } from "./geometryVector";
 import { type IGpuVector } from "./gpuVector";
+import { type CoordinatesArray } from "./geometryVector";
 import type TopologyVector from "./topologyVector";
+import {
+    createSelectionVectorByTypeConst,
+    filterSelectedByTypeConst,
+} from "./geometryVectorFilterUtils";
+import { getGeometries } from "./gpuVectorUtils";
 
 export function createConstGpuVector(
     numGeometries: number,
@@ -18,33 +23,28 @@ export function createConstGpuVector(
 //TODO: extend from GeometryVector -> make topology vector optional
 export class ConstGpuVector implements IGpuVector {
     constructor(
-        private readonly _numGeometries: number,
-        private readonly _geometryType: number,
-        triangleOffsets: Uint32Array,
-        indexBuffer: Int32Array,
-        vertexBuffer: Int32Array,
-        topologyVector?: TopologyVector | null,
+        public readonly numGeometries: number,
+        public readonly constGeometryType: number,
+        public readonly triangleOffsets: Uint32Array,
+        public readonly indexBuffer: Int32Array,
+        public readonly vertexBuffer: Int32Array,
+        public readonly topologyVector: TopologyVector | null = null,
     ) {}
-    triangleOffsets: Uint32Array<ArrayBufferLike>;
-    indexBuffer: Int32Array<ArrayBufferLike>;
-    vertexBuffer: Int32Array<ArrayBufferLike>;
-    topologyVector: TopologyVector;
+
+    geometryType(index?: number): number {
+        return this.constGeometryType;
+    }
+
     getGeometries(): CoordinatesArray[] {
-        throw new Error("Method not implemented.");
+        return getGeometries(this);
     }
+
     filter(geometryType: SINGLE_PART_GEOMETRY_TYPE): SelectionVector {
-        throw new Error("Method not implemented.");
+        return createSelectionVectorByTypeConst(geometryType, this.constGeometryType, this.numGeometries);
     }
+
     filterSelected(geometryType: SINGLE_PART_GEOMETRY_TYPE, selectionVector: SelectionVector): void {
-        throw new Error("Method not implemented.");
-    }
-
-    geometryType(index: number): number {
-        return this._geometryType;
-    }
-
-    get numGeometries(): number {
-        return this._numGeometries;
+        filterSelectedByTypeConst(geometryType, this.constGeometryType, selectionVector);
     }
 
     containsSingleGeometryType(): boolean {
