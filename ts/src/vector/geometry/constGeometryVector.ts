@@ -52,49 +52,25 @@ export function createMortonEncodedConstGeometryVector(
 
 export class ConstGeometryVector implements IGeometryVector {
     constructor(
-        private readonly _numGeometries: number,
-        private readonly _geometryType: number,
-        private readonly _vertexBufferType: VertexBufferType,
-        private readonly _topologyVector: TopologyVector,
-        private readonly _vertexOffsets: Int32Array,
-        private readonly _vertexBuffer: Int32Array,
-        private readonly _mortonSettings?: MortonSettings,
+        public readonly numGeometries: number,
+        public readonly constGeometryType: number,
+        public readonly vertexBufferType: VertexBufferType,
+        public readonly topologyVector: TopologyVector,
+        public readonly vertexOffsets: Int32Array,
+        public readonly vertexBuffer: Int32Array,
+        public readonly mortonSettings: MortonSettings | undefined = undefined,
     ) {}
 
     geometryType(index?: number): number {
-        return this._geometryType;
-    }
-
-    get numGeometries(): number {
-        return this._numGeometries;
-    }
-
-    get vertexBufferType(): VertexBufferType {
-        return this._vertexBufferType;
-    }
-
-    get topologyVector(): TopologyVector {
-        return this._topologyVector;
-    }
-
-    get vertexOffsets(): Int32Array {
-        return this._vertexOffsets;
-    }
-
-    get vertexBuffer(): Int32Array {
-        return this._vertexBuffer;
-    }
-
-    get mortonSettings(): MortonSettings | undefined {
-        return this._mortonSettings;
+        return this.constGeometryType;
     }
 
     getVertex(index: number): [number, number] {
-        return getVertex(index, this._vertexOffsets, this._vertexBuffer, this._mortonSettings);
+        return getVertex(index, this.vertexOffsets, this.vertexBuffer, this.mortonSettings);
     }
 
     getSimpleEncodedVertex(index: number): [number, number] {
-        return getSimpleEncodedVertex(index, this._vertexOffsets, this._vertexBuffer);
+        return getSimpleEncodedVertex(index, this.vertexOffsets, this.vertexBuffer);
     }
 
     getGeometries() {
@@ -102,15 +78,15 @@ export class ConstGeometryVector implements IGeometryVector {
     }
 
     containsPolygonGeometry(): boolean {
-        return containsPolygonGeometryConst(this._geometryType);
+        return containsPolygonGeometryConst(this.constGeometryType);
     }
 
     filter(geometryType: SINGLE_PART_GEOMETRY_TYPE): SelectionVector {
-        return createSelectionVectorByTypeConst(geometryType, this._geometryType, this.numGeometries);
+        return createSelectionVectorByTypeConst(geometryType, this.constGeometryType, this.numGeometries);
     }
 
     filterSelected(geometryType: SINGLE_PART_GEOMETRY_TYPE, selectionVector: SelectionVector): void {
-        filterSelectedByTypeConst(geometryType, this._geometryType, selectionVector);
+        filterSelectedByTypeConst(geometryType, this.constGeometryType, selectionVector);
     }
 
     containsSingleGeometryType(): boolean {
