@@ -6,14 +6,7 @@ import { type MortonSettings } from "./geometryVector";
 import Point from "@mapbox/point-geometry";
 import { createFlatGeometryVector, createFlatGeometryVectorMortonEncoded } from "./flatGeometryVector";
 import { createConstGeometryVector, createMortonEncodedConstGeometryVector } from "./constGeometryVector";
-
-function encodeMorton(x: number, y: number, numBits: number): number {
-    let morton = 0;
-    for (let i = 0; i < numBits; i++) {
-        morton |= ((x & (1 << i)) << i) | ((y & (1 << i)) << (i + 1));
-    }
-    return morton;
-}
+import { encodeZOrderCurve } from "../../encoding/zOrderCurveEncoder";
 
 describe("GeometryVectorUtils", () => {
     let mortonSettings: MortonSettings;
@@ -42,7 +35,7 @@ describe("GeometryVectorUtils", () => {
             const vertexOffsets = new Int32Array([0, 2, 1]);
             expect(getVertex(1, vertexOffsets, vertexBuffer)).toEqual([50, 60]);
 
-            const morton = encodeMorton(100, 200, 15);
+            const morton = encodeZOrderCurve(100, 200, 15, 0);
             expect(getVertex(0, new Int32Array([0]), new Int32Array([morton]), mortonSettings)).toEqual([100, 200]);
         });
     });
@@ -92,7 +85,7 @@ describe("GeometryVectorUtils", () => {
                     new Int32Array([GEOMETRY_TYPE.POINT]),
                     new TopologyVector(new Uint32Array([0, 1]), new Uint32Array([0, 1]), new Uint32Array([0, 1])),
                     new Int32Array([0]),
-                    new Int32Array([encodeMorton(100, 200, 15)]),
+                    new Int32Array([encodeZOrderCurve(100, 200, 15, 0)]),
                     mortonSettings
                 );
                 expect(convertGeometryVector(morton)[0]).toEqual([[new Point(100, 200)]]);
@@ -153,7 +146,7 @@ describe("GeometryVectorUtils", () => {
                     new Int32Array([GEOMETRY_TYPE.LINESTRING]),
                     new TopologyVector(new Uint32Array([0, 1]), new Uint32Array([0, 2]), new Uint32Array([0])),
                     new Int32Array([0, 1]),
-                    new Int32Array([encodeMorton(10, 20, 15), encodeMorton(30, 40, 15)]),
+                    new Int32Array([encodeZOrderCurve(10, 20, 15, 0), encodeZOrderCurve(30, 40, 15, 0)]),
                     mortonSettings
                 );
                 expect(convertGeometryVector(morton)[0]).toEqual([[new Point(10, 20), new Point(30, 40)]]);
@@ -200,7 +193,7 @@ describe("GeometryVectorUtils", () => {
                     new Int32Array([GEOMETRY_TYPE.POLYGON]),
                     new TopologyVector(new Uint32Array([0, 1]), new Uint32Array([0, 1]), new Uint32Array([0, 3])),
                     new Int32Array([0, 1, 2]),
-                    new Int32Array([encodeMorton(0, 0, 15), encodeMorton(10, 0, 15), encodeMorton(10, 10, 15)]),
+                    new Int32Array([encodeZOrderCurve(0, 0, 15, 0), encodeZOrderCurve(10, 0, 15, 0), encodeZOrderCurve(10, 10, 15, 0)]),
                     mortonSettings
                 );
                 expect(convertGeometryVector(singleRing)[0][0]).toEqual([new Point(0, 0), new Point(10, 0), new Point(10, 10), new Point(0, 0)]);
@@ -210,8 +203,8 @@ describe("GeometryVectorUtils", () => {
                     new TopologyVector(new Uint32Array([0, 1]), new Uint32Array([0, 2]), new Uint32Array([0, 4, 8])),
                     new Int32Array([0, 1, 2, 3, 4, 5, 6, 7]),
                     new Int32Array([
-                        encodeMorton(0, 0, 15), encodeMorton(10, 0, 15), encodeMorton(10, 10, 15), encodeMorton(0, 10, 15),
-                        encodeMorton(2, 2, 15), encodeMorton(8, 2, 15), encodeMorton(8, 8, 15), encodeMorton(2, 8, 15)
+                        encodeZOrderCurve(0, 0, 15, 0), encodeZOrderCurve(10, 0, 15, 0), encodeZOrderCurve(10, 10, 15, 0), encodeZOrderCurve(0, 10, 15, 0),
+                        encodeZOrderCurve(2, 2, 15, 0), encodeZOrderCurve(8, 2, 15, 0), encodeZOrderCurve(8, 8, 15, 0), encodeZOrderCurve(2, 8, 15, 0)
                     ]),
                     mortonSettings
                 );
@@ -251,7 +244,7 @@ describe("GeometryVectorUtils", () => {
                     new Int32Array([GEOMETRY_TYPE.MULTILINESTRING]),
                     new TopologyVector(new Uint32Array([0, 2]), new Uint32Array([0, 2, 4]), new Uint32Array([0])),
                     new Int32Array([0, 1, 2, 3]),
-                    new Int32Array([encodeMorton(10, 20, 15), encodeMorton(30, 40, 15), encodeMorton(50, 60, 15), encodeMorton(70, 80, 15)]),
+                    new Int32Array([encodeZOrderCurve(10, 20, 15, 0), encodeZOrderCurve(30, 40, 15, 0), encodeZOrderCurve(50, 60, 15, 0), encodeZOrderCurve(70, 80, 15, 0)]),
                     mortonSettings
                 );
                 const result = convertGeometryVector(mls);
@@ -262,7 +255,7 @@ describe("GeometryVectorUtils", () => {
                     new Int32Array([GEOMETRY_TYPE.POLYGON, GEOMETRY_TYPE.MULTILINESTRING]),
                     new TopologyVector(new Uint32Array([0, 1, 2]), new Uint32Array([0, 1, 2]), new Uint32Array([0, 1, 3])),
                     new Int32Array([0, 1, 2]),
-                    new Int32Array([encodeMorton(0, 0, 15), encodeMorton(10, 20, 15), encodeMorton(30, 40, 15)]),
+                    new Int32Array([encodeZOrderCurve(0, 0, 15, 0), encodeZOrderCurve(10, 20, 15, 0), encodeZOrderCurve(30, 40, 15, 0)]),
                     mortonSettings
                 );
                 expect(convertGeometryVector(mlsWithPoly)[1][0]).toEqual([new Point(10, 20), new Point(30, 40)]);
@@ -299,7 +292,7 @@ describe("GeometryVectorUtils", () => {
                     new Int32Array([GEOMETRY_TYPE.MULTIPOLYGON]),
                     new TopologyVector(new Uint32Array([0, 1]), new Uint32Array([0, 1]), new Uint32Array([0, 4])),
                     new Int32Array([0, 1, 2, 3]),
-                    new Int32Array([encodeMorton(0, 0, 15), encodeMorton(10, 0, 15), encodeMorton(10, 10, 15), encodeMorton(0, 10, 15)]),
+                    new Int32Array([encodeZOrderCurve(0, 0, 15, 0), encodeZOrderCurve(10, 0, 15, 0), encodeZOrderCurve(10, 10, 15, 0), encodeZOrderCurve(0, 10, 15, 0)]),
                     mortonSettings
                 );
                 expect(convertGeometryVector(mp)[0][0]).toEqual([new Point(0, 0), new Point(10, 0), new Point(10, 10), new Point(0, 10), new Point(0, 0)]);
@@ -309,8 +302,8 @@ describe("GeometryVectorUtils", () => {
                     new TopologyVector(new Uint32Array([0, 1]), new Uint32Array([0, 2]), new Uint32Array([0, 4, 8])),
                     new Int32Array([0, 1, 2, 3, 4, 5, 6, 7]),
                     new Int32Array([
-                        encodeMorton(0, 0, 15), encodeMorton(10, 0, 15), encodeMorton(10, 10, 15), encodeMorton(0, 10, 15),
-                        encodeMorton(2, 2, 15), encodeMorton(8, 2, 15), encodeMorton(8, 8, 15), encodeMorton(2, 8, 15)
+                        encodeZOrderCurve(0, 0, 15, 0), encodeZOrderCurve(10, 0, 15, 0), encodeZOrderCurve(10, 10, 15, 0), encodeZOrderCurve(0, 10, 15, 0),
+                        encodeZOrderCurve(2, 2, 15, 0), encodeZOrderCurve(8, 2, 15, 0), encodeZOrderCurve(8, 8, 15, 0), encodeZOrderCurve(2, 8, 15, 0)
                     ]),
                     mortonSettings
                 );
@@ -337,7 +330,7 @@ describe("GeometryVectorUtils", () => {
                     2, GEOMETRY_TYPE.POINT,
                     new TopologyVector(new Uint32Array([0, 1, 2]), new Uint32Array([0, 1, 2]), new Uint32Array([0, 1, 2])),
                     new Int32Array([0, 1]),
-                    new Int32Array([encodeMorton(10, 20, 15), encodeMorton(30, 40, 15)]),
+                    new Int32Array([encodeZOrderCurve(10, 20, 15, 0), encodeZOrderCurve(30, 40, 15, 0)]),
                     mortonSettings
                 );
                 const mortonResult = convertGeometryVector(morton);

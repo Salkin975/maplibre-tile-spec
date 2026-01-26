@@ -5,6 +5,7 @@ import { createFlatGeometryVector, createFlatGeometryVectorMortonEncoded, FlatGe
 import { GEOMETRY_TYPE, SINGLE_PART_GEOMETRY_TYPE } from './geometryType';
 import TopologyVector from "./topologyVector";
 import { FlatSelectionVector } from "../filter/flatSelectionVector";
+import { encodeZOrderCurve } from "../../encoding/zOrderCurveEncoder";
 
 describe('FlatGeometryVector', () => {
     const mortonSettings: MortonSettings = { numBits: 15, coordinateShift: 0 };
@@ -23,7 +24,7 @@ describe('FlatGeometryVector', () => {
 
         it('creates MORTON vector via factory', () => {
             const geometryTypes = new Int32Array([GEOMETRY_TYPE.POINT]);
-            const vertexBuffer = new Int32Array([encodeMorton(10, 20, 15)]);
+            const vertexBuffer = new Int32Array([encodeZOrderCurve(10, 20, 15, 0)]);
             const vector = createFlatGeometryVectorMortonEncoded(geometryTypes, createSimpleTopology(1), createVertexOffsets(1), vertexBuffer, mortonSettings);
 
             expect(vector.vertexBufferType).toBe(VertexBufferType.MORTON);
@@ -59,7 +60,7 @@ describe('FlatGeometryVector', () => {
         });
 
         it('getVertex decodes morton encoding', () => {
-            const vertexBuffer = new Int32Array([encodeMorton(100, 200, 15)]);
+            const vertexBuffer = new Int32Array([encodeZOrderCurve(100, 200, 15, 0)]);
             const vector = createFlatGeometryVectorMortonEncoded(
                 new Int32Array([GEOMETRY_TYPE.POINT]),
                 createSimpleTopology(1),
@@ -72,7 +73,7 @@ describe('FlatGeometryVector', () => {
         });
 
         it('getSimpleEncodedVertex bypasses morton decoding', () => {
-            const mortonValue = encodeMorton(100, 200, 15);
+            const mortonValue = encodeZOrderCurve(100, 200, 15, 0);
             const vertexBuffer = new Int32Array([mortonValue, 999]);
             const vector = createFlatGeometryVectorMortonEncoded(
                 new Int32Array([GEOMETRY_TYPE.POINT]),
@@ -232,10 +233,3 @@ function createVertexOffsets(numVertices: number): Int32Array {
     return offsets;
 }
 
-function encodeMorton(x: number, y: number, numBits: number): number {
-    let morton = 0;
-    for (let i = 0; i < numBits; i++) {
-        morton |= ((x & (1 << i)) << i) | ((y & (1 << i)) << (i + 1));
-    }
-    return morton;
-}
