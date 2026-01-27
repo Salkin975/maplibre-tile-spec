@@ -126,6 +126,16 @@ describe('ConstGeometryVector', () => {
         const vector = createConstGeometryVector(1, GEOMETRY_TYPE.POINT, createSimpleTopology(1), new Int32Array([]), createVertexBuffer(1));
         expect(vector.containsSingleGeometryType()).toBe(true);
     });
+
+    it('iterates yielding Geometry objects', () => {
+        const vector = createConstGeometryVector(2, GEOMETRY_TYPE.POINT, createSimpleTopology(2), new Int32Array([]), new Int32Array([10, 20, 30, 40]));
+
+        const items = [...vector];
+
+        expect(items).toHaveLength(2);
+        expect(items[0].type).toBe(GEOMETRY_TYPE.POINT);
+        expect(items[1].type).toBe(GEOMETRY_TYPE.POINT);
+    });
 });
 
 // Helper to create a minimal topology for n geometries with 1 vertex each

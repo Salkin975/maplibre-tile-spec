@@ -1,7 +1,7 @@
 import { type SelectionVector } from "../filter/selectionVector";
 import { type SINGLE_PART_GEOMETRY_TYPE } from "./geometryType";
 import { type IGpuVector } from "./gpuVector";
-import { type CoordinatesArray } from "./geometryVector";
+import { type CoordinatesArray, type Geometry } from "./geometryVector";
 import type TopologyVector from "./topologyVector";
 import {
     createSelectionVectorByTypeConst,
@@ -49,5 +49,12 @@ export class ConstGpuVector implements IGpuVector {
 
     containsSingleGeometryType(): boolean {
         return true;
+    }
+
+    *[Symbol.iterator](): Iterator<Geometry> {
+        const geometries = this.getGeometries();
+        for (let i = 0; i < this.numGeometries; i++) {
+            yield { coordinates: geometries[i], type: this.constGeometryType };
+        }
     }
 }

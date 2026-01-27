@@ -1,4 +1,4 @@
-import { type IGeometryVector, type MortonSettings } from "./geometryVector";
+import { type Geometry, type IGeometryVector, type MortonSettings } from "./geometryVector";
 import type TopologyVector from "../../vector/geometry/topologyVector";
 import { type SelectionVector } from "../filter/selectionVector";
 import { type SINGLE_PART_GEOMETRY_TYPE } from "./geometryType";
@@ -91,5 +91,12 @@ export class ConstGeometryVector implements IGeometryVector {
 
     containsSingleGeometryType(): boolean {
         return true;
+    }
+
+    *[Symbol.iterator](): Iterator<Geometry> {
+        const geometries = this.getGeometries();
+        for (let i = 0; i < this.numGeometries; i++) {
+            yield { coordinates: geometries[i], type: this.constGeometryType };
+        }
     }
 }

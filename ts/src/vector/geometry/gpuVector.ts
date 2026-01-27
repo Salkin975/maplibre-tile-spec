@@ -1,9 +1,9 @@
-import { type CoordinatesArray } from "./geometryVector";
+import { type CoordinatesArray, type Geometry } from "./geometryVector";
 import type TopologyVector from "./topologyVector";
 import { type IGeometryCollection } from "./geometryCollection";
 
 
-export interface IGpuVector extends IGeometryCollection {
+export interface IGpuVector extends IGeometryCollection, Iterable<Geometry> {
 
     readonly triangleOffsets: Uint32Array;
 
