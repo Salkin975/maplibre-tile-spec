@@ -4,37 +4,38 @@ import type { MortonSettings } from './geometryVector';
 import { createFlatGeometryVector, createFlatGeometryVectorMortonEncoded, FlatGeometryVector } from './flatGeometryVector';
 import { GEOMETRY_TYPE, SINGLE_PART_GEOMETRY_TYPE } from './geometryType';
 import TopologyVector from "./topologyVector";
-import { FlatSelectionVector } from "../filter/flatSelectionVector";
 import { encodeZOrderCurve } from "../../encoding/zOrderCurveEncoder";
+import { FlatSelectionVector } from "../filter/flatSelectionVector";
 
 describe('FlatGeometryVector', () => {
     const mortonSettings: MortonSettings = { numBits: 15, coordinateShift: 0 };
 
-    describe('construction', () => {
-        it('creates VEC_2 vector via factory', () => {
-            const geometryTypes = new Int32Array([GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.LINESTRING]);
-            const vector = createFlatGeometryVector(geometryTypes, createSimpleTopology(2), new Int32Array([]), createVertexBuffer(2));
+    it('creates VEC_2 vector via factory', () => {
+        const geometryTypes = new Int32Array([GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.LINESTRING]);
+        const vector = createFlatGeometryVector(geometryTypes, createSimpleTopology(2), new Int32Array([]), createVertexBuffer(2));
 
-            expect(vector).toBeInstanceOf(FlatGeometryVector);
-            expect(vector.numGeometries).toBe(2);
-            expect(vector.vertexBufferType).toBe(VertexBufferType.VEC_2);
-            expect(vector.geometryTypes).toBe(geometryTypes);
-            expect(vector.mortonSettings).toBeUndefined();
-        });
+        expect(vector).toBeInstanceOf(FlatGeometryVector);
+        expect(vector.numGeometries).toBe(2);
+        expect(vector.vertexBufferType).toBe(VertexBufferType.VEC_2);
+        expect(vector.geometryTypes).toBe(geometryTypes);
+        expect(vector.mortonSettings).toBeUndefined();
+    });
 
-        it('creates MORTON vector via factory', () => {
-            const geometryTypes = new Int32Array([GEOMETRY_TYPE.POINT]);
-            const vertexBuffer = new Int32Array([encodeZOrderCurve(10, 20, 15, 0)]);
-            const vector = createFlatGeometryVectorMortonEncoded(geometryTypes, createSimpleTopology(1), createVertexOffsets(1), vertexBuffer, mortonSettings);
+    it('creates MORTON vector via factory', () => {
+        const geometryTypes = new Int32Array([GEOMETRY_TYPE.POINT]);
+        const vertexBuffer = new Int32Array([encodeZOrderCurve(10, 20, 15, 0)]);
+        const vector = createFlatGeometryVectorMortonEncoded(geometryTypes, createSimpleTopology(1), createVertexOffsets(1), vertexBuffer, mortonSettings);
 
-            expect(vector.vertexBufferType).toBe(VertexBufferType.MORTON);
-            expect(vector.mortonSettings).toBe(mortonSettings);
-        });
+        expect(vector.vertexBufferType).toBe(VertexBufferType.MORTON);
+        expect(vector.mortonSettings).toBe(mortonSettings);
+    });
 
-        it('handles empty geometry', () => {
-            const emptyTopology = createSimpleTopology(0);
-            expect(() => createFlatGeometryVector(new Int32Array([]), emptyTopology, new Int32Array([]), new Int32Array([]))).not.toThrow();
-        });
+    it('handles empty geometry', () => {
+        const emptyTopology = createSimpleTopology(0);
+        const vector = createFlatGeometryVector(new Int32Array([]), emptyTopology, new Int32Array([]), new Int32Array([]));
+
+        expect(vector.numGeometries).toBe(0);
+        expect(vector.containsSingleGeometryType()).toBe(false);
     });
 
     it('geometryType returns type at specified index', () => {
@@ -46,158 +47,62 @@ describe('FlatGeometryVector', () => {
         expect(vector.geometryType(2)).toBe(GEOMETRY_TYPE.POLYGON);
     });
 
-    describe('vertex access', () => {
-        it('getVertex returns [x, y] coordinates', () => {
-            const vector = createFlatGeometryVector(
-                new Int32Array([GEOMETRY_TYPE.POINT]),
-                createSimpleTopology(1),
-                createVertexOffsets(2),
-                createVertexBuffer(2)
-            );
+    it('getVertex delegates to utility', () => {
+        const vector = createFlatGeometryVector(
+            new Int32Array([GEOMETRY_TYPE.POINT]),
+            createSimpleTopology(1),
+            createVertexOffsets(1),
+            new Int32Array([10, 20])
+        );
 
-            expect(vector.getVertex(0)).toEqual([10, 20]);
-            expect(vector.getVertex(1)).toEqual([20, 40]);
-        });
-
-        it('getVertex decodes morton encoding', () => {
-            const vertexBuffer = new Int32Array([encodeZOrderCurve(100, 200, 15, 0)]);
-            const vector = createFlatGeometryVectorMortonEncoded(
-                new Int32Array([GEOMETRY_TYPE.POINT]),
-                createSimpleTopology(1),
-                createVertexOffsets(1),
-                vertexBuffer,
-                mortonSettings
-            );
-
-            expect(vector.getVertex(0)).toEqual([100, 200]);
-        });
-
-        it('getSimpleEncodedVertex bypasses morton decoding', () => {
-            const mortonValue = encodeZOrderCurve(100, 200, 15, 0);
-            const vertexBuffer = new Int32Array([mortonValue, 999]);
-            const vector = createFlatGeometryVectorMortonEncoded(
-                new Int32Array([GEOMETRY_TYPE.POINT]),
-                createSimpleTopology(1),
-                createVertexOffsets(1),
-                vertexBuffer,
-                mortonSettings
-            );
-
-            expect(vector.getSimpleEncodedVertex(0)).toEqual([mortonValue, 999]);
-        });
+        expect(vector.getVertex(0)).toEqual([10, 20]);
     });
 
-    describe('getGeometries', () => {
-        it('converts to Point arrays', () => {
-            const geometryTypes = new Int32Array([GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.MULTIPOINT]);
-            const topology = new TopologyVector(
-                new Uint32Array([0, 1, 3]),
-                new Uint32Array([0, 1, 3]),
-                new Uint32Array([0, 1, 3])
-            );
-            const vertexBuffer = new Int32Array([10, 20, 30, 40, 50, 60]);
-            const vector = createFlatGeometryVector(geometryTypes, topology, new Int32Array([]), vertexBuffer);
+    it('getSimpleEncodedVertex delegates to utility', () => {
+        const vector = createFlatGeometryVector(
+            new Int32Array([GEOMETRY_TYPE.POINT]),
+            createSimpleTopology(1),
+            createVertexOffsets(1),
+            new Int32Array([10, 20])
+        );
 
-            const geometries = vector.getGeometries();
-
-            expect(geometries).toHaveLength(2);
-            expect(geometries[0][0][0]).toMatchObject({ x: 10, y: 20 });
-            expect(geometries[1][0][0]).toMatchObject({ x: 30, y: 40 });
-            expect(geometries[1][1][0]).toMatchObject({ x: 50, y: 60 });
-        });
+        expect(vector.getSimpleEncodedVertex(0)).toEqual([10, 20]);
     });
 
-    describe('containsPolygonGeometry', () => {
-        it('returns true when polygon present', () => {
-            const vector = createFlatGeometryVector(
-                new Int32Array([GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.POLYGON]),
-                createSimpleTopology(2),
-                new Int32Array([]),
-                createVertexBuffer(2)
-            );
+    it('getGeometries delegates to converter', () => {
+        const vector = createFlatGeometryVector(
+            new Int32Array([GEOMETRY_TYPE.POINT]),
+            createSimpleTopology(1),
+            new Int32Array([]),
+            new Int32Array([10, 20])
+        );
 
-            expect(vector.containsPolygonGeometry()).toBe(true);
-        });
-
-        it('returns false when no polygons', () => {
-            const vector = createFlatGeometryVector(
-                new Int32Array([GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.LINESTRING]),
-                createSimpleTopology(2),
-                new Int32Array([]),
-                createVertexBuffer(2)
-            );
-
-            expect(vector.containsPolygonGeometry()).toBe(false);
-        });
+        expect(vector.getGeometries()).toHaveLength(1);
     });
 
-    describe('filter', () => {
-        it('returns selection of matching geometries', () => {
-            const vector = createFlatGeometryVector(
-                new Int32Array([GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.LINESTRING, GEOMETRY_TYPE.POINT]),
-                createSimpleTopology(3),
-                new Int32Array([]),
-                createVertexBuffer(3)
-            );
+    it('filter delegates to utility', () => {
+        const vector = createFlatGeometryVector(
+            new Int32Array([GEOMETRY_TYPE.POINT]),
+            createSimpleTopology(1),
+            new Int32Array([]),
+            createVertexBuffer(1)
+        );
 
-            const selection = vector.filter(SINGLE_PART_GEOMETRY_TYPE.POINT);
-
-            expect(selection.limit).toBe(2);
-            expect(selection.getIndex(0)).toBe(0);
-            expect(selection.getIndex(1)).toBe(2);
-        });
-
-        it('matches MULTIPOINT to POINT filter', () => {
-            const vector = createFlatGeometryVector(
-                new Int32Array([GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.MULTIPOINT]),
-                createSimpleTopology(2),
-                new Int32Array([]),
-                createVertexBuffer(2)
-            );
-
-            expect(vector.filter(SINGLE_PART_GEOMETRY_TYPE.POINT).limit).toBe(2);
-        });
-
-        it('returns empty selection when type does not match', () => {
-            const vector = createFlatGeometryVector(
-                new Int32Array([GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.POINT]),
-                createSimpleTopology(2),
-                new Int32Array([]),
-                createVertexBuffer(2)
-            );
-
-            expect(vector.filter(SINGLE_PART_GEOMETRY_TYPE.POLYGON).limit).toBe(0);
-        });
+        expect(vector.filter(SINGLE_PART_GEOMETRY_TYPE.POINT).limit).toBe(1);
     });
 
-    describe('filterSelected', () => {
-        it('clears selection when type does not match', () => {
-            const vector = createFlatGeometryVector(
-                new Int32Array([GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.LINESTRING]),
-                createSimpleTopology(2),
-                new Int32Array([]),
-                createVertexBuffer(2)
-            );
-            const selection = new FlatSelectionVector(new Uint32Array([0, 1]));
+    it('filterSelected delegates to utility', () => {
+        const vector = createFlatGeometryVector(
+            new Int32Array([GEOMETRY_TYPE.POINT]),
+            createSimpleTopology(1),
+            new Int32Array([]),
+            createVertexBuffer(1)
+        );
+        const selection = new FlatSelectionVector(new Uint32Array([0]));
 
-            vector.filterSelected(SINGLE_PART_GEOMETRY_TYPE.POLYGON, selection);
+        vector.filterSelected(SINGLE_PART_GEOMETRY_TYPE.POINT, selection);
 
-            expect(selection.limit).toBe(0);
-        });
-
-        it('preserves selection when type matches', () => {
-            const vector = createFlatGeometryVector(
-                new Int32Array([GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.MULTIPOINT]),
-                createSimpleTopology(2),
-                new Int32Array([]),
-                createVertexBuffer(2)
-            );
-            const selection = new FlatSelectionVector(new Uint32Array([0, 1]));
-
-            vector.filterSelected(SINGLE_PART_GEOMETRY_TYPE.POINT, selection);
-
-            expect(selection.limit).toBe(2);
-        });
+        expect(selection.limit).toBe(1);
     });
 
     it('containsSingleGeometryType always returns false', () => {
@@ -232,4 +137,3 @@ function createVertexOffsets(numVertices: number): Int32Array {
     for (let i = 0; i < numVertices; i++) offsets[i] = i;
     return offsets;
 }
-

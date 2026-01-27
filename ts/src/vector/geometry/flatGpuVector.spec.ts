@@ -5,38 +5,33 @@ import { FlatSelectionVector } from "../filter/flatSelectionVector";
 import TopologyVector from "./topologyVector";
 
 describe("FlatGpuVector", () => {
-    describe("construction", () => {
-        it("creates vector via factory", () => {
-            const geometryTypes = new Int32Array([GEOMETRY_TYPE.POLYGON, GEOMETRY_TYPE.POLYGON]);
-            const { triangleOffsets, indexBuffer, vertexBuffer } = createTriangleData(2);
-            const topology = createPolygonTopology(2, 3);
+    it("creates vector via factory with all properties", () => {
+        const geometryTypes = new Int32Array([GEOMETRY_TYPE.POLYGON, GEOMETRY_TYPE.POLYGON]);
+        const { triangleOffsets, indexBuffer, vertexBuffer } = createTriangleData(2);
+        const topology = createPolygonTopology(2, 3);
 
-            const vector = createFlatGpuVector(geometryTypes, triangleOffsets, indexBuffer, vertexBuffer, topology);
+        const vector = createFlatGpuVector(geometryTypes, triangleOffsets, indexBuffer, vertexBuffer, topology);
 
-            expect(vector).toBeInstanceOf(FlatGpuVector);
-            expect(vector.numGeometries).toBe(2);
-            expect(vector.geometryTypes).toBe(geometryTypes);
-            expect(vector.triangleOffsets).toBe(triangleOffsets);
-            expect(vector.indexBuffer).toBe(indexBuffer);
-            expect(vector.vertexBuffer).toBe(vertexBuffer);
-            expect(vector.topologyVector).toBe(topology);
-        });
+        expect(vector).toBeInstanceOf(FlatGpuVector);
+        expect(vector.numGeometries).toBe(2);
+        expect(vector.geometryTypes).toBe(geometryTypes);
+        expect(vector.triangleOffsets).toBe(triangleOffsets);
+        expect(vector.indexBuffer).toBe(indexBuffer);
+        expect(vector.vertexBuffer).toBe(vertexBuffer);
+        expect(vector.topologyVector).toBe(topology);
+    });
 
-        it("creates vector without topology", () => {
-            const { triangleOffsets, indexBuffer, vertexBuffer } = createTriangleData(1);
-            const vector = createFlatGpuVector(new Int32Array([GEOMETRY_TYPE.POLYGON]), triangleOffsets, indexBuffer, vertexBuffer);
+    it("creates vector without topology", () => {
+        const { triangleOffsets, indexBuffer, vertexBuffer } = createTriangleData(1);
+        const vector = createFlatGpuVector(new Int32Array([GEOMETRY_TYPE.POLYGON]), triangleOffsets, indexBuffer, vertexBuffer);
 
-            expect(vector.topologyVector).toBeFalsy();
-        });
+        expect(vector.topologyVector).toBeFalsy();
+    });
 
-        it("handles empty geometry", () => {
-            expect(() => createFlatGpuVector(
-                new Int32Array([]),
-                new Uint32Array([]),
-                new Int32Array([]),
-                new Int32Array([])
-            )).not.toThrow();
-        });
+    it("handles empty geometry", () => {
+        const vector = createFlatGpuVector(new Int32Array([]), new Uint32Array([]), new Int32Array([]), new Int32Array([]));
+
+        expect(vector.numGeometries).toBe(0);
     });
 
     it("geometryType returns type at specified index", () => {
@@ -48,91 +43,41 @@ describe("FlatGpuVector", () => {
         expect(vector.geometryType(1)).toBe(GEOMETRY_TYPE.MULTIPOLYGON);
     });
 
-    describe("getGeometries", () => {
-        it("converts polygons to coordinate arrays", () => {
-            const topology = createPolygonTopology(1, 3);
-            const vertexBuffer = new Int32Array([0, 0, 10, 0, 5, 10]);
-            const vector = createFlatGpuVector(
-                new Int32Array([GEOMETRY_TYPE.POLYGON]),
-                new Uint32Array([0, 3]),
-                new Int32Array([0, 1, 2]),
-                vertexBuffer,
-                topology
-            );
+    it("getGeometries delegates to utility", () => {
+        const topology = createPolygonTopology(1, 3);
+        const vector = createFlatGpuVector(
+            new Int32Array([GEOMETRY_TYPE.POLYGON]),
+            new Uint32Array([0, 3]),
+            new Int32Array([0, 1, 2]),
+            new Int32Array([0, 0, 10, 0, 5, 10]),
+            topology
+        );
 
-            const geometries = vector.getGeometries();
-
-            expect(geometries).toHaveLength(1);
-            expect(geometries[0]).toHaveLength(1);
-            expect(geometries[0][0]).toHaveLength(4);
-            expect(geometries[0][0][0]).toMatchObject({ x: 0, y: 0 });
-            expect(geometries[0][0][3]).toMatchObject({ x: 0, y: 0 });
-        });
-
-        it("throws without topology vector", () => {
-            const { triangleOffsets, indexBuffer, vertexBuffer } = createTriangleData(1);
-            const vector = createFlatGpuVector(new Int32Array([GEOMETRY_TYPE.POLYGON]), triangleOffsets, indexBuffer, vertexBuffer);
-
-            expect(() => vector.getGeometries()).toThrow("Cannot convert GpuVector to coordinates without topology information");
-        });
+        expect(vector.getGeometries()).toHaveLength(1);
     });
 
-    describe("filter", () => {
-        it("returns selection of matching geometries", () => {
-            const geometryTypes = new Int32Array([GEOMETRY_TYPE.POLYGON, GEOMETRY_TYPE.MULTIPOLYGON, GEOMETRY_TYPE.POLYGON]);
-            const { triangleOffsets, indexBuffer, vertexBuffer } = createTriangleData(3);
-            const vector = createFlatGpuVector(geometryTypes, triangleOffsets, indexBuffer, vertexBuffer);
+    it("getGeometries throws without topology", () => {
+        const { triangleOffsets, indexBuffer, vertexBuffer } = createTriangleData(1);
+        const vector = createFlatGpuVector(new Int32Array([GEOMETRY_TYPE.POLYGON]), triangleOffsets, indexBuffer, vertexBuffer);
 
-            const selection = vector.filter(SINGLE_PART_GEOMETRY_TYPE.POLYGON);
-
-            expect(selection.limit).toBe(3);
-        });
-
-        it("matches MULTIPOLYGON to POLYGON filter", () => {
-            const { triangleOffsets, indexBuffer, vertexBuffer } = createTriangleData(2);
-            const vector = createFlatGpuVector(
-                new Int32Array([GEOMETRY_TYPE.POLYGON, GEOMETRY_TYPE.MULTIPOLYGON]),
-                triangleOffsets, indexBuffer, vertexBuffer
-            );
-
-            expect(vector.filter(SINGLE_PART_GEOMETRY_TYPE.POLYGON).limit).toBe(2);
-        });
-
-        it("returns empty selection when type does not match", () => {
-            const { triangleOffsets, indexBuffer, vertexBuffer } = createTriangleData(2);
-            const vector = createFlatGpuVector(
-                new Int32Array([GEOMETRY_TYPE.POLYGON, GEOMETRY_TYPE.POLYGON]),
-                triangleOffsets, indexBuffer, vertexBuffer
-            );
-
-            expect(vector.filter(SINGLE_PART_GEOMETRY_TYPE.POINT).limit).toBe(0);
-        });
+        expect(() => vector.getGeometries()).toThrow("Cannot convert GpuVector to coordinates without topology information");
     });
 
-    describe("filterSelected", () => {
-        it("clears selection when type does not match", () => {
-            const { triangleOffsets, indexBuffer, vertexBuffer } = createTriangleData(2);
-            const vector = createFlatGpuVector(
-                new Int32Array([GEOMETRY_TYPE.POLYGON, GEOMETRY_TYPE.POLYGON]),
-                triangleOffsets, indexBuffer, vertexBuffer
-            );
-            const selection = new FlatSelectionVector(new Uint32Array([0, 1]));
+    it("filter delegates to utility", () => {
+        const { triangleOffsets, indexBuffer, vertexBuffer } = createTriangleData(1);
+        const vector = createFlatGpuVector(new Int32Array([GEOMETRY_TYPE.POLYGON]), triangleOffsets, indexBuffer, vertexBuffer);
 
-            vector.filterSelected(SINGLE_PART_GEOMETRY_TYPE.POINT, selection);
+        expect(vector.filter(SINGLE_PART_GEOMETRY_TYPE.POLYGON).limit).toBe(1);
+    });
 
-            expect(selection.limit).toBe(0);
-        });
+    it("filterSelected delegates to utility", () => {
+        const { triangleOffsets, indexBuffer, vertexBuffer } = createTriangleData(1);
+        const vector = createFlatGpuVector(new Int32Array([GEOMETRY_TYPE.POLYGON]), triangleOffsets, indexBuffer, vertexBuffer);
+        const selection = new FlatSelectionVector(new Uint32Array([0]));
 
-        it("preserves selection when type matches", () => {
-            const geometryTypes = new Int32Array([GEOMETRY_TYPE.POLYGON, GEOMETRY_TYPE.MULTIPOLYGON]);
-            const { triangleOffsets, indexBuffer, vertexBuffer } = createTriangleData(2);
-            const vector = createFlatGpuVector(geometryTypes, triangleOffsets, indexBuffer, vertexBuffer);
-            const selection = new FlatSelectionVector(new Uint32Array([0, 1]));
+        vector.filterSelected(SINGLE_PART_GEOMETRY_TYPE.POLYGON, selection);
 
-            vector.filterSelected(SINGLE_PART_GEOMETRY_TYPE.POLYGON, selection);
-
-            expect(selection.limit).toBe(2);
-        });
+        expect(selection.limit).toBe(1);
     });
 
     it("containsSingleGeometryType always returns false", () => {
