@@ -20,7 +20,7 @@ export {
     filterNonNullSelected,
     nullableValues,
     filterNullSelected,
-} from './filterUtils';
+} from "./filterUtils";
 
 export {
     greaterThanOrEqualTo,
@@ -28,4 +28,49 @@ export {
     smallerThanOrEqualTo,
     smallerThanOrEqualToSelected,
     type ComparableVector,
-} from './comparisonUtils';
+} from "./comparisonUtils";
+
+export {
+    filterStringDictionaryByValue,
+    filterStringDictionaryNotEqual,
+    matchStringDictionary,
+    noneMatchStringDictionary,
+    greaterThanOrEqualToStringDictionary,
+    smallerThanOrEqualToStringDictionary,
+    filterStringDictionarySelected,
+    filterStringDictionaryNotEqualSelected,
+    matchStringDictionarySelected,
+    noneMatchStringDictionarySelected,
+    greaterThanOrEqualToStringDictionarySelected,
+    smallerThanOrEqualToStringDictionarySelected,
+} from "./stringDictionaryUtils";
+
+export {
+    filterStringFlatByValue,
+    filterStringFlatNotEqual,
+    matchStringFlat,
+    noneMatchStringFlat,
+    greaterThanOrEqualToStringFlat,
+    smallerThanOrEqualToStringFlat,
+    filterStringFlatSelected,
+    filterStringFlatNotEqualSelected,
+    matchStringFlatSelected,
+    noneMatchStringFlatSelected,
+    greaterThanOrEqualToStringFlatSelected,
+    smallerThanOrEqualToStringFlatSelected,
+} from "./stringFlatVectorUtils";
+
+export {
+    filterStringFsstDictionaryByValue,
+    filterStringFsstDictionaryNotEqual,
+    matchStringFsstDictionary,
+    noneMatchStringFsstDictionary,
+    greaterThanOrEqualToStringFsstDictionary,
+    smallerThanOrEqualToStringFsstDictionary,
+    filterStringFsstDictionarySelected,
+    filterStringFsstDictionaryNotEqualSelected,
+    matchStringFsstDictionarySelected,
+    noneMatchStringFsstDictionarySelected,
+    greaterThanOrEqualToStringFsstDictionarySelected,
+    smallerThanOrEqualToStringFsstDictionarySelected,
+} from "./stringFsstDictionaryUtils";
