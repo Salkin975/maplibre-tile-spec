@@ -115,21 +115,6 @@ describe('FlatGeometryVector', () => {
 
         expect(vector.containsSingleGeometryType()).toBe(false);
     });
-
-    it('iterates yielding Geometry objects', () => {
-        const vector = createFlatGeometryVector(
-            new Int32Array([GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.LINESTRING]),
-            createSimpleTopology(2),
-            new Int32Array([]),
-            new Int32Array([10, 20, 30, 40])
-        );
-
-        const items = [...vector];
-
-        expect(items).toHaveLength(2);
-        expect(items[0].type).toBe(GEOMETRY_TYPE.POINT);
-        expect(items[1].type).toBe(GEOMETRY_TYPE.LINESTRING);
-    });
 });
 
 function createSimpleTopology(numGeometries: number): TopologyVector {

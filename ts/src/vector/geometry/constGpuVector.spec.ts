@@ -132,23 +132,6 @@ describe("ConstGpuVector", () => {
 
         expect(vector.containsSingleGeometryType()).toBe(true);
     });
-
-    it("iterates yielding Geometry objects", () => {
-        const topology = createPolygonTopology(3);
-        const vector = createConstGpuVector(
-            1, GEOMETRY_TYPE.POLYGON,
-            new Uint32Array([0, 3]),
-            new Int32Array([0, 1, 2]),
-            new Int32Array([0, 0, 10, 0, 5, 10]),
-            topology,
-        );
-
-        const items = [...vector];
-
-        expect(items).toHaveLength(1);
-        expect(items[0].type).toBe(GEOMETRY_TYPE.POLYGON);
-        expect(items[0].coordinates).toHaveLength(1);
-    });
 });
 
 // Helper to create a simple polygon topology (1 polygon, 1 ring, n vertices)

@@ -16,7 +16,7 @@ export interface MortonSettings {
     coordinateShift: number;
 }
 
-export interface IGeometryVector extends IGeometryCollection, Iterable<Geometry> {
+export interface IGeometryVector extends IGeometryCollection {
 
     readonly vertexBufferType: VertexBufferType;
 

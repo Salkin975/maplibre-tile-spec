@@ -1,6 +1,6 @@
 import { type IGpuVector } from "./gpuVector";
 import type TopologyVector from "./topologyVector";
-import { type CoordinatesArray, type Geometry } from "./geometryVector";
+import { type CoordinatesArray } from "./geometryVector";
 import { type SINGLE_PART_GEOMETRY_TYPE } from "./geometryType";
 import { type SelectionVector } from "../filter/selectionVector";
 import { createSelectionVectorByTypeFlat, filterSelectedByTypeFlat } from "./geometryVectorFilterUtils";
@@ -48,12 +48,5 @@ export class FlatGpuVector implements IGpuVector {
 
     containsSingleGeometryType(): boolean {
         return false;
-    }
-
-    *[Symbol.iterator](): Iterator<Geometry> {
-        const geometries = this.getGeometries();
-        for (let i = 0; i < this.numGeometries; i++) {
-            yield { coordinates: geometries[i], type: this.geometryTypes[i] };
-        }
     }
 }

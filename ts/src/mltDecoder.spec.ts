@@ -29,7 +29,7 @@ describe("MLT Decoder - MVT comparison for OMT tiles", () => {
 }, 150000);
 
 describe("FeatureTable", () => {
-    it("should iterate through features correctly", () => {
+    it("should get features correctly", () => {
         const bytes = new Uint8Array(fs.readFileSync(ITERATOR_TILE));
         const featureTables = decodeTile(bytes);
 
@@ -38,16 +38,15 @@ describe("FeatureTable", () => {
         expect(table.name).toBe("layer");
         expect(table.extent).toBe(4096);
 
-        let featureCount = 0;
-        for (const feature of table) {
+        const features = table.getFeatures();
+        expect(features.length).toBe(table.numFeatures);
+
+        for (const feature of features) {
             expect(feature.geometry).toBeTruthy();
             expect(feature.geometry.coordinates).toBeInstanceOf(Array);
             expect(feature.geometry.coordinates.length).toBeGreaterThan(0);
             expect(typeof feature.geometry.type).toBe("number");
-
-            featureCount++;
         }
-        expect(featureCount).toBe(table.numFeatures);
     });
 });
 
