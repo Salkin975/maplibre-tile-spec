@@ -3,335 +3,504 @@ import type Vector from "../vector/vector";
 import { type SelectionVector } from "../vector/filter/selectionVector";
 import { FlatSelectionVector } from "../vector/filter/flatSelectionVector";
 import { SequenceSelectionVector } from "../vector/filter/sequenceSelectionVector";
+import { ConstSelectionVector } from "../vector/filter/constSelectionVector";
 import { SINGLE_PART_GEOMETRY_TYPE } from "../vector/geometry/geometryType";
 import { type ExpressionSpecification } from "@maplibre/maplibre-gl-style-spec";
-
 import {
     createNonNullSelectionVector,
     filterNonNullSelected,
     nullableValues,
     filterNullSelected,
 } from "../vector/utils";
-
+import { type VectorTypeHandlers, getVectorTypeHandlers } from "./vectorTypeHandlers";
 import {
-    type VectorTypeHandlers,
-    getVectorTypeHandlers,
-} from "./vectorTypeHandlers";
+    unionSelectionVectors,
+    invertSelectionVector,
+    intersectSelectionVectors,
+} from "../vector/filter/selectionVectorUtils";
 
-// Expression type sets for O(1) lookup
-const compoundExpressions = new Set(["all", "any"]);
-const comparisonExpressions = new Set(["==", "!=", ">=", "<=", ">", "<"]);
-const matchExpressions = new Set(["in", "!in", "has", "!has", "none"]);
+// ============================================================================
+// TYPES (inlined from normalizedFilter.txt)
+// ============================================================================
 
-// Geometry type map
-const geometryTypeMap: Record<string, SINGLE_PART_GEOMETRY_TYPE> = {
-    Point: SINGLE_PART_GEOMETRY_TYPE.POINT,
-    LineString: SINGLE_PART_GEOMETRY_TYPE.LINESTRING,
-    Polygon: SINGLE_PART_GEOMETRY_TYPE.POLYGON,
-};
+type FilterTarget = { kind: "property"; name: string } | { kind: "geometry-type" } | { kind: "id" };
 
-// Match expression handlers
-type MatchExpressionHandler = (
-    propertyVector: Vector,
-    expression: ExpressionSpecification,
-    handlers: VectorTypeHandlers,
-    selectionVector?: SelectionVector,
-) => SelectionVector;
+interface NormalizedLeafFilter {
+    operator: string;
+    target: FilterTarget;
+    values: unknown[];
+}
 
-const matchExpressionHandlers: Record<string, MatchExpressionHandler> = {
-    in: (propertyVector, expression, handlers, selectionVector) => {
-        const filterLiterals = expression.slice(2);
-        if (selectionVector) {
-            handlers.matchSelected(propertyVector, filterLiterals, selectionVector);
-            return selectionVector;
-        }
-        return handlers.match(propertyVector, filterLiterals);
-    },
-    "!in": (propertyVector, expression, handlers, selectionVector) => {
-        const filterLiterals = expression.slice(2);
-        if (selectionVector) {
-            handlers.noneMatchSelected(propertyVector, filterLiterals, selectionVector);
-            return selectionVector;
-        }
-        return handlers.noneMatch(propertyVector, filterLiterals);
-    },
-    has: (propertyVector, _expression, _handlers, selectionVector) => {
-        if (selectionVector) {
-            filterNonNullSelected(propertyVector, selectionVector);
-            return selectionVector;
-        }
-        return createNonNullSelectionVector(propertyVector);
-    },
-    "!has": (propertyVector, _expression, _handlers, selectionVector) => {
-        if (selectionVector) {
-            filterNullSelected(propertyVector, selectionVector);
-            return selectionVector;
-        }
-        return nullableValues(propertyVector);
-    },
-};
+interface NormalizedCompoundFilter {
+    operator: "all" | "any" | "none";
+    children: NormalizedFilter[];
+}
 
-// Comparison expression handlers
-type ComparisonExpressionHandler = (
-    propertyVector: Vector,
-    value: unknown,
-    handlers: VectorTypeHandlers,
-    selectionVector?: SelectionVector,
-) => SelectionVector;
+type NormalizedFilter = NormalizedLeafFilter | NormalizedCompoundFilter;
 
-const comparisonExpressionHandlers: Record<string, ComparisonExpressionHandler> = {
-    "==": (propertyVector, value, handlers, selectionVector) => {
-        if (selectionVector) {
-            handlers.filterSelected(propertyVector, value, selectionVector);
-            return selectionVector;
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+const GEOMETRY_TYPE_POINT = SINGLE_PART_GEOMETRY_TYPE.POINT;
+const GEOMETRY_TYPE_LINESTRING = SINGLE_PART_GEOMETRY_TYPE.LINESTRING;
+const GEOMETRY_TYPE_POLYGON = SINGLE_PART_GEOMETRY_TYPE.POLYGON;
+const EMPTY_UINT32 = new Uint32Array(0);
+const EMPTY_SELECTION = new FlatSelectionVector(EMPTY_UINT32);
+
+// ============================================================================
+// EXPRESSION NORMALIZER (inlined from expressionNormalizer.txt)
+// ============================================================================
+
+function normalizeTarget(arg: unknown): FilterTarget {
+    if (!Array.isArray(arg)) {
+        const name = arg as string;
+        if (name !== "$type" && name !== "geometry-type" && name !== "$id") {
+            return { kind: "property", name };
         }
-        return handlers.filter(propertyVector, value);
-    },
-    "!=": (propertyVector, value, handlers, selectionVector) => {
-        if (selectionVector) {
-            handlers.filterNotEqualSelected(propertyVector, value, selectionVector);
-            return selectionVector;
+        if (name === "$type" || name === "geometry-type") {
+            return { kind: "geometry-type" };
         }
-        return handlers.filterNotEqual(propertyVector, value);
-    },
-    ">=": (propertyVector, value, handlers, selectionVector) => {
-        if (selectionVector) {
-            handlers.greaterThanOrEqualSelected(propertyVector, value, selectionVector);
-            return selectionVector;
+        return { kind: "id" };
+    }
+    
+    const accessor = arg[0] as string;
+    if (accessor === "get") return { kind: "property", name: arg[1] as string };
+    if (accessor === "geometry-type") return { kind: "geometry-type" };
+    if (accessor === "id") return { kind: "id" };
+    throw new Error(`Unsupported accessor: ${accessor}`);
+}
+
+function normalizeValues(expr: ExpressionSpecification, op: string): unknown[] {
+    if (op === "==" || op === "!=" || op === ">=" || op === "<=" || op === ">" || op === "<") {
+        return [expr[2]];
+    }
+    if (op === "has" || op === "!has") return [];
+    
+    const isExpr = Array.isArray(expr[1]);
+    if (isExpr) {
+        const literalArg = expr[2] as unknown[];
+        if (Array.isArray(literalArg) && literalArg[0] === "literal") {
+            return literalArg[1] as unknown[];
         }
-        return handlers.greaterThanOrEqual(propertyVector, value);
-    },
-    "<=": (propertyVector, value, handlers, selectionVector) => {
-        if (selectionVector) {
-            handlers.lessThanOrEqualSelected(propertyVector, value, selectionVector);
-            return selectionVector;
+        return [literalArg];
+    }
+    
+    const len = expr.length;
+    const result = new Array(len - 2);
+    for (let i = 2; i < len; i++) {
+        result[i - 2] = expr[i];
+    }
+    return result;
+}
+
+function normalizeMatch(expr: ExpressionSpecification): NormalizedLeafFilter {
+    const target = normalizeTarget(expr[1]);
+    const fallback = expr[expr.length - 1];
+    const trueValues: unknown[] = [];
+    const falseValues: unknown[] = [];
+
+    for (let i = 2; i < expr.length - 1; i += 2) {
+        const label = expr[i];
+        const output = expr[i + 1];
+        
+        if (output === true) {
+            if (Array.isArray(label)) {
+                trueValues.push(...label);
+            } else {
+                trueValues.push(label);
+            }
+        } else if (output === false) {
+            if (Array.isArray(label)) {
+                falseValues.push(...label);
+            } else {
+                falseValues.push(label);
+            }
         }
-        return handlers.lessThanOrEqual(propertyVector, value);
-    },
-    ">": (propertyVector, value, handlers, selectionVector) => {
-        if (selectionVector) {
-            executeGreaterThanSelected(propertyVector, value, handlers, selectionVector);
-            return selectionVector;
+    }
+
+    return {
+        operator: fallback === true ? "!in" : "in",
+        target,
+        values: fallback === true ? falseValues : trueValues,
+    };
+}
+
+function normalizeExpression(expr: ExpressionSpecification): NormalizedFilter {
+    const op = expr[0] as string;
+
+    if (op === "==" || op === "!=" || op === ">=" || op === "<=" || op === ">" || op === "<" || 
+        op === "in" || op === "!in" || op === "has" || op === "!has") {
+        return {
+            operator: op,
+            target: normalizeTarget(expr[1]),
+            values: normalizeValues(expr, op),
+        };
+    }
+
+    if (op === "all" || op === "any" || op === "none" || op === "!") {
+        const len = expr.length;
+        const children = new Array<NormalizedFilter>(len - 1);
+        for (let i = 1; i < len; i++) {
+            children[i - 1] = normalizeExpression(expr[i] as ExpressionSpecification);
         }
-        return executeGreaterThan(propertyVector, value, handlers);
-    },
-    "<": (propertyVector, value, handlers, selectionVector) => {
-        if (selectionVector) {
-            executeLessThanSelected(propertyVector, value, handlers, selectionVector);
-            return selectionVector;
-        }
-        return executeLessThan(propertyVector, value, handlers);
-    },
-};
+        return {
+            operator: (op === "!" ? "none" : op),
+            children,
+        };
+    }
+
+    if (op === "match") return normalizeMatch(expr);
+
+    throw new Error(`Unsupported filter operator: ${op}`);
+}
+
+// ============================================================================
+// GEOMETRY TYPE HELPERS
+// ============================================================================
+
+function getSinglePartGeometryType(geometryType: string): SINGLE_PART_GEOMETRY_TYPE {
+    const firstChar = geometryType.charCodeAt(0);
+    
+    if (firstChar === 80) { // 'P'
+        return geometryType === "Polygon" ? GEOMETRY_TYPE_POLYGON : GEOMETRY_TYPE_POINT;
+    }
+    if (firstChar === 77) { // 'M'
+        const secondChar = geometryType.charCodeAt(5);
+        return secondChar === 80 ? GEOMETRY_TYPE_POINT : 
+               secondChar === 111 ? GEOMETRY_TYPE_POLYGON : 
+               GEOMETRY_TYPE_LINESTRING;
+    }
+    if (firstChar === 76) { // 'L'
+        return GEOMETRY_TYPE_LINESTRING;
+    }
+    
+    throw new Error("Invalid geometry type");
+}
+
+// ============================================================================
+// MAIN FILTER FUNCTION
+// ============================================================================
 
 export default function filter(featureTable: FeatureTable, expression: ExpressionSpecification): SelectionVector {
     if (!expression) {
         return new SequenceSelectionVector(0, 1, featureTable.numFeatures);
     }
-
-    if (isCompoundExpression(expression)) {
-        return executeCompoundExpression(featureTable, expression);
-    }
-    if (isComparisonExpression(expression)) {
-        return executeComparisonExpression(featureTable, expression);
-    }
-
-    if (isMatchExpression(expression)) {
-        return executeMatchExpression(featureTable, expression);
-    }
-
-    throw new Error(`Filter ${expression[0]} not supported.`);
+    const normalized = normalizeExpression(expression);
+    return executeFilter(featureTable, normalized);
 }
 
-function isCompoundExpression(expression: ExpressionSpecification): boolean {
-    return compoundExpressions.has(expression[0]);
-}
+// ============================================================================
+// FILTER EXECUTION
+// ============================================================================
 
-function isComparisonExpression(expression: ExpressionSpecification): boolean {
-    return comparisonExpressions.has(expression[0]);
-}
-
-function isMatchExpression(expression: ExpressionSpecification): boolean {
-    return matchExpressions.has(expression[0]);
-}
-
-function executeCompoundExpression(
+function executeFilter(
     featureTable: FeatureTable,
-    expressionSpecification: ExpressionSpecification,
+    normalized: NormalizedFilter,
+    selectionVector?: SelectionVector,
 ): SelectionVector {
-    if (expressionSpecification[0] !== "all") {
-        throw new Error("Specified type of CompoundExpression not supported (yet).");
+    const op = normalized.operator;
+    
+    // Check if compound - inline the check
+    if (op === "all" || op === "any" || op === "none") {
+        return executeCompound(featureTable, normalized as NormalizedCompoundFilter);
     }
+    
+    return executeLeaf(featureTable, normalized as NormalizedLeafFilter, selectionVector);
+}
 
-    let selectionVector: SelectionVector | null = null;
-    const numExpressions = expressionSpecification.length - 1;
+function executeCompound(featureTable: FeatureTable, compound: NormalizedCompoundFilter): SelectionVector {
+    const op = compound.operator;
+    if (op === "all") return executeAll(featureTable, compound.children);
+    if (op === "any") return executeAny(featureTable, compound.children);
+    return executeNone(featureTable, compound.children);
+}
 
-    const geometryTypeExpressionIndex = expressionSpecification.findIndex((e) => e[0] === "$type");
-    if (geometryTypeExpressionIndex > 0) {
-        const geometryTypeExpression = expressionSpecification.splice(geometryTypeExpressionIndex, 1)[0];
-        expressionSpecification.unshift(geometryTypeExpression);
-    }
+function executeAll(featureTable: FeatureTable, children: NormalizedFilter[]): SelectionVector {
+    let selectionVector: SelectionVector | undefined;
+    const len = children.length;
 
-    for (let i = 1; i <= numExpressions; i++) {
-        const expression = expressionSpecification[i] as ExpressionSpecification;
-        if (isComparisonExpression(expression)) {
-            selectionVector = executeComparisonExpression(featureTable, expression, selectionVector);
-        } else if (isMatchExpression(expression)) {
-            selectionVector = executeMatchExpression(featureTable, expression, selectionVector);
+    for (let i = 0; i < len; i++) {
+        const child = children[i];
+        const childOp = child.operator;
+        
+        if (childOp === "all" || childOp === "any" || childOp === "none") {
+            const childResult = executeCompound(featureTable, child as NormalizedCompoundFilter);
+            selectionVector = selectionVector 
+                ? intersectSelectionVectors(selectionVector, childResult)
+                : childResult;
         } else {
-            throw new Error("Expression not supported.");
+            selectionVector = executeLeaf(featureTable, child as NormalizedLeafFilter, selectionVector);
         }
 
-        if (selectionVector.limit === 0) {
-            return selectionVector;
+        if (selectionVector.limit === 0) return selectionVector;
+        
+        if (i < len - 1 && selectionVector instanceof ConstSelectionVector) {
+            selectionVector = new FlatSelectionVector(selectionVector.selectionValues());
         }
     }
 
     return selectionVector;
 }
 
-function executeMatchExpression(
-    featureTable: FeatureTable,
-    expression: ExpressionSpecification,
-    selectionVector?: SelectionVector,
-): SelectionVector {
-    const comparisonInstruction = expression[0] as string;
-    const columnName = expression[1] as string;
-
-    const propertyVector = featureTable.getPropertyVector(columnName);
-    if (!propertyVector) {
-        if (comparisonInstruction[0] === "!") {
-            return selectionVector ?? new SequenceSelectionVector(0, 1, featureTable.numFeatures);
-        }
-        return new FlatSelectionVector(new Uint32Array(0));
+function executeAny(featureTable: FeatureTable, children: NormalizedFilter[]): SelectionVector {
+    const len = children.length;
+    if (len === 1) return executeFilter(featureTable, children[0]);
+    
+    const results: SelectionVector[] = [];
+    for (let i = 0; i < len; i++) {
+        const result = executeFilter(featureTable, children[i]);
+        if (result.limit > 0) results.push(result);
     }
-
-    const handler = matchExpressionHandlers[comparisonInstruction];
-    if (!handler) {
-        throw new Error("Specified match expression not supported (yet).");
-    }
-
-    const handlers = getVectorTypeHandlers(propertyVector);
-    return handler(propertyVector, expression, handlers, selectionVector);
+    
+    if (results.length === 0) return EMPTY_SELECTION;
+    return unionSelectionVectors(results, featureTable.numFeatures);
 }
 
-function executeComparisonExpression(
+function executeNone(featureTable: FeatureTable, children: NormalizedFilter[]): SelectionVector {
+    const anyResult = executeAny(featureTable, children);
+    return invertSelectionVector(anyResult, featureTable.numFeatures);
+}
+
+function executeLeaf(
     featureTable: FeatureTable,
-    expression: ExpressionSpecification,
+    leaf: NormalizedLeafFilter,
     selectionVector?: SelectionVector,
 ): SelectionVector {
-    const comparisonInstruction = expression[0];
-    const columnName = expression[1] as string;
-    const predicateValue = expression[2];
+    const targetKind = leaf.target.kind;
 
-    if (columnName === "$type" || columnName === "geometry-type") {
-        if (comparisonInstruction === "!=") {
-            throw new Error("Specified filter not supported on GeometryVector (yet).");
-        }
+    if (targetKind === "geometry-type") {
+        return executeGeometryTypeFilter(featureTable, leaf.operator, leaf.values as string[], selectionVector);
+    }
 
-        const geometryType = getSinglePartGeometryType(predicateValue as string);
-        const geometryVector = featureTable.geometryVector;
+    if (targetKind === "id") {
+        return executeIdFilter(featureTable, leaf.operator, leaf.values, selectionVector);
+    }
+
+    return executePropertyFilter(featureTable, leaf.operator, leaf.target.name, leaf.values, selectionVector);
+}
+
+// ============================================================================
+// SPECIALIZED FILTER EXECUTORS
+// ============================================================================
+
+function executeGeometryTypeFilter(
+    featureTable: FeatureTable,
+    operator: string,
+    geometryTypeNames: string[],
+    selectionVector?: SelectionVector,
+): SelectionVector {
+    const geometryVector = featureTable.geometryVector;
+
+    if (operator === "!=") {
+        const geometryType = getSinglePartGeometryType(geometryTypeNames[0]);
+        const matching = geometryVector.filter(geometryType);
+        const inverted = invertSelectionVector(matching, featureTable.numFeatures);
+        return selectionVector ? intersectSelectionVectors(selectionVector, inverted) : inverted;
+    }
+
+    if (operator !== "==" && operator !== "in") {
+        throw new Error(`Operator ${operator} not supported on geometry type.`);
+    }
+
+    const len = geometryTypeNames.length;
+    const typeSet = new Set<SINGLE_PART_GEOMETRY_TYPE>();
+    for (let i = 0; i < len; i++) {
+        typeSet.add(getSinglePartGeometryType(geometryTypeNames[i]));
+    }
+    
+    const uniqueTypes = Array.from(typeSet);
+
+    if (uniqueTypes.length === 1) {
         if (selectionVector) {
-            geometryVector.filterSelected(geometryType, selectionVector);
+            geometryVector.filterSelected(uniqueTypes[0], selectionVector);
             return selectionVector;
         }
-
-        return geometryVector.filter(geometryType);
+        return geometryVector.filter(uniqueTypes[0]);
     }
 
-    const propertyVector = featureTable.getPropertyVector(columnName);
-    if (!propertyVector) {
-        if (comparisonInstruction === "!=") {
+    const results = new Array<SelectionVector>(uniqueTypes.length);
+    for (let i = 0; i < uniqueTypes.length; i++) {
+        results[i] = geometryVector.filter(uniqueTypes[i]);
+    }
+    const union = unionSelectionVectors(results, featureTable.numFeatures);
+    return selectionVector ? intersectSelectionVectors(selectionVector, union) : union;
+}
+
+function executeIdFilter(
+    featureTable: FeatureTable,
+    operator: string,
+    values: unknown[],
+    selectionVector?: SelectionVector,
+): SelectionVector {
+    const idVector = featureTable.idVector;
+    
+    if (!idVector) {
+        if (operator === "!=" || operator === "!in" || operator === "!has") {
             return selectionVector ?? new SequenceSelectionVector(0, 1, featureTable.numFeatures);
         }
-        return new FlatSelectionVector(new Uint32Array(0));
+        return EMPTY_SELECTION;
     }
 
-    const handler = comparisonExpressionHandlers[comparisonInstruction];
-    if (!handler) {
-        throw new Error("Comparison expression not supported.");
-    }
-
-    const handlers = getVectorTypeHandlers(propertyVector);
-    return handler(propertyVector, predicateValue, handlers, selectionVector);
+    return executeVectorOperation(idVector as unknown as Vector, operator, values, selectionVector);
 }
 
-// Strict comparison implementations (> and <)
+function executePropertyFilter(
+    featureTable: FeatureTable,
+    operator: string,
+    columnName: string,
+    values: unknown[],
+    selectionVector?: SelectionVector,
+): SelectionVector {
+    const propertyVector = featureTable.getPropertyVector(columnName);
 
-function executeGreaterThan(vector: Vector, value: unknown, handlers: VectorTypeHandlers): SelectionVector {
-    const greaterThanOrEqualResult = handlers.greaterThanOrEqual(vector, value);
-    const selectionValues = greaterThanOrEqualResult.selectionValues();
-    const result = new Uint32Array(greaterThanOrEqualResult.limit);
+    if (!propertyVector) {
+        if (operator === "!=" || operator === "!in" || operator === "!has") {
+            return selectionVector ?? new SequenceSelectionVector(0, 1, featureTable.numFeatures);
+        }
+        return EMPTY_SELECTION;
+    }
+
+    return executeVectorOperation(propertyVector, operator, values, selectionVector);
+}
+
+// ============================================================================
+// VECTOR OPERATIONS
+// ============================================================================
+
+function executeVectorOperation(
+    vector: Vector,
+    operator: string,
+    values: unknown[],
+    selectionVector?: SelectionVector,
+): SelectionVector {
+    const handlers = getVectorTypeHandlers(vector);
+    const hasSelection = selectionVector !== undefined;
+    const value = values[0];
+
+    switch (operator) {
+        case "==":
+            if (hasSelection) {
+                handlers.filterSelected(vector, value, selectionVector);
+                return selectionVector;
+            }
+            return handlers.filter(vector, value);
+            
+        case "in":
+            if (hasSelection) {
+                handlers.matchSelected(vector, values, selectionVector);
+                return selectionVector;
+            }
+            return handlers.match(vector, values);
+            
+        case "!=":
+            if (hasSelection) {
+                handlers.filterNotEqualSelected(vector, value, selectionVector);
+                return selectionVector;
+            }
+            return handlers.filterNotEqual(vector, value);
+            
+        case "!in":
+            if (hasSelection) {
+                handlers.noneMatchSelected(vector, values, selectionVector);
+                return selectionVector;
+            }
+            return handlers.noneMatch(vector, values);
+            
+        case ">=":
+            if (hasSelection) {
+                handlers.greaterThanOrEqualSelected(vector, value, selectionVector);
+                return selectionVector;
+            }
+            return handlers.greaterThanOrEqual(vector, value);
+            
+        case "<=":
+            if (hasSelection) {
+                handlers.lessThanOrEqualSelected(vector, value, selectionVector);
+                return selectionVector;
+            }
+            return handlers.lessThanOrEqual(vector, value);
+            
+        case ">":
+            if (hasSelection) {
+                executeStrictComparisonSelected(vector, value, handlers, selectionVector, true);
+                return selectionVector;
+            }
+            return executeStrictComparison(vector, value, handlers, true);
+            
+        case "<":
+            if (hasSelection) {
+                executeStrictComparisonSelected(vector, value, handlers, selectionVector, false);
+                return selectionVector;
+            }
+            return executeStrictComparison(vector, value, handlers, false);
+            
+        case "has":
+            if (hasSelection) {
+                filterNonNullSelected(vector, selectionVector);
+                return selectionVector;
+            }
+            return createNonNullSelectionVector(vector);
+            
+        case "!has":
+            if (hasSelection) {
+                filterNullSelected(vector, selectionVector);
+                return selectionVector;
+            }
+            return nullableValues(vector);
+            
+        default:
+            throw new Error(`Operator ${operator} not supported.`);
+    }
+}
+
+function executeStrictComparison(
+    vector: Vector,
+    value: unknown,
+    handlers: VectorTypeHandlers,
+    isGreater: boolean
+): SelectionVector {
+    const result = isGreater 
+        ? handlers.greaterThanOrEqual(vector, value)
+        : handlers.lessThanOrEqual(vector, value);
+    
+    const selectionValues = result.selectionValues();
+    const limit = result.limit;
+    const filtered = new Uint32Array(limit);
     let writeIndex = 0;
 
-    for (let i = 0; i < greaterThanOrEqualResult.limit; i++) {
+    for (let i = 0; i < limit; i++) {
         const index = selectionValues[i];
         if (vector.has(index) && vector.getValue(index) !== value) {
-            result[writeIndex++] = index;
+            filtered[writeIndex++] = index;
         }
     }
 
-    return new FlatSelectionVector(result, writeIndex);
+    return new FlatSelectionVector(filtered, writeIndex);
 }
 
-function executeGreaterThanSelected(
+function executeStrictComparisonSelected(
     vector: Vector,
     value: unknown,
     handlers: VectorTypeHandlers,
     selectionVector: SelectionVector,
+    isGreater: boolean
 ): void {
-    handlers.greaterThanOrEqualSelected(vector, value, selectionVector);
+    if (isGreater) {
+        handlers.greaterThanOrEqualSelected(vector, value, selectionVector);
+    } else {
+        handlers.lessThanOrEqualSelected(vector, value, selectionVector);
+    }
+    
     const selectionValues = selectionVector.selectionValues();
+    const limit = selectionVector.limit;
     let writeIndex = 0;
 
-    for (let i = 0; i < selectionVector.limit; i++) {
+    for (let i = 0; i < limit; i++) {
         const index = selectionValues[i];
         if (vector.has(index) && vector.getValue(index) !== value) {
             selectionVector.setIndex(writeIndex++, index);
         }
     }
     selectionVector.setLimit(writeIndex);
-}
-
-function executeLessThan(vector: Vector, value: unknown, handlers: VectorTypeHandlers): SelectionVector {
-    const lessThanOrEqualResult = handlers.lessThanOrEqual(vector, value);
-    const selectionValues = lessThanOrEqualResult.selectionValues();
-    const result = new Uint32Array(lessThanOrEqualResult.limit);
-    let writeIndex = 0;
-
-    for (let i = 0; i < lessThanOrEqualResult.limit; i++) {
-        const index = selectionValues[i];
-        if (vector.has(index) && vector.getValue(index) !== value) {
-            result[writeIndex++] = index;
-        }
-    }
-
-    return new FlatSelectionVector(result, writeIndex);
-}
-
-function executeLessThanSelected(
-    vector: Vector,
-    value: unknown,
-    handlers: VectorTypeHandlers,
-    selectionVector: SelectionVector,
-): void {
-    handlers.lessThanOrEqualSelected(vector, value, selectionVector);
-    const selectionValues = selectionVector.selectionValues();
-    let writeIndex = 0;
-
-    for (let i = 0; i < selectionVector.limit; i++) {
-        const index = selectionValues[i];
-        if (vector.has(index) && vector.getValue(index) !== value) {
-            selectionVector.setIndex(writeIndex++, index);
-        }
-    }
-    selectionVector.setLimit(writeIndex);
-}
-
-function getSinglePartGeometryType(geometryType: string): SINGLE_PART_GEOMETRY_TYPE {
-    const result = geometryTypeMap[geometryType];
-    if (result === undefined) {
-        throw new Error("Invalid geometry type");
-    }
-    return result;
 }

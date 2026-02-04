@@ -1,6 +1,5 @@
 import type Vector from "../vector/vector";
 import { type SelectionVector } from "../vector/filter/selectionVector";
-
 import {
     filterByValue,
     filterSelected,
@@ -52,7 +51,6 @@ import {
     greaterThanOrEqualToStringFsstDictionarySelected,
     smallerThanOrEqualToStringFsstDictionarySelected,
 } from "../vector/utils";
-
 import { StringDictionaryVector } from "../vector/dictionary/stringDictionaryVector";
 import { StringFlatVector } from "../vector/flat/stringFlatVector";
 import { StringFsstDictionaryVector } from "../vector/fsst-dictionary/stringFsstDictionaryVector";
@@ -78,143 +76,104 @@ export interface VectorTypeHandlers {
     lessThanOrEqualSelected: FilterSelectedFn;
 }
 
-const stringDictionaryHandlers: VectorTypeHandlers = {
-    filter: (vector, value) =>
-        filterStringDictionaryByValue(vector as StringDictionaryVector, value as string),
-    filterSelected: (vector, value, selectionVector) =>
-        filterStringDictionarySelected(vector as StringDictionaryVector, value as string, selectionVector),
-    filterNotEqual: (vector, value) =>
-        filterStringDictionaryNotEqual(vector as StringDictionaryVector, value as string),
-    filterNotEqualSelected: (vector, value, selectionVector) =>
-        filterStringDictionaryNotEqualSelected(vector as StringDictionaryVector, value as string, selectionVector),
-    match: (vector, values) =>
-        matchStringDictionary(vector as StringDictionaryVector, values as string[]),
-    matchSelected: (vector, values, selectionVector) =>
-        matchStringDictionarySelected(vector as StringDictionaryVector, values as string[], selectionVector),
-    noneMatch: (vector, values) =>
-        noneMatchStringDictionary(vector as StringDictionaryVector, values as string[]),
-    noneMatchSelected: (vector, values, selectionVector) =>
-        noneMatchStringDictionarySelected(vector as StringDictionaryVector, values as string[], selectionVector),
-    greaterThanOrEqual: (vector, value) =>
-        greaterThanOrEqualToStringDictionary(vector as StringDictionaryVector, value as string),
-    greaterThanOrEqualSelected: (vector, value, selectionVector) =>
-        greaterThanOrEqualToStringDictionarySelected(vector as StringDictionaryVector, value as string, selectionVector),
-    lessThanOrEqual: (vector, value) =>
-        smallerThanOrEqualToStringDictionary(vector as StringDictionaryVector, value as string),
-    lessThanOrEqualSelected: (vector, value, selectionVector) =>
-        smallerThanOrEqualToStringDictionarySelected(vector as StringDictionaryVector, value as string, selectionVector),
+const throwComparisonError = (): never => {
+    throw new Error("Comparison operators (>=, <=, >, <) are not supported for boolean vectors.");
+};
+
+// Pre-allocated handler objects
+const boolHandlers: VectorTypeHandlers = {
+    filter: filterByValue,
+    filterSelected,
+    filterNotEqual,
+    filterNotEqualSelected,
+    match,
+    matchSelected,
+    noneMatch,
+    noneMatchSelected,
+    greaterThanOrEqual: throwComparisonError,
+    greaterThanOrEqualSelected: throwComparisonError,
+    lessThanOrEqual: throwComparisonError,
+    lessThanOrEqualSelected: throwComparisonError,
+};
+
+const stringDictHandlers: VectorTypeHandlers = {
+    filter: (v, val) => filterStringDictionaryByValue(v as StringDictionaryVector, val as string),
+    filterSelected: (v, val, sv) => filterStringDictionarySelected(v as StringDictionaryVector, val as string, sv),
+    filterNotEqual: (v, val) => filterStringDictionaryNotEqual(v as StringDictionaryVector, val as string),
+    filterNotEqualSelected: (v, val, sv) => filterStringDictionaryNotEqualSelected(v as StringDictionaryVector, val as string, sv),
+    match: (v, vals) => matchStringDictionary(v as StringDictionaryVector, vals as string[]),
+    matchSelected: (v, vals, sv) => matchStringDictionarySelected(v as StringDictionaryVector, vals as string[], sv),
+    noneMatch: (v, vals) => noneMatchStringDictionary(v as StringDictionaryVector, vals as string[]),
+    noneMatchSelected: (v, vals, sv) => noneMatchStringDictionarySelected(v as StringDictionaryVector, vals as string[], sv),
+    greaterThanOrEqual: (v, val) => greaterThanOrEqualToStringDictionary(v as StringDictionaryVector, val as string),
+    greaterThanOrEqualSelected: (v, val, sv) => greaterThanOrEqualToStringDictionarySelected(v as StringDictionaryVector, val as string, sv),
+    lessThanOrEqual: (v, val) => smallerThanOrEqualToStringDictionary(v as StringDictionaryVector, val as string),
+    lessThanOrEqualSelected: (v, val, sv) => smallerThanOrEqualToStringDictionarySelected(v as StringDictionaryVector, val as string, sv),
 };
 
 const stringFlatHandlers: VectorTypeHandlers = {
-    filter: (vector, value) => filterStringFlatByValue(vector as StringFlatVector, value as string),
-    filterSelected: (vector, value, selectionVector) =>
-        filterStringFlatSelected(vector as StringFlatVector, value as string, selectionVector),
-    filterNotEqual: (vector, value) => filterStringFlatNotEqual(vector as StringFlatVector, value as string),
-    filterNotEqualSelected: (vector, value, selectionVector) =>
-        filterStringFlatNotEqualSelected(vector as StringFlatVector, value as string, selectionVector),
-    match: (vector, values) => matchStringFlat(vector as StringFlatVector, values as string[]),
-    matchSelected: (vector, values, selectionVector) =>
-        matchStringFlatSelected(vector as StringFlatVector, values as string[], selectionVector),
-    noneMatch: (vector, values) => noneMatchStringFlat(vector as StringFlatVector, values as string[]),
-    noneMatchSelected: (vector, values, selectionVector) =>
-        noneMatchStringFlatSelected(vector as StringFlatVector, values as string[], selectionVector),
-    greaterThanOrEqual: (vector, value) =>
-        greaterThanOrEqualToStringFlat(vector as StringFlatVector, value as string),
-    greaterThanOrEqualSelected: (vector, value, selectionVector) =>
-        greaterThanOrEqualToStringFlatSelected(vector as StringFlatVector, value as string, selectionVector),
-    lessThanOrEqual: (vector, value) => smallerThanOrEqualToStringFlat(vector as StringFlatVector, value as string),
-    lessThanOrEqualSelected: (vector, value, selectionVector) =>
-        smallerThanOrEqualToStringFlatSelected(vector as StringFlatVector, value as string, selectionVector),
+    filter: (v, val) => filterStringFlatByValue(v as StringFlatVector, val as string),
+    filterSelected: (v, val, sv) => filterStringFlatSelected(v as StringFlatVector, val as string, sv),
+    filterNotEqual: (v, val) => filterStringFlatNotEqual(v as StringFlatVector, val as string),
+    filterNotEqualSelected: (v, val, sv) => filterStringFlatNotEqualSelected(v as StringFlatVector, val as string, sv),
+    match: (v, vals) => matchStringFlat(v as StringFlatVector, vals as string[]),
+    matchSelected: (v, vals, sv) => matchStringFlatSelected(v as StringFlatVector, vals as string[], sv),
+    noneMatch: (v, vals) => noneMatchStringFlat(v as StringFlatVector, vals as string[]),
+    noneMatchSelected: (v, vals, sv) => noneMatchStringFlatSelected(v as StringFlatVector, vals as string[], sv),
+    greaterThanOrEqual: (v, val) => greaterThanOrEqualToStringFlat(v as StringFlatVector, val as string),
+    greaterThanOrEqualSelected: (v, val, sv) => greaterThanOrEqualToStringFlatSelected(v as StringFlatVector, val as string, sv),
+    lessThanOrEqual: (v, val) => smallerThanOrEqualToStringFlat(v as StringFlatVector, val as string),
+    lessThanOrEqualSelected: (v, val, sv) => smallerThanOrEqualToStringFlatSelected(v as StringFlatVector, val as string, sv),
 };
 
-const stringFsstDictionaryHandlers: VectorTypeHandlers = {
-    filter: (vector, value) =>
-        filterStringFsstDictionaryByValue(vector as StringFsstDictionaryVector, value as string),
-    filterSelected: (vector, value, selectionVector) =>
-        filterStringFsstDictionarySelected(vector as StringFsstDictionaryVector, value as string, selectionVector),
-    filterNotEqual: (vector, value) =>
-        filterStringFsstDictionaryNotEqual(vector as StringFsstDictionaryVector, value as string),
-    filterNotEqualSelected: (vector, value, selectionVector) =>
-        filterStringFsstDictionaryNotEqualSelected(vector as StringFsstDictionaryVector, value as string, selectionVector),
-    match: (vector, values) => matchStringFsstDictionary(vector as StringFsstDictionaryVector, values as string[]),
-    matchSelected: (vector, values, selectionVector) =>
-        matchStringFsstDictionarySelected(vector as StringFsstDictionaryVector, values as string[], selectionVector),
-    noneMatch: (vector, values) =>
-        noneMatchStringFsstDictionary(vector as StringFsstDictionaryVector, values as string[]),
-    noneMatchSelected: (vector, values, selectionVector) =>
-        noneMatchStringFsstDictionarySelected(vector as StringFsstDictionaryVector, values as string[], selectionVector),
-    greaterThanOrEqual: (vector, value) =>
-        greaterThanOrEqualToStringFsstDictionary(vector as StringFsstDictionaryVector, value as string),
-    greaterThanOrEqualSelected: (vector, value, selectionVector) =>
-        greaterThanOrEqualToStringFsstDictionarySelected(vector as StringFsstDictionaryVector, value as string, selectionVector),
-    lessThanOrEqual: (vector, value) =>
-        smallerThanOrEqualToStringFsstDictionary(vector as StringFsstDictionaryVector, value as string),
-    lessThanOrEqualSelected: (vector, value, selectionVector) =>
-        smallerThanOrEqualToStringFsstDictionarySelected(vector as StringFsstDictionaryVector, value as string, selectionVector)
+const stringFsstHandlers: VectorTypeHandlers = {
+    filter: (v, val) => filterStringFsstDictionaryByValue(v as StringFsstDictionaryVector, val as string),
+    filterSelected: (v, val, sv) => filterStringFsstDictionarySelected(v as StringFsstDictionaryVector, val as string, sv),
+    filterNotEqual: (v, val) => filterStringFsstDictionaryNotEqual(v as StringFsstDictionaryVector, val as string),
+    filterNotEqualSelected: (v, val, sv) => filterStringFsstDictionaryNotEqualSelected(v as StringFsstDictionaryVector, val as string, sv),
+    match: (v, vals) => matchStringFsstDictionary(v as StringFsstDictionaryVector, vals as string[]),
+    matchSelected: (v, vals, sv) => matchStringFsstDictionarySelected(v as StringFsstDictionaryVector, vals as string[], sv),
+    noneMatch: (v, vals) => noneMatchStringFsstDictionary(v as StringFsstDictionaryVector, vals as string[]),
+    noneMatchSelected: (v, vals, sv) => noneMatchStringFsstDictionarySelected(v as StringFsstDictionaryVector, vals as string[], sv),
+    greaterThanOrEqual: (v, val) => greaterThanOrEqualToStringFsstDictionary(v as StringFsstDictionaryVector, val as string),
+    greaterThanOrEqualSelected: (v, val, sv) => greaterThanOrEqualToStringFsstDictionarySelected(v as StringFsstDictionaryVector, val as string, sv),
+    lessThanOrEqual: (v, val) => smallerThanOrEqualToStringFsstDictionary(v as StringFsstDictionaryVector, val as string),
+    lessThanOrEqualSelected: (v, val, sv) => smallerThanOrEqualToStringFsstDictionarySelected(v as StringFsstDictionaryVector, val as string, sv),
 };
 
 const genericHandlers: VectorTypeHandlers = {
-    filter: (vector, value) =>
-        filterByValue(vector, value),
-    filterSelected: (vector, value, selectionVector) =>
-        filterSelected(vector, value, selectionVector),
-    filterNotEqual: (vector, value) =>
-        filterNotEqual(vector, value),
-    filterNotEqualSelected: (vector, value, selectionVector) =>
-        filterNotEqualSelected(vector, value, selectionVector),
-    match: (vector, values) =>
-        match(vector, values),
-    matchSelected: (vector, values, selectionVector) =>
-        matchSelected(vector, values, selectionVector),
-    noneMatch: (vector, values) =>
-        noneMatch(vector, values),
-    noneMatchSelected: (vector, values, selectionVector) =>
-        noneMatchSelected(vector, values, selectionVector),
-    greaterThanOrEqual: (vector, value) =>
-        greaterThanOrEqualTo(vector as ComparableVector, value),
-    greaterThanOrEqualSelected: (vector, value, selectionVector) =>
-        greaterThanOrEqualToSelected(vector as ComparableVector, value, selectionVector),
-    lessThanOrEqual: (vector, value) =>
-        smallerThanOrEqualTo(vector as ComparableVector, value),
-    lessThanOrEqualSelected: (vector, value, selectionVector) =>
-        smallerThanOrEqualToSelected(vector as ComparableVector, value, selectionVector),
+    filter: filterByValue,
+    filterSelected,
+    filterNotEqual,
+    filterNotEqualSelected,
+    match,
+    matchSelected,
+    noneMatch,
+    noneMatchSelected,
+    greaterThanOrEqual: (v, val) => greaterThanOrEqualTo(v as ComparableVector, val),
+    greaterThanOrEqualSelected: (v, val, sv) => greaterThanOrEqualToSelected(v as ComparableVector, val, sv),
+    lessThanOrEqual: (v, val) => smallerThanOrEqualTo(v as ComparableVector, val),
+    lessThanOrEqualSelected: (v, val, sv) => smallerThanOrEqualToSelected(v as ComparableVector, val, sv),
 };
 
-const boolHandlers: VectorTypeHandlers = {
-    filter: (vector, value) =>
-        filterByValue(vector, value),
-    filterSelected: (vector, value, selectionVector) =>
-        filterSelected(vector, value, selectionVector),
-    filterNotEqual: (vector, value) =>
-        filterNotEqual(vector, value),
-    filterNotEqualSelected: (vector, value, selectionVector) =>
-        filterNotEqualSelected(vector, value, selectionVector),
-    match: (vector, values) =>
-        match(vector, values),
-    matchSelected: (vector, values, selectionVector) =>
-        matchSelected(vector, values, selectionVector),
-    noneMatch: (vector, values) =>
-        noneMatch(vector, values),
-    noneMatchSelected: (vector, values, selectionVector) =>
-        noneMatchSelected(vector, values, selectionVector),
-    greaterThanOrEqual: () => {
-        throw new Error("Comparison operators (>=, <=, >, <) are not supported for boolean vectors.");
-    },
-    greaterThanOrEqualSelected: () => {
-        throw new Error("Comparison operators (>=, <=, >, <) are not supported for boolean vectors.");
-    },
-    lessThanOrEqual: () => {
-        throw new Error("Comparison operators (>=, <=, >, <) are not supported for boolean vectors.");
-    },
-    lessThanOrEqualSelected: () => {
-        throw new Error("Comparison operators (>=, <=, >, <) are not supported for boolean vectors.");
-    },
-};
+const handlerCache = new WeakMap<Vector, VectorTypeHandlers>();
 
 export function getVectorTypeHandlers(vector: Vector): VectorTypeHandlers {
-    if (vector instanceof BooleanFlatVector) return boolHandlers;
-    if (vector instanceof StringDictionaryVector) return stringDictionaryHandlers;
-    if (vector instanceof StringFlatVector) return stringFlatHandlers;
-    if (vector instanceof StringFsstDictionaryVector) return stringFsstDictionaryHandlers;
-    return genericHandlers;
+    let handlers = handlerCache.get(vector);
+    if (handlers) return handlers;
+
+    if (vector instanceof BooleanFlatVector) {
+        handlers = boolHandlers;
+    } else if (vector instanceof StringDictionaryVector) {
+        handlers = stringDictHandlers;
+    } else if (vector instanceof StringFlatVector) {
+        handlers = stringFlatHandlers;
+    } else if (vector instanceof StringFsstDictionaryVector) {
+        handlers = stringFsstHandlers;
+    } else {
+        handlers = genericHandlers;
+    }
+
+    handlerCache.set(vector, handlers);
+    return handlers;
 }
