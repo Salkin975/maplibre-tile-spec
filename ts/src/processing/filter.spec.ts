@@ -38,11 +38,12 @@ describe("filter", () => {
         });
 
         it("throws for unsupported expression", () => {
-            expect(() => filter(ft(5), ["bad", "x", 1] as never)).toThrow("not supported");
+            expect(() => filter(ft(5), ["bad", "x", 1] as never)).toThrow("Unsupported filter operator");
         });
 
-        it("throws for unsupported compound", () => {
-            expect(() => filter(ft(5), ["any", ["==", "x", 1]] as never)).toThrow("CompoundExpression not supported");
+        it("any compound returns union", () => {
+            const r = filter(ft(5, [int([1, 2, 3, 4, 5], "v")]), ["any", ["==", "v", 1], ["==", "v", 3]] as never);
+            expect(r.limit).toBe(2);
         });
     });
 
@@ -65,14 +66,34 @@ describe("filter", () => {
         it("LineString", () => filter(ft(5, [], GEOMETRY_TYPE.LINESTRING), ["==", "$type", "LineString"]));
         it("Polygon", () => filter(ft(5, [], GEOMETRY_TYPE.POLYGON), ["==", "$type", "Polygon"]));
         it("geometry-type alias", () => filter(ft(5), ["==", "geometry-type", "Point"]));
-        it("throws for !=", () => expect(() => filter(ft(5), ["!=", "$type", "Point"])).toThrow());
+        it("!= filters out matching geometry type", () => {
+            const r = filter(ft(5, [], GEOMETRY_TYPE.POINT), ["!=", "$type", "Point"]);
+            expect(r.limit).toBe(0);
+        });
+        it("!= keeps non-matching geometry type", () => {
+            const r = filter(ft(5, [], GEOMETRY_TYPE.LINESTRING), ["!=", "$type", "Point"]);
+            expect(r.limit).toBe(5);
+        });
         it("throws for invalid", () => expect(() => filter(ft(5), ["==", "$type", "Bad"])).toThrow());
     });
 
     describe("compound", () => {
-        it("combines filters", () => filter(ft(5, [int([1, 2, 3, 4, 5], "v")]), ["all", [">=", "v", 2], ["<=", "v", 4]]));
+        it("combines filters", () =>
+            filter(ft(5, [int([1, 2, 3, 4, 5], "v")]), ["all", [">=", "v", 2], ["<=", "v", 4]]));
         it("$type in compound expression", () => {
-            filter(ft(3, [int([1, 2, 3], "v")], GEOMETRY_TYPE.POINT), ["all", [">=", "v", 1], ["==", "$type", "Point"]]);
+            filter(ft(3, [int([1, 2, 3], "v")], GEOMETRY_TYPE.POINT), [
+                "all",
+                [">=", "v", 1],
+                ["==", "$type", "Point"],
+            ]);
+        });
+        it("$type first in compound (ConstSelectionVector materialization)", () => {
+            const r = filter(ft(3, [int([1, 2, 3], "v")], GEOMETRY_TYPE.POINT), [
+                "all",
+                ["==", "$type", "Point"],
+                [">=", "v", 2],
+            ]);
+            expect(r.limit).toBe(2);
         });
     });
 
@@ -458,8 +479,168 @@ describe("filter", () => {
         });
         it("!has selected uses filterNullSelected", () => {
             spy = vi.spyOn(utils, "filterNullSelected");
-            filter(ft(3, [strDict(["a", null, "c"], "s"), int([1, 1, 1], "f")]), ["all", ["==", "f", 1], ["!has", "s"]] as never);
+            filter(ft(3, [strDict(["a", null, "c"], "s"), int([1, 1, 1], "f")]), [
+                "all",
+                ["==", "f", 1],
+                ["!has", "s"],
+            ] as never);
             expect(spy).toHaveBeenCalled();
+        });
+    });
+
+    describe("expression syntax", () => {
+        it("== with get accessor", () => {
+            const r = filter(ft(3, [int([1, 2, 3], "v")]), ["==", ["get", "v"], 2] as never);
+            expect(r.limit).toBe(1);
+        });
+
+        it("!= with get accessor", () => {
+            const r = filter(ft(3, [int([1, 2, 3], "v")]), ["!=", ["get", "v"], 2] as never);
+            expect(r.limit).toBe(2);
+        });
+
+        it(">= with get accessor", () => {
+            const r = filter(ft(3, [int([1, 2, 3], "v")]), [">=", ["get", "v"], 2] as never);
+            expect(r.limit).toBe(2);
+        });
+
+        it("<= with get accessor", () => {
+            const r = filter(ft(3, [int([1, 2, 3], "v")]), ["<=", ["get", "v"], 2] as never);
+            expect(r.limit).toBe(2);
+        });
+
+        it("> with get accessor", () => {
+            const r = filter(ft(3, [int([1, 2, 3], "v")]), [">", ["get", "v"], 2] as never);
+            expect(r.limit).toBe(1);
+        });
+
+        it("< with get accessor", () => {
+            const r = filter(ft(3, [int([1, 2, 3], "v")]), ["<", ["get", "v"], 2] as never);
+            expect(r.limit).toBe(1);
+        });
+
+        it("in with literal array", () => {
+            const r = filter(ft(5, [int([1, 2, 3, 4, 5], "v")]), ["in", ["get", "v"], ["literal", [1, 3, 5]]] as never);
+            expect(r.limit).toBe(3);
+        });
+
+        it("!in with literal array", () => {
+            const r = filter(ft(5, [int([1, 2, 3, 4, 5], "v")]), [
+                "!in",
+                ["get", "v"],
+                ["literal", [1, 3, 5]],
+            ] as never);
+            expect(r.limit).toBe(2);
+        });
+
+        it("geometry-type accessor", () => {
+            const r = filter(ft(5, [], GEOMETRY_TYPE.POINT), ["==", ["geometry-type"], "Point"] as never);
+            expect(r.limit).toBe(5);
+        });
+
+        it("geometry-type != accessor", () => {
+            const r = filter(ft(5, [], GEOMETRY_TYPE.POINT), ["!=", ["geometry-type"], "Point"] as never);
+            expect(r.limit).toBe(0);
+        });
+
+        it("all compound with expression syntax", () => {
+            const r = filter(ft(5, [int([1, 2, 3, 4, 5], "v")]), [
+                "all",
+                [">=", ["get", "v"], 2],
+                ["<=", ["get", "v"], 4],
+            ] as never);
+            expect(r.limit).toBe(3);
+        });
+
+        it("any compound", () => {
+            const r = filter(ft(5, [int([1, 2, 3, 4, 5], "v")]), [
+                "any",
+                ["==", ["get", "v"], 1],
+                ["==", ["get", "v"], 5],
+            ] as never);
+            expect(r.limit).toBe(2);
+        });
+
+        it("none compound", () => {
+            const r = filter(ft(5, [int([1, 2, 3, 4, 5], "v")]), [
+                "none",
+                ["==", ["get", "v"], 1],
+                ["==", ["get", "v"], 5],
+            ] as never);
+            expect(r.limit).toBe(3);
+        });
+
+        it("nested all containing any", () => {
+            const r = filter(ft(5, [int([1, 2, 3, 4, 5], "v")]), [
+                "all",
+                ["any", ["==", ["get", "v"], 1], ["==", ["get", "v"], 3], ["==", ["get", "v"], 5]] as never,
+                [">=", ["get", "v"], 3],
+            ] as never);
+            expect(r.limit).toBe(2); // 3 and 5
+        });
+
+        it("expression and legacy produce same results for ==", () => {
+            const f = ft(5, [int([10, 20, 30, 40, 50], "v")]);
+            const legacyResult = filter(f, ["==", "v", 30]);
+            const exprResult = filter(f, ["==", ["get", "v"], 30] as never);
+            expect(exprResult.limit).toBe(legacyResult.limit);
+        });
+
+        it("expression and legacy produce same results for in", () => {
+            const f = ft(5, [int([10, 20, 30, 40, 50], "v")]);
+            const legacyResult = filter(f, ["in", "v", 10, 30, 50] as never);
+            const exprResult = filter(f, ["in", ["get", "v"], ["literal", [10, 30, 50]]] as never);
+            expect(exprResult.limit).toBe(legacyResult.limit);
+        });
+
+        it("any with empty result children", () => {
+            const r = filter(ft(3, [int([1, 2, 3], "v")]), ["any", ["==", ["get", "v"], 99]] as never);
+            expect(r.limit).toBe(0);
+        });
+
+        it("any with overlapping results deduplicates", () => {
+            const r = filter(ft(5, [int([1, 2, 3, 4, 5], "v")]), [
+                "any",
+                [">=", ["get", "v"], 3],
+                ["<=", ["get", "v"], 3],
+            ] as never);
+            expect(r.limit).toBe(5); // union of [3,4,5] and [1,2,3] = [1,2,3,4,5]
+        });
+
+        it("none inverts selection", () => {
+            const r = filter(ft(5, [int([1, 2, 3, 4, 5], "v")]), [
+                "none",
+                ["==", ["get", "v"], 2],
+                ["==", ["get", "v"], 4],
+            ] as never);
+            expect(r.limit).toBe(3); // not 2 and not 4 => 1, 3, 5
+        });
+
+        it("match expression selects matching values", () => {
+            const r = filter(ft(5, [int([1, 2, 3, 4, 5], "v")]), [
+                "match",
+                ["get", "v"],
+                [1, 3, 5],
+                true,
+                false,
+            ] as never);
+            expect(r.limit).toBe(3);
+        });
+
+        it("match with true fallback excludes matching values", () => {
+            const r = filter(ft(5, [int([1, 2, 3, 4, 5], "v")]), ["match", ["get", "v"], [1, 3], false, true] as never);
+            expect(r.limit).toBe(3); // 2, 4, 5
+        });
+
+        it("match with string property", () => {
+            const r = filter(ft(3, [strDict(["road", "rail", "path"], "class")]), [
+                "match",
+                ["get", "class"],
+                ["road", "path"],
+                true,
+                false,
+            ] as never);
+            expect(r.limit).toBe(2);
         });
     });
 });

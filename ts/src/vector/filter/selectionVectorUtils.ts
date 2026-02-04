@@ -41,7 +41,10 @@ export function createNullableSelectionVector(size: number, nullabilityBuffer?: 
  * @param selectionVector - The input selection vector to filter
  * @param nullabilityBuffer - Optional bit vector where 1=not null, 0=null. If undefined/null, all values are considered non-null.
  */
-export function updateNullableSelectionVector(selectionVector: SelectionVector, nullabilityBuffer?: BitVector): SelectionVector {
+export function updateNullableSelectionVector(
+    selectionVector: SelectionVector,
+    nullabilityBuffer?: BitVector,
+): SelectionVector {
     const filteredIndices = new Uint32Array(selectionVector.limit);
     let index = 0;
     for (let i = 0; i < selectionVector.limit; i++) {
@@ -52,4 +55,89 @@ export function updateNullableSelectionVector(selectionVector: SelectionVector, 
         }
     }
     return new FlatSelectionVector(filteredIndices, index);
+}
+
+/**
+ * Unions multiple selection vectors using a bitset. O(totalSize) time.
+ */
+export function unionSelectionVectors(vectors: SelectionVector[], totalSize: number): SelectionVector {
+    if (vectors.length === 0) {
+        return new FlatSelectionVector(new Uint32Array(0));
+    }
+    if (vectors.length === 1) {
+        return vectors[0];
+    }
+
+    const bitset = new Uint8Array(Math.ceil(totalSize / 8));
+    let count = 0;
+
+    for (const sv of vectors) {
+        const values = sv.selectionValues();
+        for (let i = 0; i < sv.limit; i++) {
+            const idx = values[i];
+            const byteIdx = idx >> 3;
+            const bitMask = 1 << (idx & 7);
+            if (!(bitset[byteIdx] & bitMask)) {
+                bitset[byteIdx] |= bitMask;
+                count++;
+            }
+        }
+    }
+
+    const result = new Uint32Array(count);
+    let writeIdx = 0;
+    for (let i = 0; i < totalSize && writeIdx < count; i++) {
+        if (bitset[i >> 3] & (1 << (i & 7))) {
+            result[writeIdx++] = i;
+        }
+    }
+
+    return new FlatSelectionVector(result);
+}
+
+/**
+ * Inverts a selection vector: returns all indices in [0, totalSize) NOT in the input.
+ */
+export function invertSelectionVector(sv: SelectionVector, totalSize: number): SelectionVector {
+    const bitset = new Uint8Array(Math.ceil(totalSize / 8));
+    const values = sv.selectionValues();
+    for (let i = 0; i < sv.limit; i++) {
+        const idx = values[i];
+        bitset[idx >> 3] |= 1 << (idx & 7);
+    }
+
+    const result = new Uint32Array(totalSize - sv.limit);
+    let writeIdx = 0;
+    for (let i = 0; i < totalSize; i++) {
+        if (!(bitset[i >> 3] & (1 << (i & 7)))) {
+            result[writeIdx++] = i;
+        }
+    }
+
+    return new FlatSelectionVector(result, writeIdx);
+}
+
+/**
+ * Intersects two selection vectors. Returns indices present in both.
+ */
+export function intersectSelectionVectors(a: SelectionVector, b: SelectionVector): SelectionVector {
+    // Use the smaller one to build a set, scan the larger one
+    const [smaller, larger] = a.limit <= b.limit ? [a, b] : [b, a];
+    const set = new Set<number>();
+    const smallerValues = smaller.selectionValues();
+    for (let i = 0; i < smaller.limit; i++) {
+        set.add(smallerValues[i]);
+    }
+
+    const result = new Uint32Array(smaller.limit);
+    let writeIdx = 0;
+    const largerValues = larger.selectionValues();
+    for (let i = 0; i < larger.limit; i++) {
+        const idx = largerValues[i];
+        if (set.has(idx)) {
+            result[writeIdx++] = idx;
+        }
+    }
+
+    return new FlatSelectionVector(result, writeIdx);
 }
