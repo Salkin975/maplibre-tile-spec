@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach, type MockInstance } from "vitest";
 import filter from "./filter";
 import FeatureTable from "../vector/featureTable";
 import { IntFlatVector } from "../vector/flat/intFlatVector";
@@ -7,12 +7,10 @@ import { createStringFlatVector } from "../vector/flat/stringFlatVector";
 import { createStringFsstDictionaryVector } from "../vector/fsst-dictionary/stringFsstDictionaryVector";
 import { createConstGeometryVector } from "../vector/geometry/constGeometryVector";
 import TopologyVector from "../vector/geometry/topologyVector";
-import { GEOMETRY_TYPE, type SINGLE_PART_GEOMETRY_TYPE } from "../vector/geometry/geometryType";
-import { type SelectionVector } from "../vector/filter/selectionVector";
-import { FlatSelectionVector } from "../vector/filter/flatSelectionVector";
+import { GEOMETRY_TYPE } from "../vector/geometry/geometryType";
 import { SequenceSelectionVector } from "../vector/filter/sequenceSelectionVector";
 import type Vector from "../vector/vector";
-import type { IGeometryVector } from "../vector/geometry/geometryVector";
+import * as utils from "../vector/utils";
 
 function createTopology(n: number): TopologyVector {
     const o = new Uint32Array(n + 1);
@@ -25,48 +23,11 @@ const strDict = (v: (string | null)[], name: string) => createStringDictionaryVe
 const strFlat = (v: string[], name: string) => createStringFlatVector(v, name);
 const strFsst = (v: (string | null)[], name: string) => createStringFsstDictionaryVector(v, name);
 
-class MockGeometry implements IGeometryVector {
-    private _types: Int32Array;
-    constructor(types: number[]) { this._types = new Int32Array(types); }
-    get numGeometries() { return this._types.length; }
-    geometryType(i: number) { return this._types[i]; }
-    containsSingleGeometryType() { return false; }
-    filter(t: SINGLE_PART_GEOMETRY_TYPE): SelectionVector {
-        const idx: number[] = [];
-        for (let i = 0; i < this.numGeometries; i++) {
-            if (this._types[i] === t || this._types[i] === t + 3) idx.push(i);
-        }
-        return new FlatSelectionVector(new Uint32Array(idx));
-    }
-    filterSelected(t: SINGLE_PART_GEOMETRY_TYPE, sv: SelectionVector): void {
-        const v = sv.selectionValues();
-        let w = 0;
-        for (let i = 0; i < sv.limit; i++) {
-            if (this._types[v[i]] === t || this._types[v[i]] === t + 3) sv.setIndex(w++, v[i]);
-        }
-        sv.setLimit(w);
-    }
-    get vertexBufferType() { return 0 as never; }
-    get topologyVector() { return createTopology(this.numGeometries); }
-    get vertexOffsets() { return new Int32Array(0); }
-    get vertexBuffer() { return new Int32Array(0); }
-    get mortonSettings() { return undefined; }
-    getVertex() { return [0, 0] as [number, number]; }
-    getSimpleEncodedVertex() { return [0, 0] as [number, number]; }
-    getGeometries() { return []; }
-    containsPolygonGeometry() { return false; }
-}
-
-function ft(n: number, props: Vector[] = [], geoType?: GEOMETRY_TYPE, geoTypes?: number[]): FeatureTable {
-    let gv: IGeometryVector;
-    if (geoTypes) {
-        gv = new MockGeometry(geoTypes);
-    } else {
-        const t = createTopology(n);
-        const vo = new Int32Array(n + 1);
-        for (let i = 0; i <= n; i++) vo[i] = i * 2;
-        gv = createConstGeometryVector(n, geoType ?? GEOMETRY_TYPE.POINT, t, vo, new Int32Array(n * 2));
-    }
+function ft(n: number, props: Vector[] = [], geoType?: GEOMETRY_TYPE): FeatureTable {
+    const t = createTopology(n);
+    const vo = new Int32Array(n + 1);
+    for (let i = 0; i <= n; i++) vo[i] = i * 2;
+    const gv = createConstGeometryVector(n, geoType ?? GEOMETRY_TYPE.POINT, t, vo, new Int32Array(n * 2));
     return new FeatureTable("test", gv, undefined, props);
 }
 
@@ -110,134 +71,395 @@ describe("filter", () => {
 
     describe("compound", () => {
         it("combines filters", () => filter(ft(5, [int([1, 2, 3, 4, 5], "v")]), ["all", [">=", "v", 2], ["<=", "v", 4]]));
-        it("$type moves to front", () => {
-            const types = [GEOMETRY_TYPE.POINT, GEOMETRY_TYPE.LINESTRING, GEOMETRY_TYPE.POINT];
-            filter(ft(3, [int([1, 2, 3], "v")], undefined, types), ["all", [">=", "v", 1], ["==", "$type", "Point"]]);
+        it("$type in compound expression", () => {
+            filter(ft(3, [int([1, 2, 3], "v")], GEOMETRY_TYPE.POINT), ["all", [">=", "v", 1], ["==", "$type", "Point"]]);
         });
     });
 
     // Vector type dispatch for ==
     describe("== dispatch", () => {
-        it("StringDictionaryVector", () => filter(ft(3, [strDict(["a", "b", "c"], "s")]), ["==", "s", "a"]));
-        it("StringFlatVector", () => filter(ft(3, [strFlat(["a", "b", "c"], "s")]), ["==", "s", "a"]));
-        it("StringFsstDictionaryVector", () => filter(ft(3, [strFsst(["a", "b", "c"], "s")]), ["==", "s", "a"]));
-        it("IntVector", () => filter(ft(3, [int([1, 2, 3], "v")]), ["==", "v", 1]));
+        let spy: MockInstance;
+        afterEach(() => spy?.mockRestore());
+
+        it("StringDictionaryVector", () => {
+            spy = vi.spyOn(utils, "filterStringDictionaryByValue");
+            filter(ft(3, [strDict(["a", "b", "c"], "s")]), ["==", "s", "a"]);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("StringFlatVector", () => {
+            spy = vi.spyOn(utils, "filterStringFlatByValue");
+            filter(ft(3, [strFlat(["a", "b", "c"], "s")]), ["==", "s", "a"]);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("StringFsstDictionaryVector", () => {
+            spy = vi.spyOn(utils, "filterStringFsstDictionaryByValue");
+            filter(ft(3, [strFsst(["a", "b", "c"], "s")]), ["==", "s", "a"]);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("IntVector", () => {
+            spy = vi.spyOn(utils, "filterByValue");
+            filter(ft(3, [int([1, 2, 3], "v")]), ["==", "v", 1]);
+            expect(spy).toHaveBeenCalled();
+        });
     });
 
     // Vector type dispatch for == selected
     describe("== selected dispatch", () => {
+        let spy: MockInstance;
+        afterEach(() => spy?.mockRestore());
         const flag = int([1, 1, 1], "f");
-        it("StringDictionaryVector", () => filter(ft(3, [strDict(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], ["==", "s", "a"]]));
-        it("StringFlatVector", () => filter(ft(3, [strFlat(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], ["==", "s", "a"]]));
-        it("StringFsstDictionaryVector", () => filter(ft(3, [strFsst(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], ["==", "s", "a"]]));
-        it("IntVector", () => filter(ft(3, [int([1, 2, 3], "v"), flag]), ["all", ["==", "f", 1], ["==", "v", 1]]));
+
+        it("StringDictionaryVector", () => {
+            spy = vi.spyOn(utils, "filterStringDictionarySelected");
+            filter(ft(3, [strDict(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], ["==", "s", "a"]]);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("StringFlatVector", () => {
+            spy = vi.spyOn(utils, "filterStringFlatSelected");
+            filter(ft(3, [strFlat(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], ["==", "s", "a"]]);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("StringFsstDictionaryVector", () => {
+            spy = vi.spyOn(utils, "filterStringFsstDictionarySelected");
+            filter(ft(3, [strFsst(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], ["==", "s", "a"]]);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("IntVector", () => {
+            spy = vi.spyOn(utils, "filterSelected");
+            filter(ft(3, [int([1, 2, 3], "v"), flag]), ["all", ["==", "f", 1], ["==", "v", 1]]);
+            expect(spy).toHaveBeenCalled();
+        });
     });
 
     // Vector type dispatch for !=
     describe("!= dispatch", () => {
-        it("StringDictionaryVector", () => filter(ft(3, [strDict(["a", "b", "c"], "s")]), ["!=", "s", "a"]));
-        it("StringFlatVector", () => filter(ft(3, [strFlat(["a", "b", "c"], "s")]), ["!=", "s", "a"]));
-        it("StringFsstDictionaryVector", () => filter(ft(3, [strFsst(["a", "b", "c"], "s")]), ["!=", "s", "a"]));
-        it("IntVector", () => filter(ft(3, [int([1, 2, 3], "v")]), ["!=", "v", 1]));
+        let spy: MockInstance;
+        afterEach(() => spy?.mockRestore());
+
+        it("StringDictionaryVector", () => {
+            spy = vi.spyOn(utils, "filterStringDictionaryNotEqual");
+            filter(ft(3, [strDict(["a", "b", "c"], "s")]), ["!=", "s", "a"]);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("StringFlatVector", () => {
+            spy = vi.spyOn(utils, "filterStringFlatNotEqual");
+            filter(ft(3, [strFlat(["a", "b", "c"], "s")]), ["!=", "s", "a"]);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("StringFsstDictionaryVector", () => {
+            spy = vi.spyOn(utils, "filterStringFsstDictionaryNotEqual");
+            filter(ft(3, [strFsst(["a", "b", "c"], "s")]), ["!=", "s", "a"]);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("IntVector", () => {
+            spy = vi.spyOn(utils, "filterNotEqual");
+            filter(ft(3, [int([1, 2, 3], "v")]), ["!=", "v", 1]);
+            expect(spy).toHaveBeenCalled();
+        });
     });
 
     // Vector type dispatch for != selected
     describe("!= selected dispatch", () => {
+        let spy: MockInstance;
+        afterEach(() => spy?.mockRestore());
         const flag = int([1, 1, 1], "f");
-        it("StringDictionaryVector", () => filter(ft(3, [strDict(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], ["!=", "s", "a"]]));
-        it("StringFlatVector", () => filter(ft(3, [strFlat(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], ["!=", "s", "a"]]));
-        it("StringFsstDictionaryVector", () => filter(ft(3, [strFsst(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], ["!=", "s", "a"]]));
-        it("IntVector", () => filter(ft(3, [int([1, 2, 3], "v"), flag]), ["all", ["==", "f", 1], ["!=", "v", 1]]));
+
+        it("StringDictionaryVector", () => {
+            spy = vi.spyOn(utils, "filterStringDictionaryNotEqualSelected");
+            filter(ft(3, [strDict(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], ["!=", "s", "a"]]);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("StringFlatVector", () => {
+            spy = vi.spyOn(utils, "filterStringFlatNotEqualSelected");
+            filter(ft(3, [strFlat(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], ["!=", "s", "a"]]);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("StringFsstDictionaryVector", () => {
+            spy = vi.spyOn(utils, "filterStringFsstDictionaryNotEqualSelected");
+            filter(ft(3, [strFsst(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], ["!=", "s", "a"]]);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("IntVector", () => {
+            spy = vi.spyOn(utils, "filterNotEqualSelected");
+            filter(ft(3, [int([1, 2, 3], "v"), flag]), ["all", ["==", "f", 1], ["!=", "v", 1]]);
+            expect(spy).toHaveBeenCalled();
+        });
     });
 
     // Vector type dispatch for >=
     describe(">= dispatch", () => {
-        it("StringDictionaryVector", () => filter(ft(3, [strDict(["a", "b", "c"], "s")]), [">=", "s", "b"]));
-        it("StringFlatVector", () => filter(ft(3, [strFlat(["a", "b", "c"], "s")]), [">=", "s", "b"]));
-        it("StringFsstDictionaryVector", () => filter(ft(3, [strFsst(["a", "b", "c"], "s")]), [">=", "s", "b"]));
-        it("IntVector", () => filter(ft(3, [int([1, 2, 3], "v")]), [">=", "v", 2]));
+        let spy: MockInstance;
+        afterEach(() => spy?.mockRestore());
+
+        it("StringDictionaryVector", () => {
+            spy = vi.spyOn(utils, "greaterThanOrEqualToStringDictionary");
+            filter(ft(3, [strDict(["a", "b", "c"], "s")]), [">=", "s", "b"]);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("StringFlatVector", () => {
+            spy = vi.spyOn(utils, "greaterThanOrEqualToStringFlat");
+            filter(ft(3, [strFlat(["a", "b", "c"], "s")]), [">=", "s", "b"]);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("StringFsstDictionaryVector", () => {
+            spy = vi.spyOn(utils, "greaterThanOrEqualToStringFsstDictionary");
+            filter(ft(3, [strFsst(["a", "b", "c"], "s")]), [">=", "s", "b"]);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("IntVector", () => {
+            spy = vi.spyOn(utils, "greaterThanOrEqualTo");
+            filter(ft(3, [int([1, 2, 3], "v")]), [">=", "v", 2]);
+            expect(spy).toHaveBeenCalled();
+        });
     });
 
     // Vector type dispatch for >= selected
     describe(">= selected dispatch", () => {
+        let spy: MockInstance;
+        afterEach(() => spy?.mockRestore());
         const flag = int([1, 1, 1], "f");
-        it("StringDictionaryVector", () => filter(ft(3, [strDict(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], [">=", "s", "b"]]));
-        it("StringFlatVector", () => filter(ft(3, [strFlat(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], [">=", "s", "b"]]));
-        it("StringFsstDictionaryVector", () => filter(ft(3, [strFsst(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], [">=", "s", "b"]]));
-        it("IntVector", () => filter(ft(3, [int([1, 2, 3], "v"), flag]), ["all", ["==", "f", 1], [">=", "v", 2]]));
+
+        it("StringDictionaryVector", () => {
+            spy = vi.spyOn(utils, "greaterThanOrEqualToStringDictionarySelected");
+            filter(ft(3, [strDict(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], [">=", "s", "b"]]);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("StringFlatVector", () => {
+            spy = vi.spyOn(utils, "greaterThanOrEqualToStringFlatSelected");
+            filter(ft(3, [strFlat(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], [">=", "s", "b"]]);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("StringFsstDictionaryVector", () => {
+            spy = vi.spyOn(utils, "greaterThanOrEqualToStringFsstDictionarySelected");
+            filter(ft(3, [strFsst(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], [">=", "s", "b"]]);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("IntVector", () => {
+            spy = vi.spyOn(utils, "greaterThanOrEqualToSelected");
+            filter(ft(3, [int([1, 2, 3], "v"), flag]), ["all", ["==", "f", 1], [">=", "v", 2]]);
+            expect(spy).toHaveBeenCalled();
+        });
     });
 
     // Vector type dispatch for <=
     describe("<= dispatch", () => {
-        it("StringDictionaryVector", () => filter(ft(3, [strDict(["a", "b", "c"], "s")]), ["<=", "s", "b"]));
-        it("StringFlatVector", () => filter(ft(3, [strFlat(["a", "b", "c"], "s")]), ["<=", "s", "b"]));
-        it("StringFsstDictionaryVector", () => filter(ft(3, [strFsst(["a", "b", "c"], "s")]), ["<=", "s", "b"]));
-        it("IntVector", () => filter(ft(3, [int([1, 2, 3], "v")]), ["<=", "v", 2]));
+        let spy: MockInstance;
+        afterEach(() => spy?.mockRestore());
+
+        it("StringDictionaryVector", () => {
+            spy = vi.spyOn(utils, "smallerThanOrEqualToStringDictionary");
+            filter(ft(3, [strDict(["a", "b", "c"], "s")]), ["<=", "s", "b"]);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("StringFlatVector", () => {
+            spy = vi.spyOn(utils, "smallerThanOrEqualToStringFlat");
+            filter(ft(3, [strFlat(["a", "b", "c"], "s")]), ["<=", "s", "b"]);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("StringFsstDictionaryVector", () => {
+            spy = vi.spyOn(utils, "smallerThanOrEqualToStringFsstDictionary");
+            filter(ft(3, [strFsst(["a", "b", "c"], "s")]), ["<=", "s", "b"]);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("IntVector", () => {
+            spy = vi.spyOn(utils, "smallerThanOrEqualTo");
+            filter(ft(3, [int([1, 2, 3], "v")]), ["<=", "v", 2]);
+            expect(spy).toHaveBeenCalled();
+        });
     });
 
     // Vector type dispatch for <= selected
     describe("<= selected dispatch", () => {
+        let spy: MockInstance;
+        afterEach(() => spy?.mockRestore());
         const flag = int([1, 1, 1], "f");
-        it("StringDictionaryVector", () => filter(ft(3, [strDict(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], ["<=", "s", "b"]]));
-        it("StringFlatVector", () => filter(ft(3, [strFlat(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], ["<=", "s", "b"]]));
-        it("StringFsstDictionaryVector", () => filter(ft(3, [strFsst(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], ["<=", "s", "b"]]));
-        it("IntVector", () => filter(ft(3, [int([1, 2, 3], "v"), flag]), ["all", ["==", "f", 1], ["<=", "v", 2]]));
+
+        it("StringDictionaryVector", () => {
+            spy = vi.spyOn(utils, "smallerThanOrEqualToStringDictionarySelected");
+            filter(ft(3, [strDict(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], ["<=", "s", "b"]]);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("StringFlatVector", () => {
+            spy = vi.spyOn(utils, "smallerThanOrEqualToStringFlatSelected");
+            filter(ft(3, [strFlat(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], ["<=", "s", "b"]]);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("StringFsstDictionaryVector", () => {
+            spy = vi.spyOn(utils, "smallerThanOrEqualToStringFsstDictionarySelected");
+            filter(ft(3, [strFsst(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], ["<=", "s", "b"]]);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("IntVector", () => {
+            spy = vi.spyOn(utils, "smallerThanOrEqualToSelected");
+            filter(ft(3, [int([1, 2, 3], "v"), flag]), ["all", ["==", "f", 1], ["<=", "v", 2]]);
+            expect(spy).toHaveBeenCalled();
+        });
     });
 
     // Vector type dispatch for in
     describe("in dispatch", () => {
-        it("StringDictionaryVector", () => filter(ft(3, [strDict(["a", "b", "c"], "s")]), ["in", "s", "a", "c"] as never));
-        it("StringFlatVector", () => filter(ft(3, [strFlat(["a", "b", "c"], "s")]), ["in", "s", "a", "c"] as never));
-        it("StringFsstDictionaryVector", () => filter(ft(3, [strFsst(["a", "b", "c"], "s")]), ["in", "s", "a", "c"] as never));
-        it("IntVector", () => filter(ft(3, [int([1, 2, 3], "v")]), ["in", "v", 1, 3] as never));
+        let spy: MockInstance;
+        afterEach(() => spy?.mockRestore());
+
+        it("StringDictionaryVector", () => {
+            spy = vi.spyOn(utils, "matchStringDictionary");
+            filter(ft(3, [strDict(["a", "b", "c"], "s")]), ["in", "s", "a", "c"] as never);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("StringFlatVector", () => {
+            spy = vi.spyOn(utils, "matchStringFlat");
+            filter(ft(3, [strFlat(["a", "b", "c"], "s")]), ["in", "s", "a", "c"] as never);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("StringFsstDictionaryVector", () => {
+            spy = vi.spyOn(utils, "matchStringFsstDictionary");
+            filter(ft(3, [strFsst(["a", "b", "c"], "s")]), ["in", "s", "a", "c"] as never);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("IntVector", () => {
+            spy = vi.spyOn(utils, "match");
+            filter(ft(3, [int([1, 2, 3], "v")]), ["in", "v", 1, 3] as never);
+            expect(spy).toHaveBeenCalled();
+        });
     });
 
     // Vector type dispatch for in selected
     describe("in selected dispatch", () => {
+        let spy: MockInstance;
+        afterEach(() => spy?.mockRestore());
         const flag = int([1, 1, 1], "f");
-        it("StringDictionaryVector", () => filter(ft(3, [strDict(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], ["in", "s", "a"]] as never));
-        it("StringFlatVector", () => filter(ft(3, [strFlat(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], ["in", "s", "a"]] as never));
-        it("StringFsstDictionaryVector", () => filter(ft(3, [strFsst(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], ["in", "s", "a"]] as never));
-        it("IntVector", () => filter(ft(3, [int([1, 2, 3], "v"), flag]), ["all", ["==", "f", 1], ["in", "v", 1]] as never));
+
+        it("StringDictionaryVector", () => {
+            spy = vi.spyOn(utils, "matchStringDictionarySelected");
+            filter(ft(3, [strDict(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], ["in", "s", "a"]] as never);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("StringFlatVector", () => {
+            spy = vi.spyOn(utils, "matchStringFlatSelected");
+            filter(ft(3, [strFlat(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], ["in", "s", "a"]] as never);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("StringFsstDictionaryVector", () => {
+            spy = vi.spyOn(utils, "matchStringFsstDictionarySelected");
+            filter(ft(3, [strFsst(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], ["in", "s", "a"]] as never);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("IntVector", () => {
+            spy = vi.spyOn(utils, "matchSelected");
+            filter(ft(3, [int([1, 2, 3], "v"), flag]), ["all", ["==", "f", 1], ["in", "v", 1]] as never);
+            expect(spy).toHaveBeenCalled();
+        });
     });
 
     // Vector type dispatch for !in
     describe("!in dispatch", () => {
-        it("StringDictionaryVector", () => filter(ft(3, [strDict(["a", "b", "c"], "s")]), ["!in", "s", "a"] as never));
-        it("StringFlatVector", () => filter(ft(3, [strFlat(["a", "b", "c"], "s")]), ["!in", "s", "a"] as never));
-        it("StringFsstDictionaryVector", () => filter(ft(3, [strFsst(["a", "b", "c"], "s")]), ["!in", "s", "a"] as never));
-        it("IntVector", () => filter(ft(3, [int([1, 2, 3], "v")]), ["!in", "v", 1] as never));
+        let spy: MockInstance;
+        afterEach(() => spy?.mockRestore());
+
+        it("StringDictionaryVector", () => {
+            spy = vi.spyOn(utils, "noneMatchStringDictionary");
+            filter(ft(3, [strDict(["a", "b", "c"], "s")]), ["!in", "s", "a"] as never);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("StringFlatVector", () => {
+            spy = vi.spyOn(utils, "noneMatchStringFlat");
+            filter(ft(3, [strFlat(["a", "b", "c"], "s")]), ["!in", "s", "a"] as never);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("StringFsstDictionaryVector", () => {
+            spy = vi.spyOn(utils, "noneMatchStringFsstDictionary");
+            filter(ft(3, [strFsst(["a", "b", "c"], "s")]), ["!in", "s", "a"] as never);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("IntVector", () => {
+            spy = vi.spyOn(utils, "noneMatch");
+            filter(ft(3, [int([1, 2, 3], "v")]), ["!in", "v", 1] as never);
+            expect(spy).toHaveBeenCalled();
+        });
     });
 
     // Vector type dispatch for !in selected
     describe("!in selected dispatch", () => {
+        let spy: MockInstance;
+        afterEach(() => spy?.mockRestore());
         const flag = int([1, 1, 1], "f");
-        it("StringDictionaryVector", () => filter(ft(3, [strDict(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], ["!in", "s", "a"]] as never));
-        it("StringFlatVector", () => filter(ft(3, [strFlat(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], ["!in", "s", "a"]] as never));
-        it("StringFsstDictionaryVector", () => filter(ft(3, [strFsst(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], ["!in", "s", "a"]] as never));
-        it("IntVector", () => filter(ft(3, [int([1, 2, 3], "v"), flag]), ["all", ["==", "f", 1], ["!in", "v", 1]] as never));
+
+        it("StringDictionaryVector", () => {
+            spy = vi.spyOn(utils, "noneMatchStringDictionarySelected");
+            filter(ft(3, [strDict(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], ["!in", "s", "a"]] as never);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("StringFlatVector", () => {
+            spy = vi.spyOn(utils, "noneMatchStringFlatSelected");
+            filter(ft(3, [strFlat(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], ["!in", "s", "a"]] as never);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("StringFsstDictionaryVector", () => {
+            spy = vi.spyOn(utils, "noneMatchStringFsstDictionarySelected");
+            filter(ft(3, [strFsst(["a", "b", "c"], "s"), flag]), ["all", ["==", "f", 1], ["!in", "s", "a"]] as never);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("IntVector", () => {
+            spy = vi.spyOn(utils, "noneMatchSelected");
+            filter(ft(3, [int([1, 2, 3], "v"), flag]), ["all", ["==", "f", 1], ["!in", "v", 1]] as never);
+            expect(spy).toHaveBeenCalled();
+        });
     });
 
     // Strict comparison (> and <) - filter.ts specific implementation
     describe("> and <", () => {
-        it("> excludes exact match", () => {
+        let spy: MockInstance;
+        afterEach(() => spy?.mockRestore());
+
+        it("> uses greaterThanOrEqualTo then excludes exact match", () => {
+            spy = vi.spyOn(utils, "greaterThanOrEqualTo");
             const r = filter(ft(3, [int([1, 2, 3], "v")]), [">", "v", 2]);
+            expect(spy).toHaveBeenCalled();
             expect(r.limit).toBe(1);
         });
 
-        it("< excludes exact match", () => {
+        it("< uses smallerThanOrEqualTo then excludes exact match", () => {
+            spy = vi.spyOn(utils, "smallerThanOrEqualTo");
             const r = filter(ft(3, [int([1, 2, 3], "v")]), ["<", "v", 2]);
+            expect(spy).toHaveBeenCalled();
             expect(r.limit).toBe(1);
         });
 
-        it("> selected", () => filter(ft(3, [int([1, 2, 3], "v"), int([1, 1, 1], "f")]), ["all", ["==", "f", 1], [">", "v", 1]]));
-        it("< selected", () => filter(ft(3, [int([1, 2, 3], "v"), int([1, 1, 1], "f")]), ["all", ["==", "f", 1], ["<", "v", 3]]));
+        it("> selected uses greaterThanOrEqualToSelected", () => {
+            spy = vi.spyOn(utils, "greaterThanOrEqualToSelected");
+            filter(ft(3, [int([1, 2, 3], "v"), int([1, 1, 1], "f")]), ["all", ["==", "f", 1], [">", "v", 1]]);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("< selected uses smallerThanOrEqualToSelected", () => {
+            spy = vi.spyOn(utils, "smallerThanOrEqualToSelected");
+            filter(ft(3, [int([1, 2, 3], "v"), int([1, 1, 1], "f")]), ["all", ["==", "f", 1], ["<", "v", 3]]);
+            expect(spy).toHaveBeenCalled();
+        });
     });
 
     describe("has/!has", () => {
-        it("has", () => filter(ft(3, [strDict(["a", null, "c"], "s")]), ["has", "s"]));
-        it("!has", () => filter(ft(3, [strDict(["a", null, "c"], "s")]), ["!has", "s"] as never));
-        it("has selected", () => filter(ft(3, [strDict(["a", null, "c"], "s"), int([1, 1, 1], "f")]), ["all", ["==", "f", 1], ["has", "s"]]));
-        it("!has selected", () => filter(ft(3, [strDict(["a", null, "c"], "s"), int([1, 1, 1], "f")]), ["all", ["==", "f", 1], ["!has", "s"]] as never));
+        let spy: MockInstance;
+        afterEach(() => spy?.mockRestore());
+
+        it("has uses createNonNullSelectionVector", () => {
+            spy = vi.spyOn(utils, "createNonNullSelectionVector");
+            filter(ft(3, [strDict(["a", null, "c"], "s")]), ["has", "s"]);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("!has uses nullableValues", () => {
+            spy = vi.spyOn(utils, "nullableValues");
+            filter(ft(3, [strDict(["a", null, "c"], "s")]), ["!has", "s"] as never);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("has selected uses filterNonNullSelected", () => {
+            spy = vi.spyOn(utils, "filterNonNullSelected");
+            filter(ft(3, [strDict(["a", null, "c"], "s"), int([1, 1, 1], "f")]), ["all", ["==", "f", 1], ["has", "s"]]);
+            expect(spy).toHaveBeenCalled();
+        });
+        it("!has selected uses filterNullSelected", () => {
+            spy = vi.spyOn(utils, "filterNullSelected");
+            filter(ft(3, [strDict(["a", null, "c"], "s"), int([1, 1, 1], "f")]), ["all", ["==", "f", 1], ["!has", "s"]] as never);
+            expect(spy).toHaveBeenCalled();
+        });
     });
 });
