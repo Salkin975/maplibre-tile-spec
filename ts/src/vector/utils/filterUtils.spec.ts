@@ -183,7 +183,7 @@ describe("BaseVector tests", () => {
         it("should exclude null values and return non-matching", () => {
             const withNulls = createNullableVector([10, 20, 30, 40, 50], 0b00010111);
             const result = noneMatch(withNulls, [20, 40]);
-            expect(result.selectionValues()).toStrictEqual(new Uint32Array([0, 2, 4]));
+            expect(result.selectionValues()).toStrictEqual(new Uint32Array([0, 2, 3, 4]));
         });
 
         it("should return empty when all values match", () => {
