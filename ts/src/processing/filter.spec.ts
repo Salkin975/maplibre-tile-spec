@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import filter from "./filter";
 import FeatureTable from "../vector/featureTable";
 import { IntFlatVector } from "../vector/flat/intFlatVector";
+import { BooleanFlatVector } from "../vector/flat/booleanFlatVector";
+import BitVector from "../vector/flat/bitVector";
 import { createStringDictionaryVector } from "../vector/dictionary/stringDictionaryVector";
 import { createConstGeometryVector } from "../vector/geometry/constGeometryVector";
 import TopologyVector from "../vector/geometry/topologyVector";
@@ -18,6 +20,11 @@ function createTopology(n: number): TopologyVector {
 
 const int = (v: number[], name: string) => new IntFlatVector(name, new Int32Array(v), v.length);
 const strDict = (v: (string | null)[], name: string) => createStringDictionaryVector(v, name);
+function bool(v: boolean[], name: string): BooleanFlatVector {
+    const bv = new BitVector(new Uint8Array(Math.ceil(v.length / 8)), v.length);
+    v.forEach((b, i) => { if (b) bv.set(i, true); });
+    return new BooleanFlatVector(name, bv, v.length);
+}
 
 
 function ft(n: number, props: Vector[] = [], geoType?: GEOMETRY_TYPE): FeatureTable {
@@ -517,6 +524,72 @@ describe("filter", () => {
             expect(() => {
                 filter(ft(3), ["==", "$type", "InvalidType"]);
             }).toThrow("Invalid geometry type");
+        });
+    });
+
+    describe("BooleanFlatVector through filter", () => {
+        it("== filters boolean values", () => {
+            const result = filter(ft(4, [bool([true, false, true, false], "b")]), ["==", "b", true]);
+            expect(result.limit).toBe(2);
+        });
+
+        it("!= filters boolean values", () => {
+            const result = filter(ft(4, [bool([true, false, true, false], "b")]), ["!=", "b", true]);
+            expect(result.limit).toBe(2);
+        });
+
+        it("in matches boolean values", () => {
+            const result = filter(ft(3, [bool([true, false, true], "b")]), ["in", "b", true] as never);
+            expect(result.limit).toBe(2);
+        });
+
+        it("!in excludes boolean values", () => {
+            const result = filter(ft(3, [bool([true, false, true], "b")]), ["!in", "b", true] as never);
+            expect(result.limit).toBe(1);
+        });
+
+        it(">= on boolean throws", () => {
+            expect(() => {
+                filter(ft(3, [bool([true, false, true], "b")]), [">=", "b", true]);
+            }).toThrow("not supported for boolean");
+        });
+
+        it("<= on boolean throws", () => {
+            expect(() => {
+                filter(ft(3, [bool([true, false, true], "b")]), ["<=", "b", true]);
+            }).toThrow("not supported for boolean");
+        });
+
+        it("== boolean with compound filter (selected path)", () => {
+            const result = filter(
+                ft(4, [bool([true, false, true, false], "b"), int([1, 1, 1, 1], "f")]),
+                ["all", ["==", "f", 1], ["==", "b", true]]
+            );
+            expect(result.limit).toBe(2);
+        });
+
+        it("!= boolean with compound filter (selected path)", () => {
+            const result = filter(
+                ft(4, [bool([true, false, true, false], "b"), int([1, 1, 1, 1], "f")]),
+                ["all", ["==", "f", 1], ["!=", "b", true]]
+            );
+            expect(result.limit).toBe(2);
+        });
+
+        it("in boolean with compound filter (selected path)", () => {
+            const result = filter(
+                ft(3, [bool([true, false, true], "b"), int([1, 1, 1], "f")]),
+                ["all", ["==", "f", 1], ["in", "b", false] as never]
+            );
+            expect(result.limit).toBe(1);
+        });
+
+        it("!in boolean with compound filter (selected path)", () => {
+            const result = filter(
+                ft(3, [bool([true, false, true], "b"), int([1, 1, 1], "f")]),
+                ["all", ["==", "f", 1], ["!in", "b", false] as never]
+            );
+            expect(result.limit).toBe(2);
         });
     });
 
