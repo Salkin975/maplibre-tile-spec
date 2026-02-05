@@ -9,12 +9,10 @@ import { StringFlatVector } from "../vector/flat/stringFlatVector";
 import { StringFsstDictionaryVector } from "../vector/fsst-dictionary/stringFsstDictionaryVector";
 import { BooleanFlatVector } from "../vector/flat/booleanFlatVector";
 
-
 export type FilterFn = (vector: Vector, value: unknown) => SelectionVector;
 export type FilterSelectedFn = (vector: Vector, value: unknown, sv: SelectionVector) => void;
 export type MatchFn = (vector: Vector, values: unknown[]) => SelectionVector;
 export type MatchSelectedFn = (vector: Vector, values: unknown[], sv: SelectionVector) => void;
-
 
 export interface VectorTypeHandlers {
     filter: FilterFn;
@@ -31,11 +29,9 @@ export interface VectorTypeHandlers {
     lessThanOrEqualSelected: FilterSelectedFn;
 }
 
-
 const throwComparisonError = (): never => {
     throw new Error("Comparison operators (>=, <=, >, <) are not supported for boolean vectors.");
 };
-
 
 // Pre-allocated handler objects
 const boolHandlers: VectorTypeHandlers = {
@@ -53,7 +49,6 @@ const boolHandlers: VectorTypeHandlers = {
     lessThanOrEqualSelected: throwComparisonError,
 };
 
-
 const stringDictHandlers: VectorTypeHandlers = {
     filter: (v, val) => utils.filterStringDictionaryByValue(v as StringDictionaryVector, val as string),
     filterSelected: (v, val, sv) => utils.filterStringDictionarySelected(v as StringDictionaryVector, val as string, sv),
@@ -68,7 +63,6 @@ const stringDictHandlers: VectorTypeHandlers = {
     lessThanOrEqual: (v, val) => utils.smallerThanOrEqualToStringDictionary(v as StringDictionaryVector, val as string),
     lessThanOrEqualSelected: (v, val, sv) => utils.smallerThanOrEqualToStringDictionarySelected(v as StringDictionaryVector, val as string, sv),
 };
-
 
 const stringFlatHandlers: VectorTypeHandlers = {
     filter: (v, val) => utils.filterStringFlatByValue(v as StringFlatVector, val as string),
@@ -85,7 +79,6 @@ const stringFlatHandlers: VectorTypeHandlers = {
     lessThanOrEqualSelected: (v, val, sv) => utils.smallerThanOrEqualToStringFlatSelected(v as StringFlatVector, val as string, sv),
 };
 
-
 const stringFsstHandlers: VectorTypeHandlers = {
     filter: (v, val) => utils.filterStringFsstDictionaryByValue(v as StringFsstDictionaryVector, val as string),
     filterSelected: (v, val, sv) => utils.filterStringFsstDictionarySelected(v as StringFsstDictionaryVector, val as string, sv),
@@ -101,8 +94,6 @@ const stringFsstHandlers: VectorTypeHandlers = {
     lessThanOrEqualSelected: (v, val, sv) => utils.smallerThanOrEqualToStringFsstDictionarySelected(v as StringFsstDictionaryVector, val as string, sv),
 };
 
-
-// FIXED: Call through utils module namespace so spies can intercept
 const genericHandlers: VectorTypeHandlers = {
     filter: (v, val) => utils.filterByValue(v, val),
     filterSelected: (v, val, sv) => utils.filterSelected(v, val, sv),
@@ -118,14 +109,11 @@ const genericHandlers: VectorTypeHandlers = {
     lessThanOrEqualSelected: (v, val, sv) => utils.smallerThanOrEqualToSelected(v as ComparableVector, val, sv),
 };
 
-
 const handlerCache = new WeakMap<Vector, VectorTypeHandlers>();
-
 
 export function getVectorTypeHandlers(vector: Vector): VectorTypeHandlers {
     let handlers = handlerCache.get(vector);
     if (handlers) return handlers;
-
 
     if (vector instanceof BooleanFlatVector) {
         handlers = boolHandlers;
@@ -138,7 +126,6 @@ export function getVectorTypeHandlers(vector: Vector): VectorTypeHandlers {
     } else {
         handlers = genericHandlers;
     }
-
 
     handlerCache.set(vector, handlers);
     return handlers;
