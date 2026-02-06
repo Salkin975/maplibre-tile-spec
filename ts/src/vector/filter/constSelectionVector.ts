@@ -31,7 +31,15 @@ export class ConstSelectionVector implements SelectionVector {
 
     /** @inheritdoc */
     selectionValues(): Uint32Array {
-        throw new Error("ConstSelectionVector has no backing array");
+        if (this._kind === 0) {
+            return new Uint32Array(0);
+        }
+        
+        const values = new Uint32Array(this._length);
+        for (let i = 0; i < this._length; i++) {
+            values[i] = i;
+        }
+        return values;
     }
 
     /** @inheritdoc */
