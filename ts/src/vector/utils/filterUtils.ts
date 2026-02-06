@@ -178,7 +178,7 @@ export function filterNotEqualSelected<K>(
  * @returns SelectionVector with indices where vector[i] is in values array
  */
 export function match<K>(vector: Vector<ArrayBufferView, K>, values: K[]): SelectionVector {
-    const tempArray = new Uint32Array(vector.size * values.length);
+    const tempArray = new Uint32Array(vector.size);
     let writeIndex = 0;
     const valueSet = new Set(values);
     for (let i = 0; i < vector.size; i++) {
@@ -186,11 +186,7 @@ export function match<K>(vector: Vector<ArrayBufferView, K>, values: K[]): Selec
         const value = vector.getValue(i);
         if (value == null) continue;
         if (valueSet.has(value)) {
-            for (let j = 0; j < values.length; j++) {
-                if (values[j] === value) {
-                    tempArray[writeIndex++] = i;
-                }
-            }
+            tempArray[writeIndex++] = i;
         }
     }
     return new FlatSelectionVector(tempArray, writeIndex);
