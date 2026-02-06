@@ -178,17 +178,21 @@ export function filterNotEqualSelected<K>(
  * @returns SelectionVector with indices where vector[i] is in values array
  */
 export function match<K>(vector: Vector<ArrayBufferView, K>, values: K[]): SelectionVector {
-    const selectionVector = new Uint32Array(vector.size * values.length);
-    let index = 0;
+    const tempArray = new Uint32Array(vector.size * values.length);
+    let writeIndex = 0;
+    const valueSet = new Set(values);
     for (let i = 0; i < vector.size; i++) {
         if (!vector.has(i)) continue;
-        const value = vector.getValue(i);
-        const matchCount = values.filter(v => v === value).length;
-        for (let k = 0; k < matchCount; k++) {
-            selectionVector[index++] = i;
+        const value = vector.getValue(i)!;        
+        if (valueSet.has(value)) {
+            for (let j = 0; j < values.length; j++) {
+                if (values[j] === value) {
+                    tempArray[writeIndex++] = i;
+                }
+            }
         }
     }
-    return new FlatSelectionVector(selectionVector, index);
+    return new FlatSelectionVector(tempArray, writeIndex);
 }
 
 /**
@@ -204,15 +208,13 @@ export function matchSelected<K>(
     values: K[],
     selectionVector: SelectionVector
 ): void {
+    const valueSet = new Set(values);
     let writeIndex = 0;
     const vectorValues = selectionVector.selectionValues();
     for (let i = 0; i < selectionVector.limit; i++) {
         const index = vectorValues[i];
-        if (!vector.has(index)) continue;
-        const value = vector.getValue(index);
-        const matchCount = values.filter(v => v === value).length;
-        for (let k = 0; k < matchCount; k++) {
-            selectionVector.setIndex(writeIndex++, index);
+        if (vector.has(index) && valueSet.has(vector.getValue(index)!)) {
+            vectorValues[writeIndex++] = index;
         }
     }
     selectionVector.setLimit(writeIndex);
@@ -226,14 +228,15 @@ export function matchSelected<K>(
  * @returns SelectionVector with indices where vector[i] is NOT in values array
  */
 export function noneMatch<K>(vector: Vector<ArrayBufferView, K>, values: K[]): SelectionVector {
-    const selectionVector = new Uint32Array(vector.size);
-    let index = 0;
+    const tempArray = new Uint32Array(vector.size);
+    let writeIndex = 0;
+    const valueSet = new Set(values);
     for (let i = 0; i < vector.size; i++) {
-        if (vector.has(i) && !values.includes(vector.getValue(i))) {
-            selectionVector[index++] = i;
+        if (vector.has(i) && !valueSet.has(vector.getValue(i)!)) {
+            tempArray[writeIndex++] = i;
         }
     }
-    return new FlatSelectionVector(selectionVector, index);
+    return new FlatSelectionVector(tempArray, writeIndex);
 }
 
 /**
@@ -249,12 +252,13 @@ export function noneMatchSelected<K>(
     values: K[],
     selectionVector: SelectionVector
 ): void {
+    const valueSet = new Set(values);
     let writeIndex = 0;
     const vectorValues = selectionVector.selectionValues();
     for (let i = 0; i < selectionVector.limit; i++) {
         const index = vectorValues[i];
-        if (vector.has(index) && !values.includes(vector.getValue(index))) {
-            selectionVector.setIndex(writeIndex++, index);
+        if (vector.has(index) && !valueSet.has(vector.getValue(index)!)) {
+            vectorValues[writeIndex++] = index;
         }
     }
     selectionVector.setLimit(writeIndex);
