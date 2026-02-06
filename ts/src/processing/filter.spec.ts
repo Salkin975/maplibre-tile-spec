@@ -550,13 +550,13 @@ describe("filter", () => {
 
         it(">= on boolean throws", () => {
             expect(() => {
-                filter(ft(3, [bool([true, false, true], "b")]), [">=", "b", true]);
+                filter(ft(3, [bool([true, false, true], "b")]), [">=", "b", true] as never);
             }).toThrow("not supported for boolean");
         });
 
         it("<= on boolean throws", () => {
             expect(() => {
-                filter(ft(3, [bool([true, false, true], "b")]), ["<=", "b", true]);
+                filter(ft(3, [bool([true, false, true], "b")]), ["<=", "b", true] as never);
             }).toThrow("not supported for boolean");
         });
 
