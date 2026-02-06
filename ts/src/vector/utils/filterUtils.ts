@@ -183,7 +183,8 @@ export function match<K>(vector: Vector<ArrayBufferView, K>, values: K[]): Selec
     const valueSet = new Set(values);
     for (let i = 0; i < vector.size; i++) {
         if (!vector.has(i)) continue;
-        const value = vector.getValue(i)!;        
+        const value = vector.getValue(i);
+        if (value == null) continue;
         if (valueSet.has(value)) {
             for (let j = 0; j < values.length; j++) {
                 if (values[j] === value) {
@@ -213,7 +214,11 @@ export function matchSelected<K>(
     const vectorValues = selectionVector.selectionValues();
     for (let i = 0; i < selectionVector.limit; i++) {
         const index = vectorValues[i];
-        if (vector.has(index) && valueSet.has(vector.getValue(index)!)) {
+        if (!vector.has(index)) continue;
+        const value = vector.getValue(index);
+        if (value == null) continue;
+        
+        if (valueSet.has(value)) {
             vectorValues[writeIndex++] = index;
         }
     }
@@ -232,7 +237,11 @@ export function noneMatch<K>(vector: Vector<ArrayBufferView, K>, values: K[]): S
     let writeIndex = 0;
     const valueSet = new Set(values);
     for (let i = 0; i < vector.size; i++) {
-        if (vector.has(i) && !valueSet.has(vector.getValue(i)!)) {
+        if (!vector.has(i)) continue;
+        const value = vector.getValue(i);
+        if (value == null) continue;
+        
+        if (!valueSet.has(value)) {
             tempArray[writeIndex++] = i;
         }
     }
@@ -257,7 +266,11 @@ export function noneMatchSelected<K>(
     const vectorValues = selectionVector.selectionValues();
     for (let i = 0; i < selectionVector.limit; i++) {
         const index = vectorValues[i];
-        if (vector.has(index) && !valueSet.has(vector.getValue(index)!)) {
+        if (!vector.has(index)) continue;
+        const value = vector.getValue(index);
+        if (value == null) continue;
+        
+        if (!valueSet.has(value)) {
             vectorValues[writeIndex++] = index;
         }
     }
