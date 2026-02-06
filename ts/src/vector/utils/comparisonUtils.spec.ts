@@ -3,11 +3,12 @@ import { IntFlatVector } from "../flat/intFlatVector";
 import BitVector from "../flat/bitVector";
 import { FlatSelectionVector } from "../filter/flatSelectionVector";
 import {
-    smallerThanOrEqualToSelected,
-    smallerThanOrEqualTo,
     greaterThanOrEqualTo,
-    greaterThanOrEqualToSelected
-} from "./index";
+    greaterThanOrEqualToSelected,
+    smallerThanOrEqualTo,
+    smallerThanOrEqualToSelected,
+} from "./comparisonUtils";
+
 
 
 function createVector(values: number[], name = "test"): IntFlatVector {
