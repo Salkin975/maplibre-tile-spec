@@ -9,3 +9,4 @@ export type { Geometry } from "./vector/geometry/geometryVector";
 export type { Feature } from "./vector/featureTable";
 export { default as filter } from "./processing/filter";
 export type { SelectionVector } from "./vector/filter/selectionVector";
+export { createSelectionVector } from "./vector/filter/selectionVectorUtils"
