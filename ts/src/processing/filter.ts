@@ -327,6 +327,10 @@ function executeAll(featureTable: FeatureTable, children: NormalizedFilter[]): S
     let selectionVector: SelectionVector | undefined;
     const len = children.length;
 
+    if (len === 0) {
+        return new SequenceSelectionVector(0, 1, featureTable.numFeatures);
+    }
+
     for (let i = 0; i < len; i++) {
         const child = children[i];
         const childOp = child.operator;
@@ -350,9 +354,9 @@ function executeAll(featureTable: FeatureTable, children: NormalizedFilter[]): S
         if (selectionVector.limit === 0) return selectionVector;
 
         if (i < len - 1 && selectionVector instanceof ConstSelectionVector) {
-            selectionVector = new FlatSelectionVector(
-                selectionVector.selectionValues(),
-            );
+            selectionVector = selectionVector.limit === selectionVector.capacity
+                ? new SequenceSelectionVector(0, 1, selectionVector.limit)
+                : new FlatSelectionVector(selectionVector.selectionValues());
         }
     }
 
