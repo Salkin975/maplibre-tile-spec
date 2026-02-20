@@ -6,6 +6,7 @@ import { DoubleFlatVector } from "./flat/doubleFlatVector";
 import { IntSequenceVector } from "./sequence/intSequenceVector";
 import { IntConstVector } from "./constant/intConstVector";
 import { type IGpuVector } from "./geometry/gpuVector";
+import { type SelectionVector } from "./filter/selectionVector";
 
 export interface Feature {
     id: number | bigint;
@@ -54,6 +55,47 @@ export default class FeatureTable {
 
     get extent(): number {
         return this._extent;
+    }
+
+    /**
+     * Returns only the features at indices given by the SelectionVector.
+     * getGeometries() is still called once for the full geometry column, but
+     * property extraction and Feature object creation are skipped for
+     * non-selected indices.
+     */
+    getFeaturesForSelection(sel: SelectionVector): Feature[] {
+        const features: Feature[] = [];
+        const geometries = this.geometryVector.getGeometries();
+
+        for (let j = 0; j < sel.limit; j++) {
+            const i = sel.getIndex(j);
+
+            let id;
+            if (this._idVector) {
+                id = this.containsMaxSaveIntegerValues(this._idVector)
+                    ? Number(this._idVector.getValue(i))
+                    : this._idVector.getValue(i);
+            }
+
+            const geometry = {
+                coordinates: geometries[i],
+                type: this.geometryVector.geometryType(i),
+            };
+
+            const properties: { [key: string]: unknown } = {};
+            if (this._propertyVectors) {
+                for (const propertyColumn of this._propertyVectors) {
+                    if (!propertyColumn) continue;
+                    const propertyValue = propertyColumn.getValue(i);
+                    if (propertyValue !== null) {
+                        properties[propertyColumn.name] = propertyValue;
+                    }
+                }
+            }
+
+            features.push({ id, geometry, properties });
+        }
+        return features;
     }
 
     /**
