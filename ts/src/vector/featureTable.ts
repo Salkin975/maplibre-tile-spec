@@ -1,11 +1,12 @@
-import { type Geometry, type GeometryVector } from "./geometry/geometryVector";
+import { type Geometry, type IGeometryVector } from "./geometry/geometryVector";
 import type Vector from "./vector";
 import { type IntVector } from "./intVector";
 import { IntFlatVector } from "./flat/intFlatVector";
 import { DoubleFlatVector } from "./flat/doubleFlatVector";
 import { IntSequenceVector } from "./sequence/intSequenceVector";
 import { IntConstVector } from "./constant/intConstVector";
-import { type GpuVector } from "./geometry/gpuVector";
+import { type IGpuVector } from "./geometry/gpuVector";
+
 
 export interface Feature {
     id: number | bigint;
@@ -13,12 +14,12 @@ export interface Feature {
     properties: { [key: string]: unknown };
 }
 
-export default class FeatureTable implements Iterable<Feature> {
+export default class FeatureTable {
     private propertyVectorsMap: Map<string, Vector>;
 
     constructor(
         private readonly _name: string,
-        private readonly _geometryVector: GeometryVector | GpuVector,
+        private readonly _geometryVector: IGeometryVector | IGpuVector,
         private readonly _idVector?: IntVector,
         private readonly _propertyVectors?: Vector[],
         private readonly _extent = 4096,
@@ -32,7 +33,7 @@ export default class FeatureTable implements Iterable<Feature> {
         return this._idVector;
     }
 
-    get geometryVector(): GeometryVector | GpuVector {
+    get geometryVector(): IGeometryVector | IGpuVector {
         return this._geometryVector;
     }
 
@@ -41,6 +42,7 @@ export default class FeatureTable implements Iterable<Feature> {
     }
 
     getPropertyVector(name: string): Vector {
+        if (!this._propertyVectors) return undefined;
         if (!this.propertyVectorsMap) {
             this.propertyVectorsMap = new Map(this._propertyVectors.map((vector) => [vector.name, vector]));
         }
