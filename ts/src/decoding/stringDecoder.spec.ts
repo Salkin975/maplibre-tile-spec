@@ -608,3 +608,24 @@ describe("decodeSharedDictionary", () => {
         });
     });
 });
+
+describe("decodeSharedDictionary - malformed input", () => {
+    /**
+     * The dictionary-stream search is a `while (!dictionaryStreamDecoded)` loop with no natural
+     * end: it stops only once a DATA stream of type SINGLE/SHARED shows up. A buffer made of
+     * well-formed but non-terminating streams used to scan past the end forever, because reads
+     * past the buffer decode to PhysicalStreamType.PRESENT and so never matched.
+     *
+     * Two zero-filled 4-byte streams (PRESENT, numValues=0, byteLength=0) are individually
+     * valid and in bounds, so they walk the cursor exactly to the end without terminating —
+     * which is what the loop's own bound has to catch.
+     */
+    it("throws instead of scanning forever when no dictionary stream is present", () => {
+        const column = createColumnMetadataForStruct("name", [{ name: ":de" }]);
+        const terminatorFree = new Uint8Array(8); // two zero-length PRESENT streams
+
+        expect(() => decodeSharedDictionary(terminatorFree, new IntWrapper(0), column)).toThrow(
+            /No dictionary stream found for shared-dictionary column "name"/,
+        );
+    }, 10000);
+});
