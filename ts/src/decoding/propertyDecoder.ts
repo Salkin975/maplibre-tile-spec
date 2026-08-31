@@ -36,7 +36,7 @@ export function decodePropertyColumn(
     columnMetadata: Column,
     numStreams: number,
     numFeatures: number,
-    propertyColumnNames?: Set<string>,
+    propertyColumnNames?: ReadonlySet<string>,
 ): Vector | Vector[] | null {
     if (columnMetadata.type === "scalarType") {
         if (propertyColumnNames && !propertyColumnNames.has(columnMetadata.name)) {
