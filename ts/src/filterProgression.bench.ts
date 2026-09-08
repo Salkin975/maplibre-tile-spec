@@ -110,9 +110,41 @@ import {
  * optional rather than aborting on the key mismatch.
  *
  * The MVT arm is the control for the cross-branch reading. Its code is byte-identical on all five
- * rungs and never touches MLT, so its spread across the rungs IS the noise floor there. It is NOT
- * needed to interpret the within-branch A/B, where all arms share one process and one tile — which is
- * precisely why the A/B is the stronger of the two comparisons.
+ * rungs and never touches MLT, so its spread across the rungs IS the noise floor there.
+ *
+ * ## Why every cell needs its OWN process — MLT_BENCH_TILE / MLT_BENCH_SCENARIO
+ *
+ * Running all seven tiles and all scenarios together in one process was measurably wrong, not merely
+ * untidy. The shared call sites — `decodeTile`, `getValue`, `filterFeatureTable`,
+ * `convertGeometryAtIndex` — then see every tile"s vector types and layer shapes at once and go
+ * megamorphic, and V8 deoptimises them. That penalty is NOT distributed evenly across the arms:
+ *
+ *   z14/8720/5686, F1, same commit, same machine:
+ *                            all cells in one process     one cell per process
+ *     MVT                              0.3248 ms                 0.1203 ms   (2.7x)
+ *     MLT+styleSpec                    0.6276 ms                 0.1444 ms   (4.4x)
+ *     MLT-columnar                     0.0091 ms                 0.0038 ms   (2.4x)
+ *     reported advantage                  87.0x                     39.1x
+ *
+ * The baseline arm suffers most, because it calls `getValue()` across every column of every tile and
+ * so has the most shape-diverse call site of the three. The result is a reported advantage inflated
+ * by roughly 2.2x — measured across five cells, consistently 1.5x to 2.2x. In other words: the mere
+ * presence of one arm distorted the other, which is exactly what an A/B must not do. The isolated
+ * numbers are also far steadier (+-9 % across runs against +-50 %).
+ *
+ * So: select ONE cell per process.
+ *
+ *   MLT_BENCH_TILE=14/8720/5686   only this tile
+ *   MLT_BENCH_SCENARIO=F0|F12|F3|F4
+ *
+ * The selection deliberately takes effect BEFORE the tile is read and decoded, not just at
+ * `describe()` — otherwise the module-level setup would still decode all seven tiles and leave
+ * `decodeTile` polymorphic before the first timed iteration, which is precisely what F3 and F4 time.
+ * F1 and F2 share a process on purpose: they use the same tables and the same call shapes. F3 and F4
+ * are internally polymorphic by nature (122 style layers over 13 source layers) and that is
+ * realistic — what must not happen is their bleeding into F1/F2.
+ *
+ * `ts/bench/run-branch-round.sh` drives one process per (rung, tile, scenario).
  *
  * Group and bench names must stay stable across rungs: `ts/bench/benchAvg.mjs` joins result files on
  * them and aborts on a key mismatch rather than silently averaging different things.
@@ -305,8 +337,16 @@ if (fixturesAvailable) {
     console.error(
         `[stage] filterEngine=${filterFeatureTable ? "yes" : "no"} bucketGate=${isColumnarBucketSupported ? "yes" : "no"} ` +
             `filterScratch=${FilterScratchCtor ? "yes" : "no"} randomGeometry=${hasRandomGeometryAccess ? "yes" : "no"} ` +
-            `style=${styleAvailable ? "yes" : "no"} styleLayers=${styleLayers.length} time=${TIME}ms warmup=${WARMUP}ms`,
+            `style=${styleAvailable ? "yes" : "no"} styleLayers=${styleLayers.length} time=${TIME}ms warmup=${WARMUP}ms ` +
+            `cell=${process.env.MLT_BENCH_TILE ?? "ALLE"}/${process.env.MLT_BENCH_SCENARIO ?? "ALLE"}`,
     );
+    if (!process.env.MLT_BENCH_TILE || !process.env.MLT_BENCH_SCENARIO) {
+        // eslint-disable-next-line no-console
+        console.error(
+            "[warn] Ohne MLT_BENCH_TILE und MLT_BENCH_SCENARIO teilen sich alle Zellen einen Prozess. " +
+                "Die gemeldeten Faktoren sind dann um rund 2x zu hoch - siehe Dateikopf. Nur fuer Rauchtests verwenden.",
+        );
+    }
 
     /**
      * One full-style pass over an already-decoded tile — the body F3 and F4 share.
@@ -337,7 +377,15 @@ if (fixturesAvailable) {
 
     const tileCoords = process.env.MLT_BENCH_TILESET === "munich" ? MUNICH_TILE_COORDS : TILE_COORDS;
 
+    // Zellenauswahl - siehe den Abschnitt "Warum je Zelle ein eigener Prozess" im Kopf dieser Datei.
+    // Wichtig: die Auswahl greift VOR dem Einlesen und Dekodieren, nicht erst bei describe(). Sonst
+    // bliebe decodeTile ueber alle sieben Kacheln polymorph, und genau das soll sie verhindern.
+    const onlyTile = process.env.MLT_BENCH_TILE;          // "14/8720/5686"
+    const onlyScenario = process.env.MLT_BENCH_SCENARIO;  // F0 | F12 | F3 | F4
+    const wants = (scenario: string): boolean => !onlyScenario || onlyScenario === scenario;
+
     for (const { z, x, y } of tileCoords) {
+        if (onlyTile && onlyTile !== `${z}/${x}/${y}`) continue;
         const encodedMvt = readTile(mvtDb, z, x, y);
         const encodedMlt = readTile(mltDb, z, x, y);
         if (!encodedMvt || !encodedMlt) continue;
@@ -346,7 +394,7 @@ if (fixturesAvailable) {
 
         // F0 — context only. Lazy decoding moves work out of here and into first column access, so
         // this column is what keeps a deferred-work "win" in F1-F4 honest.
-        describe(`z${z}/${x}/${y} — parse (${mvtBytes.length} MVT bytes, ${mltBytes.length} MLT bytes)`, () => {
+        if (wants("F0")) describe(`z${z}/${x}/${y} — parse (${mvtBytes.length} MVT bytes, ${mltBytes.length} MLT bytes)`, () => {
             bench(
                 "MVT",
                 () => {
@@ -365,8 +413,8 @@ if (fixturesAvailable) {
 
         // Decoded ONCE, outside every bench() below: F1, F2 and F4 measure the marginal cost of a
         // query against a tile that has already arrived, not the cost of decoding it.
-        const mvtLayer = new VectorTile(new Pbf(mvtBytes)).layers[FILTER_LAYER];
-        const mltTable = decodeTile(mltBytes, undefined, true).find((t) => t.name === FILTER_LAYER);
+        const mvtLayer = wants("F12") ? new VectorTile(new Pbf(mvtBytes)).layers[FILTER_LAYER] : undefined;
+        const mltTable = wants("F12") ? decodeTile(mltBytes, undefined, true).find((t) => t.name === FILTER_LAYER) : undefined;
 
         if (mvtLayer?.length > 0 && mltTable && mltTable.getPropertyVector(FILTER_PROPERTY)) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -403,7 +451,7 @@ if (fixturesAvailable) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const scratchFresh = FilterScratchCtor ? new (FilterScratchCtor as any)() : undefined;
 
-            describe(`z${z}/${x}/${y} — full style (${activeLayers.length} aktive Ebenen), pro Tile-Ankunft`, () => {
+            if (wants("F3")) describe(`z${z}/${x}/${y} — full style (${activeLayers.length} aktive Ebenen), pro Tile-Ankunft`, () => {
                 bench("MVT", () => mvtStylePass(new VectorTile(new Pbf(mvtBytes)), z), OPTS);
                 bench(
                     "MLT+styleSpec",
@@ -422,12 +470,12 @@ if (fixturesAvailable) {
             // F4 — decoded once, queried N times. This is the pattern MLT's design is for, and the
             // one F3 by construction never lets it reach: re-filtering after setFilter(), a
             // data-driven UI control, a day/night switch, or a hover/click feature query.
-            const mvtTileRepeated = new VectorTile(new Pbf(mvtBytes));
-            const mltTablesRepeated = new Map(decodeTile(mltBytes, undefined, true).map((t) => [t.name, t]));
+            const mvtTileRepeated = wants("F4") ? new VectorTile(new Pbf(mvtBytes)) : undefined;
+            const mltTablesRepeated = wants("F4") ? new Map(decodeTile(mltBytes, undefined, true).map((t) => [t.name, t])) : undefined;
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const scratchRepeated = FilterScratchCtor ? new (FilterScratchCtor as any)() : undefined;
 
-            for (const repeatCount of REPEAT_COUNTS) {
+            for (const repeatCount of wants("F4") ? REPEAT_COUNTS : []) {
                 describe(`z${z}/${x}/${y} — full style x${repeatCount} (${activeLayers.length} aktive Ebenen), already-decoded tile`, () => {
                     bench(
                         "MVT",
