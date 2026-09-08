@@ -19,9 +19,34 @@ import {
 } from "./realTileFixtures";
 
 /**
- * How fast does MLT *filter* a tile, and how much did that improve across the four work-stream
- * branches? This file is the measurement instrument for that question, and it is meant to be
- * byte-identical on every rung of the ladder:
+ * ## The question
+ *
+ * Before this work, filtering an MLT tile meant: decode it, then hand each feature to
+ * maplibre-gl-style-spec's `featureFilter` — the same row-by-row evaluation MVT uses, just fed from
+ * MLT vectors. This work made the filter run *directly on the columnar data* instead. This file
+ * measures that difference.
+ *
+ * The primary comparison is therefore MLT-against-MLT, and it happens WITHIN one branch, against the
+ * SAME decoded tile, in the same process:
+ *
+ *   `MLT+styleSpec`        the starting point — decode, materialize every row, run style-spec
+ *   `MLT+styleSpec (min)`  same, but materializing only the column the filter actually reads
+ *   `MLT-columnar`         the new path — `filterFeatureTable()` straight against the vectors
+ *   `MVT`                  context, not the headline: how the row-oriented format does on the same work
+ *
+ * Holding everything but the filter path constant is what makes this readable. A cross-branch
+ * comparison cannot do that — DESIGN-DE.md section 8.4 documents a measurement where the untouched
+ * MVT control arm drifted over 100 % between two worktrees, swamping the effect being claimed.
+ *
+ * Why `MLT+styleSpec (min)` exists: the naive baseline materializes ALL property columns even though
+ * the filter reads one. Without the min arm, "we no longer touch irrelevant columns" and "the kernel
+ * itself is cheaper" are indistinguishable, and the first is the easier of the two to dismiss. With
+ * it, the remaining gap is attributable to the kernel.
+ *
+ * ## The secondary question
+ *
+ * The same file also runs on every rung of the work-stream ladder, so the improvement can be
+ * attributed per work stream. It is byte-identical on all of them:
  *
  *   as1-vektor-infrastruktur  vector infrastructure, NO filter engine  (the "before" state)
  *   as2-filter-engine         + columnar filter engine
@@ -61,28 +86,33 @@ import {
  * F0 `parse` — context, not a filter measurement. It is here because lazy decoding (as3) *moves*
  *    work out of decode and into first column access: without a decode column next to the filter
  *    columns, deferred work would read as a filtering win.
- * F1 `filter only` — the actual question. `filterFeatureTable()` down to a `SelectionVector` and
- *    nothing else: no geometry, no property materialization. Nothing in realTileParity.bench.ts
- *    measures this — its filter scenario always materializes the matches too, mixing the kernel's
- *    cost with `getGeometry()`/`getValue()`.
- * F2 `filter + materialize matches` — the same filter, but paying for the survivors. The delta
- *    F2-F1 is what materialization costs on top of the filter.
+ * F1 `filter only` — THE measurement. All arms answer "which rows match?" and stop there: the
+ *    columnar arm at its `SelectionVector`, the style-spec arms after their last `filter()` call.
+ *    Nothing is materialized, so what is compared is the filter evaluation itself.
+ * F2 `filter + materialize matches` — the same filter, but paying for the survivors. F2 minus F1 is
+ *    materialization cost, which both sides owe equally; comparing F1 and F2 shows how much of the
+ *    columnar advantage survives once the matches actually have to be produced.
  * F3 `full style, per tile arrival` — a whole real style (~122 filterable layers, zoom-gated),
- *    decoded fresh every iteration, each layer gated through `isColumnarBucketSupported` exactly as
- *    maplibre-gl-js's `createBucket()` does. The realistic renderer path.
+ *    decoded fresh every iteration. The columnar arm gates each layer through
+ *    `isColumnarBucketSupported` exactly as maplibre-gl-js's `createBucket()` does, so layers the
+ *    engine cannot express fall back to style-spec — a realistic mix, not an idealized all-columnar
+ *    run. The `MLT+styleSpec` arm takes the row path for every layer, as before this work.
  * F4 `full style xN, already-decoded` — decode once outside the timed function, then N full-style
- *    passes against it. Shows MLT amortizing decode across repeated queries (re-filter, hover/click),
- *    which F3 by construction never lets it do.
+ *    passes against it. Separates the per-query cost from the one-time decode that F3 folds in.
  *
- * On as1 there is no filter engine, so F1-F4 take the row-based path a consumer actually had before
- * work stream 2: materialize every feature into a plain object and run style-spec's `featureFilter`
- * over it. On that rung F1 and F2 therefore measure nearly the same thing — a row-based filter cannot
- * separate "filter" from "materialize". That is the finding, not a measurement artifact, and the
- * results table has to say so rather than presenting F1(as1) as a like-for-like kernel number.
+ * A note on the style-spec arms in F1: `materialize: false` still builds each row's property object,
+ * because style-spec reads `feature.properties[key]` and cannot be asked "does row i match?" any
+ * other way. Not being able to separate filtering from materializing is the baseline's defining
+ * property, not a flaw in how it is benchmarked here.
  *
- * The MVT arm is the control. Its code is byte-identical on all five rungs and never touches MLT, so
- * its spread across the rungs IS this campaign's noise floor. An MLT delta smaller than the MVT arm's
- * own rung-to-rung spread is not a result — DESIGN-DE.md section 8.4 learned this the expensive way.
+ * On as1 the columnar arm is simply not registered — there is no engine to run. That rung therefore
+ * contributes only the two style-spec arms plus MVT, and the aggregator treats the columnar arm as
+ * optional rather than aborting on the key mismatch.
+ *
+ * The MVT arm is the control for the cross-branch reading. Its code is byte-identical on all five
+ * rungs and never touches MLT, so its spread across the rungs IS the noise floor there. It is NOT
+ * needed to interpret the within-branch A/B, where all arms share one process and one tile — which is
+ * precisely why the A/B is the stronger of the two comparisons.
  *
  * Group and bench names must stay stable across rungs: `ts/bench/benchAvg.mjs` joins result files on
  * them and aborts on a key mismatch rather than silently averaging different things.
@@ -128,6 +158,8 @@ const FILTER_LAYER = "transportation";
 const FILTER_PROPERTY = "class";
 const FILTER_SPEC = ["==", ["get", FILTER_PROPERTY], "motorway"] as unknown as FilterSpecification;
 const compiledMvtFilter = featureFilter(FILTER_SPEC);
+/** The only column FILTER_SPEC reads — see the `MLT+styleSpec (min)` arm. */
+const FILTER_COLUMNS: ReadonlySet<string> = new Set([FILTER_PROPERTY]);
 
 type StyleSpecFeature = Parameters<typeof compiledMvtFilter.filter>[1];
 
@@ -159,11 +191,20 @@ function geometryAt(vector: MltTable["geometryVector"], index: number, bulk: unk
     return bulk ? bulk[index] : vector.getGeometry!(index);
 }
 
-/** Materializes one MLT row into the plain object shape style-spec's featureFilter expects. */
-function mltRowToStyleFeature(table: MltTable, i: number): { feature: StyleSpecFeature; properties: Record<string, unknown> } {
+/**
+ * Materializes one MLT row into the plain object shape style-spec's featureFilter expects.
+ * `columns`, when given, restricts materialization to those property columns — see the
+ * `MLT+styleSpec (min)` arm.
+ */
+function mltRowToStyleFeature(
+    table: MltTable,
+    i: number,
+    columns?: ReadonlySet<string>,
+): { feature: StyleSpecFeature; properties: Record<string, unknown> } {
     const properties: Record<string, unknown> = {};
     for (const column of table.propertyVectors) {
         if (!column) continue;
+        if (columns && !columns.has(column.name)) continue;
         const value = column.getValue(i);
         if (value !== null) properties[column.name] = value;
     }
@@ -174,21 +215,30 @@ function mltRowToStyleFeature(table: MltTable, i: number): { feature: StyleSpecF
 }
 
 /**
- * The row-based path as it existed before work stream 2 — used on as1, and on every rung for a layer
- * whose filter the columnar engine can't express (what `createBucket()` falls back to there too).
- * `materialize: false` still has to build each feature's properties, because that is the only way a
- * row-oriented reader can evaluate a filter at all; that inseparability is the point of the F1/as1 cell.
+ * THE BASELINE ARM: decode the MLT tile, then filter it with maplibre-gl-style-spec — exactly what a
+ * consumer had to do before this work, and still what `createBucket()` falls back to for a filter the
+ * columnar engine cannot express.
+ *
+ * Note that `materialize: false` still builds each row's property object. That is not an oversight:
+ * style-spec's `featureFilter` reads `feature.properties[key]`, so a row-oriented caller has to
+ * materialize before it can test. Not being able to separate "filter" from "materialize" IS the
+ * baseline's defining property, and the whole point of what replaced it.
+ *
+ * `columns` steelmans the baseline: a caller that knows which column the filter reads can materialize
+ * only that one. Passing it separates "won because irrelevant columns were skipped" from "won because
+ * the kernel itself is cheaper" — two different claims that the naive baseline conflates.
  */
 function mltRowFilterPass(
     table: MltTable,
     compiled: ReturnType<typeof featureFilter>,
     z: number,
     materialize: boolean,
+    columns?: ReadonlySet<string>,
 ): void {
     const geometryVector = table.geometryVector;
     const bulk = hasRandomGeometryAccess ? null : geometryVector.getGeometries();
     for (let i = 0; i < table.numFeatures; i++) {
-        const { feature, properties } = mltRowToStyleFeature(table, i);
+        const { feature, properties } = mltRowToStyleFeature(table, i, columns);
         if (!compiled.filter({ zoom: z }, feature)) continue;
         if (!materialize) {
             checksum = (checksum + 1) | 0;
@@ -258,12 +308,20 @@ if (fixturesAvailable) {
             `style=${styleAvailable ? "yes" : "no"} styleLayers=${styleLayers.length} time=${TIME}ms warmup=${WARMUP}ms`,
     );
 
-    /** One full-style pass over an already-decoded tile — the body F3 and F4 share. */
-    const mltStylePass = (tablesByName: Map<string, MltTable>, z: number, scratch: unknown): void => {
+    /**
+     * One full-style pass over an already-decoded tile — the body F3 and F4 share.
+     *
+     * `forceRow` selects the baseline arm: every layer goes through decode + style-spec, with no
+     * columnar path at all, which is what a consumer had before this work. Without it, each layer is
+     * gated through `isColumnarBucketSupported` exactly as maplibre-gl-js's `createBucket()` does, so
+     * layers the engine cannot express still fall back to the same row path — that mix is the honest
+     * "new" arm, not an idealized all-columnar one.
+     */
+    const mltStylePass = (tablesByName: Map<string, MltTable>, z: number, scratch: unknown, forceRow = false): void => {
         for (const layer of activeAtZoom(styleLayers, z)) {
             const table = tablesByName.get(layer.sourceLayer);
             if (!table) continue;
-            if (filterFeatureTable && isColumnarBucketSupported?.("mlt", layer.filter, z, layer.id)) {
+            if (!forceRow && filterFeatureTable && isColumnarBucketSupported?.("mlt", layer.filter, z, layer.id)) {
                 mltColumnarPass(table, layer.filter, z, scratch, true);
                 continue;
             }
@@ -314,29 +372,26 @@ if (fixturesAvailable) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const scratchSingle = FilterScratchCtor ? new (FilterScratchCtor as any)() : undefined;
 
-            // F1 — the filter kernel alone. MLT stops at the SelectionVector; MVT cannot, because a
-            // row-oriented reader has to materialize a feature before it can test it.
+            // F1 — the filter kernel alone, and the head-to-head this file exists for. All three MLT
+            // arms run against the SAME decoded table, in the same process, on the same branch: the
+            // only thing that varies is how the filter is evaluated.
             describe(`z${z}/${x}/${y} — filter only (${FILTER_LAYER}.${FILTER_PROPERTY} == "motorway"), already-decoded tile`, () => {
                 bench("MVT", () => mvtLayerPass(mvtLayer, compiledMvtFilter, z, false), OPTS);
-                bench(
-                    "MLT",
-                    filterFeatureTable
-                        ? () => mltColumnarPass(mltTable, FILTER_SPEC, z, scratchSingle, false)
-                        : () => mltRowFilterPass(mltTable, compiledMvtFilter, z, false),
-                    OPTS,
-                );
+                bench("MLT+styleSpec", () => mltRowFilterPass(mltTable, compiledMvtFilter, z, false), OPTS);
+                bench("MLT+styleSpec (min)", () => mltRowFilterPass(mltTable, compiledMvtFilter, z, false, FILTER_COLUMNS), OPTS);
+                if (filterFeatureTable) {
+                    bench("MLT-columnar", () => mltColumnarPass(mltTable, FILTER_SPEC, z, scratchSingle, false), OPTS);
+                }
             });
 
             // F2 — same filter, now paying for the survivors. F2 minus F1 is materialization cost.
             describe(`z${z}/${x}/${y} — filter + materialize matches (${FILTER_LAYER}.${FILTER_PROPERTY} == "motorway"), already-decoded tile`, () => {
                 bench("MVT", () => mvtLayerPass(mvtLayer, compiledMvtFilter, z, true), OPTS);
-                bench(
-                    "MLT",
-                    filterFeatureTable
-                        ? () => mltColumnarPass(mltTable, FILTER_SPEC, z, scratchSingle, true)
-                        : () => mltRowFilterPass(mltTable, compiledMvtFilter, z, true),
-                    OPTS,
-                );
+                bench("MLT+styleSpec", () => mltRowFilterPass(mltTable, compiledMvtFilter, z, true), OPTS);
+                bench("MLT+styleSpec (min)", () => mltRowFilterPass(mltTable, compiledMvtFilter, z, true, FILTER_COLUMNS), OPTS);
+                if (filterFeatureTable) {
+                    bench("MLT-columnar", () => mltColumnarPass(mltTable, FILTER_SPEC, z, scratchSingle, true), OPTS);
+                }
             });
         }
 
@@ -351,10 +406,17 @@ if (fixturesAvailable) {
             describe(`z${z}/${x}/${y} — full style (${activeLayers.length} aktive Ebenen), pro Tile-Ankunft`, () => {
                 bench("MVT", () => mvtStylePass(new VectorTile(new Pbf(mvtBytes)), z), OPTS);
                 bench(
-                    "MLT",
-                    () => mltStylePass(new Map(decodeTile(mltBytes, undefined, true).map((t) => [t.name, t])), z, scratchFresh),
+                    "MLT+styleSpec",
+                    () => mltStylePass(new Map(decodeTile(mltBytes, undefined, true).map((t) => [t.name, t])), z, undefined, true),
                     OPTS,
                 );
+                if (filterFeatureTable) {
+                    bench(
+                        "MLT-columnar",
+                        () => mltStylePass(new Map(decodeTile(mltBytes, undefined, true).map((t) => [t.name, t])), z, scratchFresh),
+                        OPTS,
+                    );
+                }
             });
 
             // F4 — decoded once, queried N times. This is the pattern MLT's design is for, and the
@@ -375,12 +437,21 @@ if (fixturesAvailable) {
                         OPTS,
                     );
                     bench(
-                        "MLT",
+                        "MLT+styleSpec",
                         () => {
-                            for (let rep = 0; rep < repeatCount; rep++) mltStylePass(mltTablesRepeated, z, scratchRepeated);
+                            for (let rep = 0; rep < repeatCount; rep++) mltStylePass(mltTablesRepeated, z, undefined, true);
                         },
                         OPTS,
                     );
+                    if (filterFeatureTable) {
+                        bench(
+                            "MLT-columnar",
+                            () => {
+                                for (let rep = 0; rep < repeatCount; rep++) mltStylePass(mltTablesRepeated, z, scratchRepeated);
+                            },
+                            OPTS,
+                        );
+                    }
                 });
             }
         }
