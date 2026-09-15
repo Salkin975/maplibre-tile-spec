@@ -1,6 +1,6 @@
 import { bench, describe } from "vitest";
 import { VectorTile, type VectorTileFeature } from "@mapbox/vector-tile";
-import Pbf from "pbf";
+import { PbfReader as Pbf } from "pbf";
 import { featureFilter } from "@maplibre/maplibre-gl-style-spec";
 import type { FilterSpecification } from "@maplibre/maplibre-gl-style-spec";
 
@@ -57,7 +57,7 @@ let checksum = 0;
 const FILTER_LAYER = "transportation";
 const FILTER_PROPERTY = "class";
 const FILTER_SPEC = ["==", ["get", FILTER_PROPERTY], "motorway"] as unknown as FilterSpecification;
-const compiledMvtFilter = featureFilter(FILTER_SPEC);
+const compiledMvtFilter = featureFilter(FILTER_SPEC, "layers[0].filter");
 
 /** Mirrors MVT's numeric feature.type (0=Unknown,1=Point,2=LineString,3=Polygon) for style-spec's Feature shape. */
 function toStyleSpecFeature(f: VectorTileFeature) {
