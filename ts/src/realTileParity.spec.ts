@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterAll, describe, it } from "vitest";
 import { VectorTile, type VectorTileFeature } from "@mapbox/vector-tile";
-import Pbf from "pbf";
+import { PbfReader as Pbf } from "pbf";
 
 import { type FeatureTable, type Feature, decodeTile } from ".";
 import { fixturesAvailable, TILE_COORDS, openMvtDb, openMltDb, readTile, maybeGunzip } from "./realTileFixtures";
@@ -72,7 +72,11 @@ function comparePlainGeometryEncodedTile(mlt: FeatureTable[], mvt: VectorTile) {
             convertBigIntPropertyValues(mltProperties);
             removeEmptyStrings(mvtProperties);
             removeEmptyStrings(mltProperties);
-            assert.deepEqual(mltProperties, mvtProperties);
+            // Spread rather than compare directly: @mapbox/vector-tile builds its properties
+            // object with a null prototype, which fails node:assert/strict's deepEqual (aliased
+            // to deepStrictEqual, which checks [[Prototype]]) against MLT's plain object even
+            // when every value matches.
+            assert.deepEqual({ ...mltProperties }, { ...mvtProperties });
         }
     }
 }

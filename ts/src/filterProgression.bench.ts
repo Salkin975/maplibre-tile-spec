@@ -189,7 +189,7 @@ const REPEAT_COUNTS = [1, 2, 5];
 const FILTER_LAYER = "transportation";
 const FILTER_PROPERTY = "class";
 const FILTER_SPEC = ["==", ["get", FILTER_PROPERTY], "motorway"] as unknown as FilterSpecification;
-const compiledMvtFilter = featureFilter(FILTER_SPEC);
+const compiledMvtFilter = featureFilter(FILTER_SPEC, "layers[0].filter");
 /** The only column FILTER_SPEC reads — see the `MLT+styleSpec (min)` arm. */
 const FILTER_COLUMNS: ReadonlySet<string> = new Set([FILTER_PROPERTY]);
 
@@ -331,7 +331,7 @@ if (fixturesAvailable) {
 
     const styleLayers = styleAvailable ? loadStyleLayers() : [];
     // Compiled once, like a real style load — not per tile, and not per bench iteration.
-    const compiledLayerFilters = new Map(styleLayers.map((layer) => [layer.id, featureFilter(layer.filter)]));
+    const compiledLayerFilters = new Map(styleLayers.map((layer) => [layer.id, featureFilter(layer.filter, `layers[${layer.id}].filter`)]));
 
     // eslint-disable-next-line no-console
     console.error(

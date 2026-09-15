@@ -1,10 +1,11 @@
 import FeatureTable, { PendingGeometryColumn, PendingIdColumn } from "./vector/featureTable";
-import type { Column } from "./metadata/tileset/tilesetMetadata";
+import { ComplexType, type Column } from "./metadata/tileset/tilesetMetadata";
 import IntWrapper from "./decoding/intWrapper";
 import { decodeStreamMetadata } from "./metadata/tile/streamMetadataDecoder";
 import BitVector from "./vector/flat/bitVector";
 import { decodeGeometryColumn } from "./decoding/geometryDecoder";
 import { decodePropertyColumn } from "./decoding/propertyDecoder";
+import { decodeMapPropertyColumn } from "./decoding/mapPropertyDecoder";
 import { decodeIdColumn } from "./decoding/idColumnDecoder";
 import type GeometryScaling from "./decoding/geometryScaling";
 import { decodeBooleanRle } from "./decoding/decodingUtils";
@@ -122,6 +123,17 @@ function skipPropertyColumn(
     blockEnd: number,
 ): void {
     if (columnMetadata.type === "complexType") {
+        if (columnMetadata.complexType.physicalType === ComplexType.MAP) {
+            // A MAP column's stream layout (dictionary mask byte, then a data-dependent mix of
+            // dictionary/presence/value streams - see decodeMapStreams) has no fixed terminator
+            // to scan for the way a STRUCT's shared dictionary does, so skipping it correctly
+            // means walking the same layout decodeMapPropertyColumn does. This runs on every
+            // MAP column the lazy column walk passes over on the way to a later one, not only
+            // ones a `propertyColumns` projection excludes, so decoding and discarding the
+            // result here (instead of a dedicated skip) costs a real allocation per column.
+            decodeMapPropertyColumn(tile, offset, columnMetadata, numStreams);
+            return;
+        }
         skipStructColumn(tile, offset, columnMetadata, blockEnd);
         return;
     }
