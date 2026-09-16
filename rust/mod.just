@@ -186,6 +186,10 @@ coverage *args='--open': (just 'cargo-install' 'cargo-llvm-cov') (just 'java::ge
     {{just}} rust::test
     cargo llvm-cov report --include-build-script {{args}}
 
+# Report per-file region, line and condition coverage for `sources`, the MC/DC stand-in
+mcdc *sources:
+    ./scripts/mcdc.sh {{sources}}
+
 # Run the encoder with hotpath profiling (timing + allocation tracking)
 profile *args:
     cargo run --release -p mlt --features='hotpath,hotpath-alloc,hotpath-mcp' -- {{args}}
@@ -421,6 +425,17 @@ sync-pyo3-version:
     PYPROJECT="mlt-py/pyproject.toml"
     sed -i "s/^version = \".*\"/version = \"$VERSION\"/" "$PYPROJECT"
     echo "Synced $PYPROJECT to version $VERSION"
+
+# Regenerate every docs/snippets/0x0N/*.mlt.hexdump from its test/synthetic/0x0N/*.mlt fixture
+sync-docs-hexdumps:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo build -p mlt -F unstable-v2
+    for dump in ../docs/snippets/0x0*/*.mlt.hexdump; do
+        fixture="../test/synthetic/$(basename "$(dirname "$dump")")/$(basename "$dump" .hexdump)"
+        cargo run -q -p mlt -F unstable-v2 -- hexdump "$fixture" > "$dump"
+        echo "Regenerated $dump from $fixture"
+    done
 
 # Sync the version field in mlt-wasm/package.json to match mlt-wasm/Cargo.toml
 sync-wasm-version:
