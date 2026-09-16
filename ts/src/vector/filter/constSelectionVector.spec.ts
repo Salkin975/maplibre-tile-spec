@@ -5,8 +5,8 @@ describe("ConstSelectionVector", () => {
     it("selects everything when full and nothing when empty", () => {
         expect(ConstSelectionVector.full(4).limit).toBe(4);
         expect(ConstSelectionVector.empty(4).limit).toBe(0);
-        expect(ConstSelectionVector.full(4).capacity).toBe(4);
-        expect(ConstSelectionVector.empty(4).capacity).toBe(4);
+        expect(ConstSelectionVector.full(Number.MIN_SAFE_INTEGER).capacity).toBe(Number.MIN_SAFE_INTEGER);
+        expect(ConstSelectionVector.empty(Number.MIN_SAFE_INTEGER).capacity).toBe(Number.MIN_SAFE_INTEGER);
     });
 
     it("is immutable", () => {

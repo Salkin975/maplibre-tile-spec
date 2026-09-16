@@ -41,15 +41,11 @@ export abstract class GpuVector implements Iterable<CoordinatesArray>, GeometryC
         return [this._vertexBuffer[offset], this._vertexBuffer[offset + 1]];
     }
 
-    private requireTopology(): TopologyVector {
-        if (!this._topologyVector) {
-            throw new Error("Cannot convert GpuVector to coordinates without topology information");
-        }
-        return this._topologyVector;
-    }
-
     getGeometries(): CoordinatesArray[] {
-        const topology = this.requireTopology();
+        // `topologyVector`'s fields are all optional, so `{}` is a valid "no topology" value —
+        // the converter only throws for a geometry type that actually needs a buffer this
+        // GpuVector doesn't have (e.g. Polygon needs ring/part offsets; Point never does).
+        const topology = this._topologyVector ?? {};
         const types = new Uint32Array(this.numGeometries);
         for (let i = 0; i < this.numGeometries; i++) {
             types[i] = this.geometryType(i);
@@ -58,13 +54,10 @@ export abstract class GpuVector implements Iterable<CoordinatesArray>, GeometryC
     }
 
     getGeometry(index: number): CoordinatesArray {
-        // The narrowed topology has to be handed over explicitly: `this.topologyVector` is
-        // optional, which `convertGeometryAtIndex` does not accept.
-        const topologyVector = this.requireTopology();
         return convertGeometryAtIndex(
             {
                 numGeometries: this.numGeometries,
-                topologyVector,
+                topologyVector: this._topologyVector ?? {},
                 geometryType: (i) => this.geometryType(i),
                 getVertex: (i) => this.getVertex(i),
             },
@@ -77,9 +70,14 @@ export abstract class GpuVector implements Iterable<CoordinatesArray>, GeometryC
     }
 
     [Symbol.iterator](): Iterator<CoordinatesArray> {
-        // Returned `null` before, which is not an Iterator — iterating a GpuVector failed with
-        // an opaque TypeError instead of saying what was wrong. Use getGeometries() or
-        // getGeometry(index) until this is implemented.
         throw new Error("Iterator on a GpuVector is not implemented yet.");
+        /*for(let i = 1; i < this.triangleOffsets.length; i++) {
+           const numTriangles = this.triangleOffsets[i] - this.triangleOffsets[i-1];
+           const startIndex = this.triangleOffsets[i-1] * 3;
+           const endIndex = this.triangleOffsets[i] * 3;
+       }
+        while (index < this.numGeometries) {
+            yield geometries[index++];
+        }*/
     }
 }

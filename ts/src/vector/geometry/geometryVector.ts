@@ -84,15 +84,6 @@ export abstract class GeometryVector implements GeometryCollection {
         return this._vertexBuffer;
     }
 
-    /* Allows faster access to the vertices since morton encoding is currently not used in the POC. Morton encoding
-       will be used after adapting the shader to decode the morton codes on the GPU. */
-    getSimpleEncodedVertex(index: number): [number, number] {
-        const offset = this.vertexOffsets ? this.vertexOffsets[index] * 2 : index * 2;
-        const x = this.vertexBuffer[offset];
-        const y = this.vertexBuffer[offset + 1];
-        return [x, y];
-    }
-
     //TODO: add scaling information to the constructor
     getVertex(index: number): [number, number] {
         if (this.vertexOffsets && this.mortonSettings) {

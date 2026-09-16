@@ -96,19 +96,7 @@ export function decodeGeometryColumn(
             }
         }
 
-        // The DATA stream is mandatory for a geometry column, and a tessellated (GPU) column
-        // additionally carries its TRIANGLES length stream. Both are optional in the locals
-        // above only because they are filled inside the stream loop; a tile that omits them is
-        // malformed, and saying so beats passing `undefined` into the vector factories.
-        if (!vertexBuffer) {
-            throw new Error("Geometry column is missing its vertex DATA stream");
-        }
-
         if (indexBuffer) {
-            if (!triangleOffsets) {
-                throw new Error("Tessellated geometry column is missing its TRIANGLES length stream");
-            }
-
             if (geometryOffsets !== undefined || partOffsets !== undefined) {
                 /* Case when the indices of a Polygon outline are encoded in the tile */
                 const topologyVector = { geometryOffsets, partOffsets, ringOffsets };
@@ -220,22 +208,13 @@ export function decodeGeometryColumn(
         partOffsets = decodeRootLengthStream(geometryTypeVector, partLengths, 0);
     }
 
-    // Same mandatory-stream reasoning as in the const path above.
-    if (!vertexBuffer) {
-        throw new Error("Geometry column is missing its vertex DATA stream");
+    if (indexBuffer && !partOffsets) {
+        /* Case when the indices of a Polygon outline are not encoded in the data so no
+         *  topology data are present in the tile */
+        return createFlatGpuVector(geometryTypeVector, triangleOffsets, indexBuffer, vertexBuffer);
     }
 
     if (indexBuffer) {
-        if (!triangleOffsets) {
-            throw new Error("Tessellated geometry column is missing its TRIANGLES length stream");
-        }
-
-        if (!partOffsets) {
-            /* Case when the indices of a Polygon outline are not encoded in the data so no
-             *  topology data are present in the tile */
-            return createFlatGpuVector(geometryTypeVector, triangleOffsets, indexBuffer, vertexBuffer);
-        }
-
         /* Case when the indices of a Polygon outline are encoded in the tile */
         return createFlatGpuVector(geometryTypeVector, triangleOffsets, indexBuffer, vertexBuffer, {
             geometryOffsets,

@@ -80,6 +80,10 @@ export function unionSelectionVectors(vectors: SelectionVector[], totalSize: num
     if (vectors.length === 1) {
         return vectors[0];
     }
+    // If any vector already covers the whole range, the union is the whole range.
+    if (vectors.some((vector) => vector.limit === totalSize)) {
+        return ConstSelectionVector.full(totalSize);
+    }
 
     const selected = new Uint8Array(totalSize);
     let selectedCount = 0;
@@ -136,11 +140,8 @@ export function intersectSelectionVectors(left: SelectionVector, right: Selectio
         return ConstSelectionVector.empty(Math.max(left.capacity, right.capacity));
     }
 
-    // A non-empty ConstSelectionVector selects everything, so intersecting with it is the identity.
-    // Worth special-casing: an unfiltered layer over a single-geometry-type tile produces two of
-    // them, and the merge below would copy the whole index range to reproduce the other side. It
-    // cannot be generalized to `limit === capacity` — a FlatSelectionVector sized exactly to its
-    // contents satisfies that while selecting an arbitrary subset.
+    // Full-range ConstSelectionVectors are identity for intersection
+    // a FlatSelectionVector can also fill its capacity without being full
     if (left instanceof ConstSelectionVector) return right;
     if (right instanceof ConstSelectionVector) return left;
 

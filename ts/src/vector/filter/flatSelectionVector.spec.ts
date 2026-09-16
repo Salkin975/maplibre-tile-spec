@@ -15,10 +15,10 @@ describe("flatSelectionVector", () => {
 
         it("Should throw RangeError for out of bounds access", () => {
             const fsVector = new FlatSelectionVector(new Uint32Array([0, 1, 2]));
-            expect(() => fsVector.getIndex(10)).toThrowError("Index out of bounds");
-            expect(() => fsVector.getIndex(-1)).toThrowError("Index out of bounds");
-            expect(() => fsVector.setIndex(-1, 0)).toThrowError("Index out of bounds");
-            expect(() => fsVector.setIndex(10, 0)).toThrowError("Index out of bounds");
+            expect(() => fsVector.getIndex(10)).toThrow("Index out of bounds");
+            expect(() => fsVector.getIndex(-1)).toThrow("Index out of bounds");
+            expect(() => fsVector.setIndex(-1, 0)).toThrow("Index out of bounds");
+            expect(() => fsVector.setIndex(10, 0)).toThrow("Index out of bounds");
         });
     });
 
@@ -49,8 +49,8 @@ describe("flatSelectionVector", () => {
         });
         it("should throw out of bounds error", () => {
             const fsVector = new FlatSelectionVector(new Uint32Array([1, 2, 3, 4, 5]), 3);
-            expect(() => fsVector.setLimit(-10)).toThrowError("Limit out of bounds");
-            expect(() => fsVector.setLimit(10)).toThrowError("Limit out of bounds");
+            expect(() => fsVector.setLimit(-10)).toThrow("Limit out of bounds");
+            expect(() => fsVector.setLimit(10)).toThrow("Limit out of bounds");
         });
     });
 });

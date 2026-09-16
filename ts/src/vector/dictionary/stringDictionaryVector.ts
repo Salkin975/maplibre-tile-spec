@@ -1,9 +1,6 @@
 import { VariableSizeVector } from "../variableSizeVector";
 import BitVector from "../flat/bitVector";
 import { decodeString } from "../../decoding/decodingUtils";
-import { concatEncodedValues } from "../flat/stringFlatVector";
-
-const encoder = new TextEncoder();
 
 export class StringDictionaryVector extends VariableSizeVector<Uint8Array, string> {
     /** One decoded string per dictionary code, filled in lazily — many rows share a code, so
@@ -49,31 +46,4 @@ export class StringDictionaryVector extends VariableSizeVector<Uint8Array, strin
         return this.dataBuffer;
     }
 
-}
-
-export function createStringDictionaryVector(values: (string | null)[], name: string): StringDictionaryVector {
-    const dictionary = new Map<string, number>();
-    const encodedValues: Uint8Array[] = [];
-    const indices = new Uint32Array(values.length);
-    const nullability = values.some((value) => value === null)
-        ? new BitVector(new Uint8Array(Math.ceil(values.length / 8)), values.length)
-        : undefined;
-
-    for (let i = 0; i < values.length; i++) {
-        const value = values[i];
-        if (value === null) {
-            continue;
-        }
-        let dictionaryIndex = dictionary.get(value);
-        if (dictionaryIndex === undefined) {
-            dictionaryIndex = dictionary.size;
-            dictionary.set(value, dictionaryIndex);
-            encodedValues.push(encoder.encode(value));
-        }
-        indices[i] = dictionaryIndex;
-        nullability?.set(i, true);
-    }
-
-    const { offsets, data } = concatEncodedValues(encodedValues);
-    return new StringDictionaryVector(name, indices, offsets, data, nullability);
 }

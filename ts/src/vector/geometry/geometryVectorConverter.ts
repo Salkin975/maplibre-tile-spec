@@ -5,23 +5,10 @@ import { VertexBufferType } from "./vertexBufferType";
 import Point from "@mapbox/point-geometry";
 
 /**
- * Whether a given topology buffer is present depends on which geometry types the column holds:
- * a Polygon column carries part and ring offsets, a MultiPoint column carries geometry offsets,
- * and so on. That is an invariant of the data, not of the types, so each branch below narrows
- * the buffer it needs. A tile that violates the invariant is malformed — naming the missing
- * buffer beats indexing `undefined` and producing NaN coordinates.
+ * Which topology buffer is present depends on which geometry types the column holds: a Polygon
+ * column carries part and ring offsets, a MultiPoint column carries geometry offsets, and so on.
+ * Each branch below assumes the buffer it needs is there, per that invariant.
  */
-function requireTopologyBuffer(
-    buffer: Uint32Array | undefined,
-    name: string,
-    geometryType: number,
-): Uint32Array {
-    if (!buffer) {
-        throw new Error(`Geometry type ${geometryType} requires the ${name} buffer, which the tile does not contain`);
-    }
-    return buffer;
-}
-
 export function convertGeometryVector(geometryVector: GeometryVector): CoordinatesArray[] {
     const geometries: CoordinatesArray[] = new Array(geometryVector.numGeometries);
     let partOffsetCounter = 1;
@@ -53,9 +40,6 @@ export function convertGeometryVector(geometryVector: GeometryVector): Coordinat
                         x = vertexBuffer[vertexBufferOffset++];
                         y = vertexBuffer[vertexBufferOffset++];
                     } else if (geometryVector.vertexBufferType === VertexBufferType.MORTON) {
-                        if (!mortonSettings) {
-                            throw new Error("A Morton-encoded vertex buffer requires morton settings");
-                        }
                         const offset = vertexOffsets[vertexOffsetsOffset++];
                         const mortonCode = vertexBuffer[offset];
                         const vertex = decodeZOrderCurve(
@@ -70,7 +54,6 @@ export function convertGeometryVector(geometryVector: GeometryVector): Coordinat
                         x = vertexBuffer[offset];
                         y = vertexBuffer[offset + 1];
                     }
-
                     geometries[geometryCounter++] = [[new Point(x, y)]];
                     if (geometryOffsets) geometryOffsetsCounter++;
                     if (partOffsets) partOffsetCounter++;
@@ -79,14 +62,8 @@ export function convertGeometryVector(geometryVector: GeometryVector): Coordinat
                 break;
             case GEOMETRY_TYPE.MULTIPOINT:
                 {
-                    const geometryOffsetsChecked = requireTopologyBuffer(
-                        geometryOffsets,
-                        "geometryOffsets",
-                        geometryType,
-                    );
                     const numPoints =
-                        geometryOffsetsChecked[geometryOffsetsCounter] -
-                        geometryOffsetsChecked[geometryOffsetsCounter - 1];
+                        geometryOffsets![geometryOffsetsCounter] - geometryOffsets![geometryOffsetsCounter - 1];
                     geometryOffsetsCounter++;
                     let points: Point[];
                     if (nonOffset) {
@@ -118,13 +95,10 @@ export function convertGeometryVector(geometryVector: GeometryVector): Coordinat
                 {
                     let numVertices: number;
                     if (containsPolygon) {
-                        const ringOffsetsChecked = requireTopologyBuffer(ringOffsets, "ringOffsets", geometryType);
-                        numVertices =
-                            ringOffsetsChecked[ringOffsetsCounter] - ringOffsetsChecked[ringOffsetsCounter - 1];
+                        numVertices = ringOffsets![ringOffsetsCounter] - ringOffsets![ringOffsetsCounter - 1];
                         ringOffsetsCounter++;
                     } else {
-                        const partOffsetsChecked = requireTopologyBuffer(partOffsets, "partOffsets", geometryType);
-                        numVertices = partOffsetsChecked[partOffsetCounter] - partOffsetsChecked[partOffsetCounter - 1];
+                        numVertices = partOffsets![partOffsetCounter] - partOffsets![partOffsetCounter - 1];
                     }
                     partOffsetCounter++;
 
@@ -152,23 +126,18 @@ export function convertGeometryVector(geometryVector: GeometryVector): Coordinat
                 break;
             case GEOMETRY_TYPE.POLYGON:
                 {
-                    const partOffsetsChecked = requireTopologyBuffer(partOffsets, "partOffsets", geometryType);
-                    const ringOffsetsChecked = requireTopologyBuffer(ringOffsets, "ringOffsets", geometryType);
-                    const numRings =
-                        partOffsetsChecked[partOffsetCounter] - partOffsetsChecked[partOffsetCounter - 1];
+                    const numRings = partOffsets![partOffsetCounter] - partOffsets![partOffsetCounter - 1];
                     partOffsetCounter++;
                     const rings: CoordinatesArray = new Array(numRings - 1);
                     let shell: Point[];
-                    let numVertices =
-                        ringOffsetsChecked[ringOffsetsCounter] - ringOffsetsChecked[ringOffsetsCounter - 1];
+                    let numVertices = ringOffsets![ringOffsetsCounter] - ringOffsets![ringOffsetsCounter - 1];
                     ringOffsetsCounter++;
 
                     if (nonOffset) {
                         shell = getLineStringOrRing(vertexBuffer, vertexBufferOffset, numVertices, true);
                         vertexBufferOffset += numVertices * 2;
                         for (let j = 0; j < rings.length; j++) {
-                            numVertices =
-                                ringOffsetsChecked[ringOffsetsCounter] - ringOffsetsChecked[ringOffsetsCounter - 1];
+                            numVertices = ringOffsets![ringOffsetsCounter] - ringOffsets![ringOffsetsCounter - 1];
                             ringOffsetsCounter++;
                             rings[j] = getLineStringOrRing(vertexBuffer, vertexBufferOffset, numVertices, true);
                             vertexBufferOffset += numVertices * 2;
@@ -185,8 +154,7 @@ export function convertGeometryVector(geometryVector: GeometryVector): Coordinat
                         );
                         vertexOffsetsOffset += numVertices;
                         for (let j = 0; j < rings.length; j++) {
-                            numVertices =
-                                ringOffsetsChecked[ringOffsetsCounter] - ringOffsetsChecked[ringOffsetsCounter - 1];
+                            numVertices = ringOffsets![ringOffsetsCounter] - ringOffsets![ringOffsetsCounter - 1];
                             ringOffsetsCounter++;
                             rings[j] = decodeDictionaryEncodedVertices(
                                 geometryVector.vertexBufferType,
@@ -206,27 +174,17 @@ export function convertGeometryVector(geometryVector: GeometryVector): Coordinat
                 break;
             case GEOMETRY_TYPE.MULTILINESTRING:
                 {
-                    const geometryOffsetsChecked = requireTopologyBuffer(
-                        geometryOffsets,
-                        "geometryOffsets",
-                        geometryType,
-                    );
                     const numLineStrings =
-                        geometryOffsetsChecked[geometryOffsetsCounter] -
-                        geometryOffsetsChecked[geometryOffsetsCounter - 1];
+                        geometryOffsets![geometryOffsetsCounter] - geometryOffsets![geometryOffsetsCounter - 1];
                     geometryOffsetsCounter++;
                     const lineStrings: CoordinatesArray = new Array(numLineStrings);
                     for (let j = 0; j < numLineStrings; j++) {
                         let numVertices: number;
                         if (containsPolygon) {
-                            const ringOffsetsChecked = requireTopologyBuffer(ringOffsets, "ringOffsets", geometryType);
-                            numVertices =
-                                ringOffsetsChecked[ringOffsetsCounter] - ringOffsetsChecked[ringOffsetsCounter - 1];
+                            numVertices = ringOffsets![ringOffsetsCounter] - ringOffsets![ringOffsetsCounter - 1];
                             ringOffsetsCounter++;
                         } else {
-                            const partOffsetsChecked = requireTopologyBuffer(partOffsets, "partOffsets", geometryType);
-                            numVertices =
-                                partOffsetsChecked[partOffsetCounter] - partOffsetsChecked[partOffsetCounter - 1];
+                            numVertices = partOffsets![partOffsetCounter] - partOffsets![partOffsetCounter - 1];
                         }
                         partOffsetCounter++;
                         if (nonOffset) {
@@ -251,26 +209,16 @@ export function convertGeometryVector(geometryVector: GeometryVector): Coordinat
                 break;
             case GEOMETRY_TYPE.MULTIPOLYGON:
                 {
-                    const geometryOffsetsChecked = requireTopologyBuffer(
-                        geometryOffsets,
-                        "geometryOffsets",
-                        geometryType,
-                    );
-                    const partOffsetsChecked = requireTopologyBuffer(partOffsets, "partOffsets", geometryType);
-                    const ringOffsetsChecked = requireTopologyBuffer(ringOffsets, "ringOffsets", geometryType);
                     const numPolygons =
-                        geometryOffsetsChecked[geometryOffsetsCounter] -
-                        geometryOffsetsChecked[geometryOffsetsCounter - 1];
+                        geometryOffsets![geometryOffsetsCounter] - geometryOffsets![geometryOffsetsCounter - 1];
                     geometryOffsetsCounter++;
                     const polygons: CoordinatesArray[] = new Array(numPolygons);
                     for (let j = 0; j < numPolygons; j++) {
-                        const numRings =
-                            partOffsetsChecked[partOffsetCounter] - partOffsetsChecked[partOffsetCounter - 1];
+                        const numRings = partOffsets![partOffsetCounter] - partOffsets![partOffsetCounter - 1];
                         partOffsetCounter++;
                         let shell: Point[];
                         const rings: CoordinatesArray = new Array(numRings - 1);
-                        const numVertices =
-                            ringOffsetsChecked[ringOffsetsCounter] - ringOffsetsChecked[ringOffsetsCounter - 1];
+                        const numVertices = ringOffsets![ringOffsetsCounter] - ringOffsets![ringOffsetsCounter - 1];
                         ringOffsetsCounter++;
                         if (nonOffset) {
                             shell = getLineStringOrRing(vertexBuffer, vertexBufferOffset, numVertices, true);
@@ -288,8 +236,7 @@ export function convertGeometryVector(geometryVector: GeometryVector): Coordinat
                             vertexOffsetsOffset += numVertices;
                         }
                         for (let k = 0; k < rings.length; k++) {
-                            const numRingVertices =
-                                ringOffsetsChecked[ringOffsetsCounter] - ringOffsetsChecked[ringOffsetsCounter - 1];
+                            const numRingVertices = ringOffsets![ringOffsetsCounter] - ringOffsets![ringOffsetsCounter - 1];
                             ringOffsetsCounter++;
                             if (nonOffset) {
                                 rings[k] = getLineStringOrRing(vertexBuffer, vertexBufferOffset, numRingVertices, true);
@@ -422,14 +369,9 @@ function decodeDictionaryEncodedVertices(
     vertexOffset: number,
     numVertices: number,
     isRing: boolean,
-    // Only the MORTON branch reads this, so it is optional here and narrowed there — callers
-    // hand through a vector's `mortonSettings`, which is absent for non-Morton vertex buffers.
-    mortonSettings: MortonSettings | undefined,
+    mortonSettings: MortonSettings,
 ): Point[] {
     if (vertexBufferType === VertexBufferType.MORTON) {
-        if (!mortonSettings) {
-            throw new Error("A Morton-encoded vertex buffer requires morton settings");
-        }
         return decodeMortonDictionaryEncodedVertices(
             vertexBuffer,
             vertexOffsets,

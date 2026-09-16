@@ -1,15 +1,7 @@
 import type { SelectionVector } from "./selectionVector";
 
 export class ConstSelectionVector implements SelectionVector {
-    /**
-     * Materialised form of `selectionValues()`, built on first call and then shared.
-     *
-     * This class exists precisely to represent "all" / "nothing" *without* an index array, so
-     * materialising `[0..length)` is the one operation that contradicts its purpose — doing it
-     * again on every call would make a repeated caller quadratic. Sharing the array is safe
-     * under the `SelectionVector.selectionValues()` contract (view onto internal state,
-     * callers must not mutate).
-     */
+    // materialized values are cached to avoid re-creating the array on every call to selectionValues()
     private materialisedValues?: Uint32Array;
 
     private constructor(
@@ -17,6 +9,7 @@ export class ConstSelectionVector implements SelectionVector {
         private readonly length: number,
     ) {}
 
+    /** @inheritdoc */
     getIndex(index: number): number {
         if (!this.fullSelection || index < 0 || index >= this.length) {
             throw new RangeError("Index out of bounds");
@@ -24,14 +17,17 @@ export class ConstSelectionVector implements SelectionVector {
         return index;
     }
 
+    /** @inheritdoc */
     setIndex(): void {
         throw new Error("ConstSelectionVector is immutable");
     }
 
+    /** @inheritdoc */
     setLimit(): void {
         throw new Error("ConstSelectionVector is immutable");
     }
 
+    /** @inheritdoc */
     selectionValues(): Uint32Array {
         if (this.materialisedValues) {
             return this.materialisedValues;
@@ -50,10 +46,12 @@ export class ConstSelectionVector implements SelectionVector {
         return values;
     }
 
+    /** @inheritdoc */
     get limit(): number {
         return this.fullSelection ? this.length : 0;
     }
 
+    /** @inheritdoc */
     get capacity(): number {
         return this.length;
     }
