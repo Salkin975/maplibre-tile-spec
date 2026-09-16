@@ -3,6 +3,8 @@ import BitVector from "../flat/bitVector";
 import { decodeFsst } from "../../decoding/fsstDecoder";
 import { decodeString } from "../../decoding/decodingUtils";
 
+const encoder = new TextEncoder();
+
 /** Mutable cache shared by the FSST child columns of one SharedDict. */
 export type FsstDictionaryCache = {
     /** Undefined until one member of the SharedDict group decodes the dictionary on first access. */
@@ -90,4 +92,54 @@ export class StringFsstDictionaryVector extends VariableSizeVector<Uint8Array, s
 
         return lengthBuffer;
     }
+}
+
+export function createStringFsstDictionaryVector(values: (string | null)[], name: string): StringFsstDictionaryVector {
+    const dictionary = new Map<string, number>();
+    const encodedValues: Uint8Array[] = [];
+    const indices = new Uint32Array(values.length);
+    const nullability = new BitVector(new Uint8Array(Math.ceil(values.length / 8)), values.length);
+
+    for (let i = 0; i < values.length; i++) {
+        const value = values[i];
+        if (value === null) {
+            continue;
+        }
+        let dictionaryIndex = dictionary.get(value);
+        if (dictionaryIndex === undefined) {
+            dictionaryIndex = dictionary.size;
+            dictionary.set(value, dictionaryIndex);
+            encodedValues.push(encoder.encode(value));
+        }
+        indices[i] = dictionaryIndex;
+        nullability.set(i, true);
+    }
+
+    const dictionaryOffsets = new Uint32Array(encodedValues.length + 1);
+    let decodedLength = 0;
+    let compressedLength = 0;
+    for (let i = 0; i < encodedValues.length; i++) {
+        decodedLength += encodedValues[i].length;
+        compressedLength += encodedValues[i].length * 2;
+        dictionaryOffsets[i + 1] = decodedLength;
+    }
+
+    const compressedDictionary = new Uint8Array(compressedLength);
+    let offset = 0;
+    for (const value of encodedValues) {
+        for (const byte of value) {
+            compressedDictionary[offset++] = 255;
+            compressedDictionary[offset++] = byte;
+        }
+    }
+
+    return new StringFsstDictionaryVector(
+        name,
+        indices,
+        dictionaryOffsets,
+        compressedDictionary,
+        new Uint32Array([0]),
+        new Uint8Array(0),
+        nullability,
+    );
 }

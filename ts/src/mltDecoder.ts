@@ -149,10 +149,16 @@ export default function decodeTile(
             }
         }
 
+        // `FeatureTable` requires a geometry column; a feature table block without one is
+        // malformed, and saying so beats constructing a table whose `numFeatures` would throw.
+        if (!geometryVector) {
+            throw new Error(`Feature table "${featureTableMetadata.name}" has no geometry column`);
+        }
+
         const featureTable = new FeatureTable(
             featureTableMetadata.name,
             geometryVector,
-            idVector,
+            idVector ?? undefined,
             propertyVectors,
             extent,
         );
