@@ -168,12 +168,33 @@ impl std::fmt::Display for FileAlgorithm {
                         LengthType::Triangles => "TrianglesLen",
                         LengthType::Symbol => "SymbolLen",
                         LengthType::Dictionary => "DictLen",
+                        #[cfg(feature = "unstable-v2")]
+                        LengthType::Nested => "NestedLen",
+                        // `mlt-core` resolves its features separately, so it may hand this
+                        // build a nested length stream the match above cannot name.
+                        #[cfg(not(feature = "unstable-v2"))]
+                        #[allow(
+                            unreachable_patterns,
+                            reason = "reachable only when mlt-core has v2"
+                        )]
+                        _ => "NestedLen",
                     },
                 };
+                // `mlt-core` may carry v2-only encodings this build has no name for,
+                // since its features are resolved separately from this crate's.
+                #[cfg_attr(
+                    not(feature = "unstable-v2"),
+                    expect(
+                        clippy::wildcard_enum_match_arm,
+                        reason = "v2 encodings exist only when mlt-core has them"
+                    )
+                )]
                 let physical = match physical {
                     PhysicalEncoding::None => "",
                     PhysicalEncoding::FastPFor(_) => "FastPFOR",
                     PhysicalEncoding::VarInt => "VarInt",
+                    #[cfg(feature = "unstable-v2")]
+                    PhysicalEncoding::BitPacked => "BitPacked",
                 };
                 let logical = match logical {
                     StatLogicalCodec::None => "",
