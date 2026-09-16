@@ -291,7 +291,10 @@ function decodeSignedInt32(
             decodedValues = new Int32Array(values);
             break;
         case LogicalLevelTechnique.COMPONENTWISE_DELTA:
-            if (scalingData && !nullabilityBuffer) {
+            // `scale` is filled in by decodeTile, so it is optional on the caller-facing type.
+            // Without it the scaled variant would multiply by `undefined` and yield NaN
+            // coordinates, so fall through to the unscaled one instead.
+            if (scalingData?.scale !== undefined && !nullabilityBuffer) {
                 return decodeComponentwiseDeltaVec2Scaled(values, scalingData.scale, scalingData.min, scalingData.max);
             }
             decodedValues = decodeComponentwiseDeltaVec2(values);
@@ -340,7 +343,8 @@ function decodeUnsignedInt32(
             decodedValues = values;
             break;
         case LogicalLevelTechnique.COMPONENTWISE_DELTA:
-            if (scalingData && !nullabilityBuffer) {
+            // See the signed variant above: no `scale` means unscaled, not NaN.
+            if (scalingData?.scale !== undefined && !nullabilityBuffer) {
                 decodedValues = decodeUnsignedComponentwiseDeltaVec2Scaled(
                     values,
                     scalingData.scale,
@@ -554,11 +558,19 @@ export function getVectorType(
     }
 
     const byteOffset = offset.get();
-    const values = new Int32Array(data.buffer, data.byteOffset + byteOffset, 4);
+    // A DataView has no alignment requirement, unlike an Int32Array view: byteOffset is a
+    // byte-granular cursor position and is not guaranteed to be a multiple of 4. The view spans
+    // the whole backing buffer (not just `data`'s own byteLength) since this peek intentionally
+    // reads past `data`'s declared range, mirroring the original Int32Array(data.buffer, ...) read.
+    const view = new DataView(data.buffer);
+    const absoluteOffset = data.byteOffset + byteOffset;
     offset.set(savedOffset);
     // Check if both deltas are encoded 1
     const zigZagOne = 2;
-    if (values[2] === zigZagOne && values[3] === zigZagOne) {
+    if (
+        view.getInt32(absoluteOffset + 2 * Int32Array.BYTES_PER_ELEMENT, true) === zigZagOne &&
+        view.getInt32(absoluteOffset + 3 * Int32Array.BYTES_PER_ELEMENT, true) === zigZagOne
+    ) {
         return VectorType.SEQUENCE;
     }
     return streamMetadata.numValues === 1 ? VectorType.CONST : VectorType.FLAT;

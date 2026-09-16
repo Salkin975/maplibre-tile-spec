@@ -86,7 +86,8 @@ function encodeSignedInt32(
             data = new Uint32Array(values);
             return { data };
         case LogicalLevelTechnique.COMPONENTWISE_DELTA:
-            if (scalingData && !bitVector) {
+            // `scale` is optional on GeometryScaling; without it, scaling is not applicable.
+            if (scalingData?.scale !== undefined && !bitVector) {
                 const data = encodeComponentwiseDeltaVec2Scaled(values, scalingData.scale);
                 return { data };
             }
@@ -127,7 +128,8 @@ function encodeUnsignedInt32(
             data = values;
             return { data };
         case LogicalLevelTechnique.COMPONENTWISE_DELTA:
-            if (scalingData && !bitVector) {
+            // See above: no `scale` means unscaled.
+            if (scalingData?.scale !== undefined && !bitVector) {
                 const data = encodeComponentwiseDeltaVec2Scaled(new Int32Array(values), scalingData.scale);
                 return { data };
             }

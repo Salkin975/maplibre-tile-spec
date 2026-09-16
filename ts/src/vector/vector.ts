@@ -10,6 +10,9 @@ export default abstract class Vector<T extends ArrayBufferView = ArrayBufferView
         sizeOrNullabilityBuffer: number | BitVector,
     ) {
         if (typeof sizeOrNullabilityBuffer === "number") {
+            // Was left unassigned (i.e. `undefined`) before, which contradicted the declared
+            // `BitVector | null`. Both are falsy, so the reads below are unaffected.
+            this.nullabilityBuffer = null;
             this._size = sizeOrNullabilityBuffer;
         } else {
             this.nullabilityBuffer = sizeOrNullabilityBuffer;
@@ -31,6 +34,10 @@ export default abstract class Vector<T extends ArrayBufferView = ArrayBufferView
 
     get size(): number {
         return this._size;
+    }
+
+    get rawData(): T {
+        return this.dataBuffer;
     }
 
     protected abstract getValueFromBuffer(index: number): K;

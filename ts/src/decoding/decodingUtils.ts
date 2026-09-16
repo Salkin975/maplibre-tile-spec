@@ -135,7 +135,7 @@ export function decodeString(buf: Uint8Array, pos: number, end: number): string 
     return readUtf8(buf, pos, end);
 }
 
-function readUtf8(buf, pos, end): string {
+function readUtf8(buf: Uint8Array, pos: number, end: number): string {
     let str = "";
     let i = pos;
 
@@ -214,7 +214,7 @@ export function getVectorTypeBooleanStream(
         : VectorType.FLAT;
 }
 
-function bitCount(number): number {
+function bitCount(number: number): number {
     //TODO: refactor to get rid of special case handling
     return number === 0 ? 1 : Math.floor(Math.log2(number) + 1);
 }

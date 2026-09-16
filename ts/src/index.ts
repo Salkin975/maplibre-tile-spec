@@ -3,6 +3,8 @@ export { encodeTile } from "./encoding/mltEncoder";
 export { default as FeatureTable } from "./vector/featureTable";
 export { GeometryVector } from "./vector/geometry/geometryVector";
 export { GpuVector } from "./vector/geometry/gpuVector";
+export { createConstGpuVector } from "./vector/geometry/constGpuVector";
+export { createFlatGpuVector } from "./vector/geometry/flatGpuVector";
 export { default as GeometryScaling } from "./decoding/geometryScaling";
 export { GEOMETRY_TYPE } from "./vector/geometry/geometryType";
 export type { TileSetMetadata } from "./metadata/tileset/tilesetMetadata";

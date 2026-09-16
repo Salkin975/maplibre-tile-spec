@@ -5,20 +5,20 @@ import {
     updateNullableSelectionVector,
 } from "./selectionVectorUtils";
 import { FlatSelectionVector } from "./flatSelectionVector";
-import { SequenceSelectionVector } from "./sequenceSelectionVector";
+import { ConstSelectionVector } from "./constSelectionVector";
 import BitVector from "../flat/bitVector";
 
 describe("selectionVectorUtils", () => {
     describe("createSelectionVector", () => {
-        it("Should create a SequenceSelectionVector with given size", () => {
+        it("Should create a ConstSelectionVector with given size", () => {
             const sv = createSelectionVector(5);
-            expect(sv).toBeInstanceOf(SequenceSelectionVector);
+            expect(sv).toBeInstanceOf(ConstSelectionVector);
             expect(sv.limit).toBe(5);
         });
 
         it("Should handle zero size", () => {
             const sv = createSelectionVector(0);
-            expect(sv).toBeInstanceOf(SequenceSelectionVector);
+            expect(sv).toBeInstanceOf(ConstSelectionVector);
             expect(sv.limit).toBe(0);
         });
     });
@@ -141,37 +141,37 @@ describe("selectionVectorUtils", () => {
             });
         });
 
-        describe("with SequenceSelectionVector", () => {
-            it("Should filter SequenceSelectionVector with all bits set", () => {
-                const selectionVector = new SequenceSelectionVector(0, 2, 4); // [0, 2, 4, 6]
-                const buffer = new Uint8Array([0b01010101]);
+        describe("with ConstSelectionVector", () => {
+            it("Should filter ConstSelectionVector with all bits set", () => {
+                const selectionVector = ConstSelectionVector.full(4); // [0, 1, 2, 3]
+                const buffer = new Uint8Array([0b00001111]);
                 const bitVector = new BitVector(buffer, 8);
                 const result = updateNullableSelectionVector(selectionVector, bitVector);
                 expect(result).toBeInstanceOf(FlatSelectionVector);
                 expect(result.limit).toBe(4);
             });
 
-            it("Should partially filter SequenceSelectionVector", () => {
-                const selectionVector = new SequenceSelectionVector(0, 2, 4); // [0, 2, 4, 6]
-                const buffer = new Uint8Array([0b00010001]); // bits at 0, 4
+            it("Should partially filter ConstSelectionVector", () => {
+                const selectionVector = ConstSelectionVector.full(4); // [0, 1, 2, 3]
+                const buffer = new Uint8Array([0b00000101]); // bits at 0, 2
                 const bitVector = new BitVector(buffer, 8);
                 const result = updateNullableSelectionVector(selectionVector, bitVector);
                 expect(result).toBeInstanceOf(FlatSelectionVector);
                 expect(result.limit).toBe(2);
             });
 
-            it("Should preserve all SequenceSelectionVector values when nullabilityBuffer is undefined", () => {
-                const selectionVector = new SequenceSelectionVector(1, 3, 3); // [1, 4, 7]
+            it("Should preserve the same instance when nullabilityBuffer is undefined", () => {
+                const selectionVector = ConstSelectionVector.full(3);
                 const result = updateNullableSelectionVector(selectionVector, undefined);
-                expect(result).toBeInstanceOf(FlatSelectionVector);
+                expect(result).toBe(selectionVector);
                 expect(result.limit).toBe(3);
             });
 
-            it("Should create FlatSelectionVector when BitVector is null", () => {
-                const selectionVector = new SequenceSelectionVector(0, 2, 4); // [0, 2, 4, 6]
+            it("Should preserve the same instance when BitVector is null", () => {
+                const selectionVector = ConstSelectionVector.full(4);
                 const result = updateNullableSelectionVector(selectionVector, null);
 
-                expect(result).toBeInstanceOf(FlatSelectionVector);
+                expect(result).toBe(selectionVector);
                 expect(result.limit).toBe(4);
             });
         });
