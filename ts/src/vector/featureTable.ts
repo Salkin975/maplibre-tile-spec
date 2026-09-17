@@ -23,12 +23,7 @@ export interface Feature {
 /**
  * A geometry column whose stream headers have been walked (so its start offset and stream
  * count are known) but whose payload has not been decoded. Built by decodeTile's scan and
- * decoded on first `FeatureTable.geometryVector` access.
- *
- * `scaling` is a snapshot (`{ extent, min, max, scale }`), never the caller's live
- * `GeometryScaling` object: that object is mutable and may be reused across `decodeTile()`
- * calls, so holding a live reference would let a later tile's mutation corrupt this one's
- * deferred decode.
+ * decoded on first `FeatureTable.geometryVector` access
  */
 export class PendingGeometryColumn {
     constructor(

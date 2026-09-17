@@ -6,7 +6,7 @@ import type { SelectionVector } from "../filter/selectionVector";
 import type { GeometryCollection } from "./geometryCollection";
 import type { SINGLE_PART_GEOMETRY_TYPE } from "./geometryType";
 
-export abstract class GpuVector implements Iterable<CoordinatesArray>, GeometryCollection {
+export abstract class GpuVector implements GeometryCollection {
     protected constructor(
         private readonly _triangleOffsets: Uint32Array,
         private readonly _indexBuffer: Uint32Array,
@@ -67,17 +67,5 @@ export abstract class GpuVector implements Iterable<CoordinatesArray>, GeometryC
 
     filter(geometryType: SINGLE_PART_GEOMETRY_TYPE): SelectionVector {
         return filterByGeometryType(this, geometryType);
-    }
-
-    [Symbol.iterator](): Iterator<CoordinatesArray> {
-        throw new Error("Iterator on a GpuVector is not implemented yet.");
-        /*for(let i = 1; i < this.triangleOffsets.length; i++) {
-           const numTriangles = this.triangleOffsets[i] - this.triangleOffsets[i-1];
-           const startIndex = this.triangleOffsets[i-1] * 3;
-           const endIndex = this.triangleOffsets[i] * 3;
-       }
-        while (index < this.numGeometries) {
-            yield geometries[index++];
-        }*/
     }
 }

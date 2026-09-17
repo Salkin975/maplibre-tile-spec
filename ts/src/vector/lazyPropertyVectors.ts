@@ -22,16 +22,15 @@ export interface PendingPropertyColumn {
 
 /**
  * Holds property columns in their encoded form and decodes each one the first time it
- * is requested. A column that is never asked for is never decoded, never allocates a
- * typed array, and never runs an RLE/FSST pass.
+ * is requested.
  *
  * IMPORTANT - buffer lifetime: unless the tile bytes were copied before construction, the
  * store keeps a view onto the tile bytes passed to `decodeTile`. The caller must not
  * reuse, pool, or transfer that ArrayBuffer while any feature table is still alive. If you
  * decode in a worker and transfer results to the main thread, call `forceAll()` before
- * transferring - laziness buys nothing across a thread boundary.
+ * transferring
  */
-export class LazyPropertyVectors implements Iterable<Vector> {
+export class LazyPropertyVectors {
     readonly #tile: Uint8Array;
     readonly #columns: PendingPropertyColumn[];
     readonly #numFeatures: number;
@@ -40,7 +39,6 @@ export class LazyPropertyVectors implements Iterable<Vector> {
 
     /** Resolved vector names. A `null` value is a cached miss. */
     readonly #byName = new Map<string, Vector | null>();
-    #numDecoded = 0;
     #allVectors: Vector[] | null = null;
 
     constructor(
@@ -53,41 +51,6 @@ export class LazyPropertyVectors implements Iterable<Vector> {
         this.#columns = columns;
         this.#numFeatures = numFeatures;
         this.#propertyColumnNames = propertyColumnNames;
-    }
-
-    /** Top-level column names. Does not decode anything. */
-    get columnNames(): string[] {
-        const columns = this.#columns;
-        const names = new Array<string>(columns.length);
-        for (let i = 0; i < columns.length; i++) {
-            names[i] = columns[i].name;
-        }
-        return names;
-    }
-
-    /** Number of encoded columns (not the number of vectors - a struct column yields several). */
-    get columnCount(): number {
-        return this.#columns.length;
-    }
-
-    get numDecodedColumns(): number {
-        return this.#numDecoded;
-    }
-
-    /** True once every column has been materialised. */
-    get isFullyDecoded(): boolean {
-        return this.#numDecoded === this.#columns.length;
-    }
-
-    /** Cheap existence check for a top-level column. Does not decode. */
-    hasColumn(name: string): boolean {
-        const columns = this.#columns;
-        for (let i = 0; i < columns.length; i++) {
-            if (columns[i].name === name) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**
@@ -122,18 +85,6 @@ export class LazyPropertyVectors implements Iterable<Vector> {
         return undefined;
     }
 
-    /** Decodes only the named columns and returns the vectors that resolved. */
-    select(names: Iterable<string>): Vector[] {
-        const selected: Vector[] = [];
-        for (const name of names) {
-            const vector = this.get(name);
-            if (vector) {
-                selected.push(vector);
-            }
-        }
-        return selected;
-    }
-
     /** Decodes every remaining column. Use before transferring across a worker boundary. */
     forceAll(): Vector[] {
         if (this.#allVectors) {
@@ -152,15 +103,6 @@ export class LazyPropertyVectors implements Iterable<Vector> {
 
         this.#allVectors = all;
         return all;
-    }
-
-    /** Alias for `forceAll` - present so existing `Vector[]` call sites keep working. */
-    toArray(): Vector[] {
-        return this.forceAll();
-    }
-
-    [Symbol.iterator](): Iterator<Vector> {
-        return this.forceAll()[Symbol.iterator]();
     }
 
     #decode(column: PendingPropertyColumn): Vector[] {
@@ -184,7 +126,6 @@ export class LazyPropertyVectors implements Iterable<Vector> {
         }
 
         column.vectors = vectors;
-        this.#numDecoded++;
 
         for (let i = 0; i < vectors.length; i++) {
             const vector = vectors[i];
