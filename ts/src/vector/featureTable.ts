@@ -115,7 +115,10 @@ export default class FeatureTable {
         if (!this._propertyVectors) {
             return [];
         }
-        return this._propertyVectors instanceof LazyPropertyVectors ? this._propertyVectors.forceAll() : this._propertyVectors;
+        if (this._propertyVectors instanceof LazyPropertyVectors) {
+            return this._propertyVectors.forceAll();
+        }
+        return this._propertyVectors;
     }
 
     /** Looks up a single property column by name, decoding only that column if the table is lazy. */

@@ -15,7 +15,7 @@ export interface PendingPropertyColumn {
     readonly metadata: Column;
     readonly numStreams: number;
     /** Byte offset of the column's first stream, relative to the buffer held by the store. */
-    start: number;
+    readonly start: number;
     /** Populated on first decode. `null` means "not decoded yet". */
     vectors: Vector[] | null;
 }
