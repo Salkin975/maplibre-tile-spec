@@ -554,11 +554,16 @@ export function getVectorType(
     }
 
     const byteOffset = offset.get();
-    const values = new Int32Array(data.buffer, data.byteOffset + byteOffset, 4);
+    // byteOffset is a byte-granular cursor position and is not guaranteed to be a multiple of 4
+    const view = new DataView(data.buffer);
+    const absoluteOffset = data.byteOffset + byteOffset;
     offset.set(savedOffset);
     // Check if both deltas are encoded 1
     const zigZagOne = 2;
-    if (values[2] === zigZagOne && values[3] === zigZagOne) {
+    if (
+        view.getInt32(absoluteOffset + 2 * Int32Array.BYTES_PER_ELEMENT, true) === zigZagOne &&
+        view.getInt32(absoluteOffset + 3 * Int32Array.BYTES_PER_ELEMENT, true) === zigZagOne
+    ) {
         return VectorType.SEQUENCE;
     }
     return streamMetadata.numValues === 1 ? VectorType.CONST : VectorType.FLAT;

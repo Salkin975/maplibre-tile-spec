@@ -80,7 +80,6 @@ describe("MLT Decoder - propertyColumns projection", () => {
 
     it("keeps a struct column when only one of its children is requested", () => {
         const table = waterNameTable({ propertyColumns: new Set(["name:de"]) });
-
         assert.deepEqual(
             table.propertyVectors.map((vector) => vector.name),
             ["name:de"],
@@ -116,11 +115,8 @@ describe("MLT Decoder - propertyColumns projection", () => {
 describe("MLT Decoder - malformed input", () => {
     const OMT_TILE = path.resolve(__dirname, "../../test/expected/tag0x01/omt/4_8_10.mlt");
 
-    // Note: truncation is caught by decodeTile's own block-length check before any stream is
-    // read, so this covers that guard — not the stream-scanning bounds. Those are exercised
-    // directly in streamMetadataDecoder.spec.ts and stringDecoder.spec.ts, because reaching
-    // them through decodeTile would require a tile whose block header is intact while its
-    // interior is corrupt.
+    // truncation is caught by decodeTile's own block-length check before any stream is
+    // read, so this covers that guard.
     it("rejects a truncated tile rather than decoding garbage", () => {
         const full = new Uint8Array(fs.readFileSync(OMT_TILE));
 

@@ -61,13 +61,11 @@ export function getTestCases(skipList: string[]): {
   const matched = new Set<string>();
 
   for (const mltFile of mltFiles) {
-    const testName = path.relative(syntheticDir, mltFile).replace(/\.mlt$/, "");
+    const testName = path.relative(syntheticDir, mltFile).replace(/\.mlt$/, "").split(path.sep).join("/");
     const jsonFile = mltFile.replace(/\.mlt$/, ".json");
     const expected = JSON.parse(readFileSync(jsonFile, "utf-8"));
     const testCase = { name: testName, fileName: mltFile, content: expected };
-    const skipEntry = skipList.find(
-      (entry) => testName === entry || testName.startsWith(`${entry}/`),
-    );
+    const skipEntry = skipList.find((entry) => testName === entry || testName.startsWith(`${entry}/`));
     if (skipEntry !== undefined) {
       matched.add(skipEntry);
       skipped.push(testCase);

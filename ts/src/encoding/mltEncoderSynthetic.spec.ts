@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { compareWithTolerance, getTestCases } from "../../../test/synthetic/synthetic-test-utils";
 import decodeTile from "../mltDecoder";
@@ -11,6 +12,23 @@ import { encodeTile, type Feature, type FeatureGeometry, type Layer, type Proper
  * that starts working fails the suite until it is removed from this list.
  */
 const UNSUPPORTED: string[] = ["0x02"];
+
+/**
+ * Nested (MAP) property fixtures under 0x02 that both the decoder and encoder do support now.
+ * The rest of 0x02 does not, so these are tested directly here instead of carving an exception
+ * into the "0x02" exclusion list above.
+ */
+const NESTED_PROPERTY_SYNTHETICS = [
+    "prop_nested_big",
+    "prop_nested_ints",
+    "prop_nested_json",
+    "prop_nested_list",
+    "prop_nested_list_root",
+    "prop_nested_mixed_root",
+    "prop_nested_null",
+    "prop_nested_shared",
+    "prop_nested_specials",
+];
 
 /**
  * Decodes each synthetic `.mlt`, re-encodes what came out, and checks the result still decodes to
@@ -44,6 +62,19 @@ describe("encodeTile - synthetic fixtures round trip", () => {
             expect(actual, "round-tripped cleanly - remove it from the exclusion list").not.toEqual(
                 normalise(content as GeoJSON.FeatureCollection),
             );
+        });
+    }
+});
+
+describe("encodeTile - nested property synthetics round trip (0x02)", () => {
+    expect.addEqualityTesters([compareWithTolerance]);
+    const dir = path.resolve(__dirname, "../../../test/synthetic/0x02");
+
+    for (const name of NESTED_PROPERTY_SYNTHETICS) {
+        it(name, async () => {
+            const content = JSON.parse(await readFile(path.join(dir, `${name}.json`), "utf-8"));
+            const actual = await reEncode(path.join(dir, `${name}.mlt`));
+            expect(actual).toEqual(normalise(content as GeoJSON.FeatureCollection));
         });
     }
 });
