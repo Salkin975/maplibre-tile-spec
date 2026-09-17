@@ -35,9 +35,6 @@ export function decodeIdColumn(
     columnName: string,
     idDataStreamMetadata: StreamMetadata,
     sizeOrNullabilityBuffer: number | BitVector,
-    // Deliberately required: the default used to be `false` while decodeTile's public default is
-    // `true`, so omitting it here would silently pick the opposite behaviour. Both call sites
-    // pass it explicitly anyway.
     idWithinMaxSafeInteger: boolean,
 ): IdVector {
     const isLongId = columnMetadata.scalarType?.longID === true;
