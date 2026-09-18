@@ -2,7 +2,9 @@
 
 use num_enum::TryFromPrimitive;
 
-use crate::{MltError, MltResult};
+use crate::codecs::morton::{deinterleave_u64, interleave_u32};
+use crate::codecs::varint::parse_varint;
+use crate::{MltError, MltRefResult, MltResult};
 
 /// Data type of a v2 property column, the low nibble of the column type byte.
 ///
@@ -89,10 +91,17 @@ impl NodePresence {
     /// Nibble of [`Self::Stream`], already shifted into place.
     const STREAM: u8 = 0b0001_0000;
 
+    /// Nibble bit that says this node's children are shape-coded, already shifted into place.
+    ///
+    /// Nibble values `0b0010` and `0b0011` are reserved, so this sits above them.
+    pub(crate) const SHAPES: u8 = 0b0100_0000;
+
     /// Read a masked nibble, or [`None`] for one this version has no meaning for.
+    ///
+    /// The shapes bit is a separate axis and is masked off by the caller.
     #[must_use]
     pub(crate) fn parse(nibble: u8) -> Option<Self> {
-        match nibble {
+        match nibble & !Self::SHAPES {
             Self::ALL_PRESENT => Some(Self::AllPresent),
             Self::STREAM => Some(Self::Stream),
             _ => None,
@@ -146,20 +155,34 @@ impl From<NodeKind02> for DataType02 {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct NodeType02 {
     pub(crate) presence: NodePresence,
+    /// Whether this node's children's structure is coded as one shape id per row.
+    pub(crate) shapes: bool,
     pub(crate) data: NodeKind02,
 }
 
 impl NodeType02 {
     #[must_use]
     pub(crate) fn new(presence: NodePresence, data: NodeKind02) -> Self {
-        Self { presence, data }
+        Self {
+            presence,
+            shapes: false,
+            data,
+        }
+    }
+
+    /// The same node type with its children's structure coded as row shapes.
+    #[must_use]
+    pub(crate) fn shaped(mut self) -> Self {
+        self.shapes = true;
+        self
     }
 
     /// Read a wire byte, rejecting the nibbles a node cannot hold.
     pub(crate) fn parse(byte: u8) -> MltResult<Self> {
         let err = || MltError::ParsingColumnType(byte);
-        let (presence, data) = ColumnType02::fields(byte);
-        let presence = NodePresence::parse(presence).ok_or_else(err)?;
+        let (nibble, data) = ColumnType02::fields(byte);
+        let presence = NodePresence::parse(nibble).ok_or_else(err)?;
+        let shapes = nibble & NodePresence::SHAPES != 0;
         let data = DataType02::try_from(data).map_err(|_| err())?;
         let data = match data {
             DataType02::Id | DataType02::LongId => return Err(err()),
@@ -177,12 +200,18 @@ impl NodeType02 {
             DataType02::F64 => NodeKind02::Leaf(ValueType02::F64),
             DataType02::Str => NodeKind02::Leaf(ValueType02::Str),
         };
-        Ok(Self { presence, data })
+        Ok(Self {
+            presence,
+            shapes,
+            data,
+        })
     }
 
     #[must_use]
     pub(crate) fn to_byte(self) -> u8 {
-        self.presence.to_nibble() | DataType02::from(self.data) as u8
+        self.presence.to_nibble()
+            | if self.shapes { NodePresence::SHAPES } else { 0 }
+            | DataType02::from(self.data) as u8
     }
 }
 
@@ -336,10 +365,10 @@ pub(crate) struct ColumnType02 {
 
 impl ColumnType02 {
     /// Mask of the byte holding the [`Presence02`].
-    const PRESENCE_MASK: u8 = 0b1111_0000;
+    pub(crate) const PRESENCE_MASK: u8 = 0b1111_0000;
 
     /// Mask of the byte holding the [`DataType02`].
-    const DATA_TYPE_MASK: u8 = 0b0000_1111;
+    pub(crate) const DATA_TYPE_MASK: u8 = 0b0000_1111;
 
     #[must_use]
     pub(crate) fn new(presence: Presence02, data: DataType02) -> Self {
@@ -713,13 +742,13 @@ pub(crate) struct LayerLayout {
 
 impl LayerLayout {
     /// Mask of the bit saying an [m-value section](super::root02) ends the body.
-    const M_VALUES_MASK: u8 = 0b1000_0000;
+    pub(crate) const M_VALUES_MASK: u8 = 0b1000_0000;
 
     /// Mask of the byte holding the shared presence column count.
-    const SHARED_PRESENCE_MASK: u8 = 0b0111_0000;
+    pub(crate) const SHARED_PRESENCE_MASK: u8 = 0b0111_0000;
 
     /// Mask of the byte holding the [`GeoLayout`].
-    const GEO_LAYOUT_MASK: u8 = 0b0000_1111;
+    pub(crate) const GEO_LAYOUT_MASK: u8 = 0b0000_1111;
 
     /// Largest shared presence column count the byte can express.
     /// The 8th value is spent on the m-value flag in bit 7.
@@ -767,6 +796,47 @@ impl LayerLayout {
             0
         };
         m_values | (self.shared_presence << 4) | self.geometry as u8
+    }
+}
+
+/// The column counts a v2 layer writes between its geometry section and its columns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ColumnCounts {
+    /// Counted columns: ids, properties and nested columns.
+    pub(crate) columns: u32,
+    /// M-value columns, zero when the layout byte has no m-value section.
+    pub(crate) m_values: u32,
+}
+
+impl ColumnCounts {
+    /// Parse the counts varint, a Morton code of both counts when the layout byte says an m-value section follows.
+    pub(crate) fn parse(input: &[u8], layout: LayerLayout) -> MltRefResult<'_, Self> {
+        if !layout.m_values {
+            let (input, columns) = parse_varint::<u32>(input)?;
+            return Ok((
+                input,
+                Self {
+                    columns,
+                    m_values: 0,
+                },
+            ));
+        }
+        let (input, code) = parse_varint::<u64>(input)?;
+        let (columns, m_values) = deinterleave_u64(code);
+        if m_values == 0 {
+            return Err(MltError::EmptyMValueSection);
+        }
+        Ok((input, Self { columns, m_values }))
+    }
+
+    /// The varint value the counts are written as, the inverse of [`Self::parse`].
+    #[must_use]
+    pub(crate) fn to_varint(self) -> u64 {
+        if self.m_values == 0 {
+            u64::from(self.columns)
+        } else {
+            interleave_u32(self.columns, self.m_values)
+        }
     }
 }
 
@@ -977,6 +1047,20 @@ mod tests {
     }
 
     #[rstest]
+    #[case::shaped_struct(0b0100_1100, NodePresence::AllPresent, NodeKind02::Struct)]
+    #[case::shaped_map_over_nulls(0b0101_1110, NodePresence::Stream, NodeKind02::Map)]
+    fn the_shapes_bit_reads_beside_a_nodes_own_presence(
+        #[case] byte: u8,
+        #[case] presence: NodePresence,
+        #[case] data: NodeKind02,
+    ) {
+        let typ = NodeType02::parse(byte).unwrap();
+        assert_eq!(typ, NodeType02::new(presence, data).shaped());
+        assert!(typ.shapes);
+        assert_eq!(typ.to_byte(), byte);
+    }
+
+    #[rstest]
     #[case::id_is_a_features_own(0b0000_0000)]
     #[case::long_id_is_a_features_own(0b0000_0001)]
     #[case::shared_dict_introduces_columns(0b0000_1111)]
@@ -1001,6 +1085,47 @@ mod tests {
         };
         assert_eq!(column.root, root);
         assert_eq!(typ.to_byte(), byte);
+    }
+
+    fn varint(value: u64) -> Vec<u8> {
+        let mut buf = [0u8; 10];
+        let written = integer_encoding::VarInt::encode_var(value, &mut buf);
+        buf[..written].to_vec()
+    }
+
+    #[rstest]
+    #[case::no_m_values(false, 0, 0, &[0x00])]
+    #[case::three_columns(false, 3, 0, &[0x03])]
+    #[case::one_m_value(true, 0, 1, &[0x02])]
+    #[case::three_columns_two_m_values(true, 3, 2, &[0b0000_1101])]
+    #[case::one_byte_limits(true, 15, 7, &[0x7F])]
+    #[case::sixteen_columns_spill_over(true, 16, 1, &[0x82, 0x02])]
+    #[case::eight_m_values_spill_over(true, 0, 8, &[0x80, 0x01])]
+    fn column_counts_roundtrip(
+        #[case] m_values: bool,
+        #[case] columns: u32,
+        #[case] m_value_columns: u32,
+        #[case] bytes: &[u8],
+    ) {
+        let layout = LayerLayout::new(GeoLayout::Lines, 0, m_values);
+        let counts = ColumnCounts {
+            columns,
+            m_values: m_value_columns,
+        };
+        assert_eq!(varint(counts.to_varint()), bytes);
+        assert_eq!(
+            ColumnCounts::parse(bytes, layout).unwrap(),
+            (&[][..], counts)
+        );
+    }
+
+    #[rstest]
+    #[case::no_columns(&[0x00])]
+    #[case::columns_only(&[0x05])]
+    fn column_counts_reject_a_flagged_section_without_m_values(#[case] bytes: &[u8]) {
+        let layout = LayerLayout::new(GeoLayout::Lines, 0, true);
+        let err = ColumnCounts::parse(bytes, layout).unwrap_err();
+        assert!(matches!(err, MltError::EmptyMValueSection));
     }
 
     #[rstest]

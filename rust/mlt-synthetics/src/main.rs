@@ -985,6 +985,7 @@ fn generate_m_values(w: &mut SynthWriter) {
     generate_m_value_geometries(w);
     generate_m_value_presence(w);
     generate_m_value_encodings(w);
+    generate_m_value_counts(w);
 }
 
 /// Columns whose value is a tree of nodes rather than one scalar.
@@ -1043,6 +1044,55 @@ fn generate_nested(w: &mut SynthWriter) {
         ))
         .nested_str_dict("tags", E::varint(), E::varint())
         .write(w, "nested_map_str");
+
+    // Two key sets over four rows, so one shape id per row is smaller than the six
+    // presence streams a field each would need. Mixed types, so this cannot be a map.
+    let even = || Some(vec![true, false, true, false]);
+    let odd = || Some(vec![false, true, false, true]);
+    geo_varint()
+        .no_v1()
+        .geos([P0, P1, P2, P3])
+        .row_shapes()
+        .add_nested(StagedNested::new(
+            "obj",
+            StagedInterior::Struct(StagedStruct::new(
+                None,
+                [
+                    ("a", i32_leaf(even(), vec![1, 3])),
+                    ("b", i32_leaf(even(), vec![2, 4])),
+                    ("c", i32_leaf(even(), vec![3, 5])),
+                    ("x", str_leaf(odd(), ["p", "q"])),
+                    ("y", str_leaf(odd(), ["r", "s"])),
+                    ("z", str_leaf(odd(), ["t", "u"])),
+                ],
+            )),
+        ))
+        .write(w, "nested_struct_shapes");
+
+    // Three key sets over four rows, and the entries of each run in key order, so the
+    // shapes stand in for both the lengths and the one key per entry a map otherwise spends.
+    geo_varint()
+        .no_v1()
+        .geos([P0, P1, P2, P3])
+        .row_shapes()
+        .add_nested(StagedNested::new(
+            "tags",
+            StagedInterior::Map(StagedMap::new(
+                None,
+                vec![3, 2, 2, 3],
+                ["de", "en", "fr", "de", "fr", "en", "fr", "de", "en", "fr"]
+                    .map(ToString::to_string)
+                    .to_vec(),
+                str_leaf(
+                    None,
+                    [
+                        "berg", "hill", "mont", "see", "lac", "sea", "mer", "fluss", "river",
+                        "riviere",
+                    ],
+                ),
+            )),
+        ))
+        .write(w, "nested_map_shapes");
 }
 
 /// A leaf holding one string per value its parent hands it.
@@ -1446,6 +1496,35 @@ fn generate_m_value_encodings(w: &mut SynthWriter) {
         .write(w, "mvalues_str_fsst");
 }
 
+/// The varint boundaries of the Morton-coded `column_counts` field.
+fn generate_m_value_counts(w: &mut SynthWriter) {
+    let e = E::varint();
+    let m_value = |i: u32| M::new(format!("m{i}"), None, MV::U32((i..i + 8).collect()));
+    let prop = |i: u32| {
+        P::bool(
+            format!("p{i}"),
+            vec![i.is_multiple_of(2), i.is_multiple_of(3), true],
+        )
+    };
+
+    // 8 m-values spill the code into a second byte, `0x80 0x01`.
+    (0..8)
+        .fold(m_lines().no_v1(), |l, i| l.add_m_value(e, m_value(i)))
+        .write(w, "mvalues_8cols");
+    // 16 properties spill the code into a second byte, `0x82 0x02`.
+    (0..16)
+        .fold(m_lines().no_v1(), |l, i| l.add_prop(e, prop(i)))
+        .add_m_value(e, m_value(0))
+        .write(w, "mvalues_16props");
+    // The largest counts that still fit one byte, `0x7F`.
+    (0..7)
+        .fold(
+            (0..15).fold(m_lines().no_v1(), |l, i| l.add_prop(e, prop(i))),
+            |l, i| l.add_m_value(e, m_value(i)),
+        )
+        .write(w, "mvalues_15props_7cols");
+}
+
 /// A presence mask, where `x` is a value and `-` is a null.
 fn masked(mask: &str) -> Vec<Option<u32>> {
     mask.bytes()
@@ -1608,6 +1687,10 @@ fn generate_props_i32(w: &mut SynthWriter) {
     four_points()
         .add_prop(E::delta_rle_varint(), opt_values())
         .write(w, "props_i32_delta_rle");
+    four_points()
+        .no_v2()
+        .add_prop(E::delta_rle_fastpfor(), opt_values())
+        .write(w, "props_i32_delta_rle_fpf");
 }
 
 fn generate_props_u32(w: &mut SynthWriter) {
