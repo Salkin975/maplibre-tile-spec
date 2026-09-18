@@ -79,7 +79,7 @@ fn layout_bits_and_column_types(bytes: &[u8]) -> String {
     let mut column = None;
     for region in &tree.regions {
         if region.label == "layout" {
-            lines.extend(region.bits.iter().map(|b| b.meaning.clone()));
+            lines.extend(region.bits.iter().map(|b| b.meaning().to_string()));
         }
         if region.container {
             column = Some(region.label.as_str());
@@ -87,7 +87,7 @@ fn layout_bits_and_column_types(bytes: &[u8]) -> String {
         if region.label == "type" {
             let label = column.expect("a column region opens before its type byte");
             let nibble = region.bits.first().expect("a type byte breaks into bits");
-            lines.push(format!("{label}: {}", nibble.meaning));
+            lines.push(format!("{label}: {}", nibble.meaning()));
         }
     }
     lines.join("\n")
@@ -152,7 +152,7 @@ fn a_line_layer_holds_one_value_per_vertex() {
     );
     let bytes = assert_round_trips_as_v2(&l);
     insta::assert_snapshot!(layout_bits_and_column_types(&bytes), @r#"
-    m-value section = 1
+    an m-value section ends the body
     shared presence bitfields = 0
     geometry layout = Lines
     m_value[0] I32 "dist": presence = AllPresent
@@ -293,7 +293,7 @@ fn a_feature_with_no_values_stores_an_inline_bitfield_and_no_values() {
     );
     let bytes = assert_round_trips_as_v2(&l);
     insta::assert_snapshot!(layout_bits_and_column_types(&bytes), @r#"
-    m-value section = 1
+    an m-value section ends the body
     shared presence bitfields = 0
     geometry layout = Lines
     m_value[0] OptI32 "m": presence = Inline
@@ -324,7 +324,7 @@ fn two_m_value_columns_with_the_same_nulls_share_one_bitfield() {
     let l = layer(geoms, &[("a", column()), ("b", column())]);
     let bytes = assert_round_trips_as_v2(&l);
     insta::assert_snapshot!(layout_bits_and_column_types(&bytes), @r#"
-    m-value section = 1
+    an m-value section ends the body
     shared presence bitfields = 1
     geometry layout = Lines
     m_value[0] OptI32 "a": presence = Shared(0)
@@ -351,7 +351,7 @@ fn an_m_value_column_shares_a_bitfield_with_a_property_column() {
     let l = builder.finish();
     let bytes = assert_round_trips_as_v2(&l);
     insta::assert_snapshot!(layout_bits_and_column_types(&bytes), @r#"
-    m-value section = 1
+    an m-value section ends the body
     shared presence bitfields = 1
     geometry layout = Lines
     column[0] OptU32 "p": presence = Shared(0)
@@ -493,10 +493,26 @@ fn a_count_the_geometry_disagrees_with_is_rejected() {
 }
 
 #[test]
+fn both_column_counts_share_one_morton_coded_byte() {
+    let bytes = encode_four_one_byte_m_values();
+    let (counts, len) = region_after(&bytes, "column_counts", "column_counts");
+    assert_eq!(len, 1);
+    assert_eq!(
+        bytes[counts], 0b10,
+        "no columns on the even bits, one m-value on the odd bits"
+    );
+    assert_eq!(
+        region_after(&bytes, "column_counts", "m_values").0,
+        counts + 1,
+        "no m_value_count varint opens the section"
+    );
+}
+
+#[test]
 fn an_empty_m_value_section_is_rejected() {
     let mut bytes = encode_four_one_byte_m_values();
-    let (count, _) = region_after(&bytes, "m_values", "m_value_count");
-    bytes[count] = 0;
+    let (counts, _) = region_after(&bytes, "column_counts", "column_counts");
+    bytes[counts] = 0;
 
     assert!(
         matches!(decode_err(&bytes), MltError::EmptyMValueSection),
@@ -653,7 +669,7 @@ fn encode_dictionary_vertex_layer() -> Vec<u8> {
 fn a_dictionary_vertex_layout_holds_one_value_per_offset() {
     let bytes = encode_dictionary_vertex_layer();
     insta::assert_snapshot!(layout_bits_and_column_types(&bytes), @r#"
-    m-value section = 1
+    an m-value section ends the body
     shared presence bitfields = 0
     geometry layout = LinesDict
     m_value[0] I32 "m": presence = AllPresent

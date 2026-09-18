@@ -1,5 +1,7 @@
 //! Data model for the annotated binary dump (see [`crate::dump`]).
 
+use std::fmt::{Display, Formatter, Result as FmtResult};
+
 use crate::wire::StreamMeta;
 
 /// Whether a region is tile metadata or an opaque data payload.
@@ -46,13 +48,86 @@ pub enum DecodeHint {
 #[derive(Debug, Clone)]
 pub struct BitField {
     /// Inclusive high bit index (7..=0, MSB first).
-    pub hi: u8,
+    hi: u8,
     /// Inclusive low bit index.
-    pub lo: u8,
-    /// The extracted field value.
-    pub raw: u64,
+    lo: u8,
+    /// The extracted field value, shifted down to bit 0.
+    raw: u64,
     /// Human-readable meaning, e.g. `"physical = VarInt"`.
-    pub meaning: String,
+    meaning: String,
+}
+
+impl BitField {
+    /// One field of a packed byte, located by the same mask constant the parser reads it
+    /// with, so the dump cannot drift from the wire format.
+    ///
+    /// `raw` is the masked bits shifted down to bit 0, so it renders as the field's own
+    /// value rather than its in-byte position. `mask` must be one contiguous run of bits.
+    pub fn mask(mask: u8, byte: u8, meaning: impl Into<String>) -> Self {
+        let (hi, lo) = mask_bounds(mask);
+        Self {
+            hi,
+            lo,
+            raw: u64::from((byte & mask) >> lo),
+            meaning: meaning.into(),
+        }
+    }
+
+    /// A one-bit flag, worded as a phrase instead of a `0`/`1`.
+    ///
+    /// The renderer already prefixes every bit line with `bit N = V ->`, so `when_set`
+    /// and `when_clear` should say what the bit asserts about the tile rather than
+    /// repeat its value.
+    #[must_use]
+    pub fn flag(mask: u8, byte: u8, when_set: &str, when_clear: &str) -> Self {
+        debug_assert_eq!(mask.count_ones(), 1, "a flag occupies exactly one bit");
+        let meaning = if byte & mask == 0 {
+            when_clear
+        } else {
+            when_set
+        };
+        Self::mask(mask, byte, meaning)
+    }
+
+    /// What this field means in prose, without the `bit N = V ->` prefix
+    /// [`Display`] puts in front of it.
+    #[must_use]
+    pub fn meaning(&self) -> &str {
+        &self.meaning
+    }
+}
+
+impl Display for BitField {
+    /// `bit 7 = 1 -> meaning`, or `bits 6-4 = 011 -> meaning` for a multi-bit field.
+    ///
+    /// The value is printed as wide as the field, so the leading zeros of a nibble are
+    /// not mistaken for a narrower field. The caller adds any indent and color.
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        if self.hi == self.lo {
+            write!(f, "bit {}", self.hi)?;
+        } else {
+            write!(f, "bits {}-{}", self.hi, self.lo)?;
+        }
+        let width = usize::from(self.hi - self.lo + 1);
+        write!(f, " = {:0width$b} -> {}", self.raw, self.meaning)
+    }
+}
+
+/// Inclusive `(hi, lo)` bit indices spanned by `mask`.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "a u8 mask spans at most 8 bits"
+)]
+fn mask_bounds(mask: u8) -> (u8, u8) {
+    debug_assert!(mask != 0, "a bit field needs at least one bit");
+    let lo = mask.trailing_zeros() as u8;
+    let hi = (u8::BITS - 1 - mask.leading_zeros()) as u8;
+    debug_assert_eq!(
+        u32::from(hi - lo) + 1,
+        mask.count_ones(),
+        "a bit field's mask must be one contiguous run of bits"
+    );
+    (hi, lo)
 }
 
 /// Stream metadata attached to a [`RegionKind::DataBlob`] so the renderer can decode it.
