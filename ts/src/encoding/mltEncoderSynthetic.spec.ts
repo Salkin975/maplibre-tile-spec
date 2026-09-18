@@ -51,7 +51,9 @@ describe("encodeTile - synthetic fixtures round trip", () => {
         });
     }
 
+    const nestedPropertyNames = new Set(NESTED_PROPERTY_SYNTHETICS.map((name) => `0x02/${name}`));
     for (const { name, content, fileName } of skipped) {
+        if (nestedPropertyNames.has(name)) continue;
         it(`${name} (unsupported)`, async () => {
             let actual: GeoJSON.FeatureCollection | undefined;
             try {
