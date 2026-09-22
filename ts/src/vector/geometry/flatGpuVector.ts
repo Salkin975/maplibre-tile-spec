@@ -11,7 +11,6 @@ export function createFlatGpuVector(
     return new FlatGpuVector(geometryTypes, triangleOffsets, indexBuffer, vertexBuffer, topologyVector);
 }
 
-//TODO: extend from GeometryVector -> make topology vector optional
 export class FlatGpuVector extends GpuVector {
     constructor(
         private readonly _geometryTypes: Uint32Array,

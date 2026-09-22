@@ -4,6 +4,7 @@ import { GEOMETRY_TYPE } from "./geometryType";
 import { VertexBufferType } from "./vertexBufferType";
 import Point from "@mapbox/point-geometry";
 
+/** Which topology buffers exist depends on the geometry types in the column. */
 export function convertGeometryVector(geometryVector: GeometryVector): CoordinatesArray[] {
     const geometries: CoordinatesArray[] = new Array(geometryVector.numGeometries);
     let partOffsetCounter = 1;
@@ -263,6 +264,101 @@ export function convertGeometryVector(geometryVector: GeometryVector): Coordinat
     return geometries;
 }
 
+type IndexedGeometrySource = {
+    readonly numGeometries: number;
+    readonly topologyVector: {
+        readonly geometryOffsets?: Uint32Array;
+        readonly partOffsets?: Uint32Array;
+        readonly ringOffsets?: Uint32Array;
+    };
+    geometryType(index: number): number;
+    getVertex(index: number): [number, number];
+};
+
+export function convertGeometryAtIndex(geometryVector: IndexedGeometrySource, targetIndex: number): CoordinatesArray {
+    if (targetIndex < 0 || targetIndex >= geometryVector.numGeometries) {
+        throw new RangeError("Geometry index out of bounds");
+    }
+
+    const topology = geometryVector.topologyVector;
+    const geometryOffsets = topology.geometryOffsets;
+    const partOffsets = topology.partOffsets;
+    const ringOffsets = topology.ringOffsets;
+    const rootStart = geometryOffsets?.[targetIndex] ?? targetIndex;
+    const rootEnd = geometryOffsets?.[targetIndex + 1] ?? targetIndex + 1;
+
+    const readVertices = (start: number, end: number, close: boolean): Point[] => {
+        const count = end - start;
+        const vertices = new Array<Point>(close ? count + 1 : count);
+        for (let i = 0; i < count; i++) {
+            const [x, y] = geometryVector.getVertex(start + i);
+            vertices[i] = new Point(x, y);
+        }
+        if (close) vertices[count] = new Point(vertices[0].x, vertices[0].y);
+        return vertices;
+    };
+
+    const vertexRange = (start: number, end: number): [number, number] => {
+        if (ringOffsets) {
+            const ringStart = partOffsets?.[start] ?? start;
+            const ringEnd = partOffsets?.[end] ?? end;
+            return [ringOffsets[ringStart], ringOffsets[ringEnd]];
+        }
+        if (partOffsets) {
+            return [partOffsets[start], partOffsets[end]];
+        }
+        return [start, end];
+    };
+
+    const readLine = (rootIndex: number): Point[] => {
+        const [start, end] = vertexRange(rootIndex, rootIndex + 1);
+        return readVertices(start, end, false);
+    };
+
+    const readPolygonRings = (start: number, end: number): Point[][] => {
+        if (!partOffsets || !ringOffsets) throw new Error("Missing topology offsets for Polygon");
+        const rings: Point[][] = [];
+        for (let polygonIndex = start; polygonIndex < end; polygonIndex++) {
+            const ringStart = partOffsets[polygonIndex];
+            const ringEnd = partOffsets[polygonIndex + 1];
+            for (let ringIndex = ringStart; ringIndex < ringEnd; ringIndex++) {
+                rings.push(readVertices(ringOffsets[ringIndex], ringOffsets[ringIndex + 1], true));
+            }
+        }
+        return rings;
+    };
+
+    switch (geometryVector.geometryType(targetIndex)) {
+        case GEOMETRY_TYPE.POINT: {
+            const [start] = vertexRange(rootStart, rootEnd);
+            return [readVertices(start, start + 1, false)];
+        }
+        case GEOMETRY_TYPE.MULTIPOINT: {
+            const [start, end] = vertexRange(rootStart, rootEnd);
+            return readVertices(start, end, false).map((point) => [point]);
+        }
+        case GEOMETRY_TYPE.LINESTRING: {
+            const [start, end] = vertexRange(rootStart, rootEnd);
+            return [readVertices(start, end, false)];
+        }
+        case GEOMETRY_TYPE.POLYGON:
+            return readPolygonRings(rootStart, rootEnd);
+        case GEOMETRY_TYPE.MULTILINESTRING: {
+            const lines = new Array<Point[]>(rootEnd - rootStart);
+            for (let rootIndex = rootStart; rootIndex < rootEnd; rootIndex++) {
+                lines[rootIndex - rootStart] = readLine(rootIndex);
+            }
+            return lines;
+        }
+        case GEOMETRY_TYPE.MULTIPOLYGON:
+            return readPolygonRings(rootStart, rootEnd);
+        default:
+            throw new Error(
+                `The specified geometry type (${geometryVector.geometryType(targetIndex)}) is currently not supported.`,
+            );
+    }
+}
+
 function decodeDictionaryEncodedVertices(
     vertexBufferType: VertexBufferType,
     vertexBuffer: Int32Array | Uint32Array,
@@ -300,7 +396,7 @@ function getLineStringOrRing(
     }
 
     if (isRing) {
-        vertices[vertices.length - 1] = vertices[0];
+        vertices[vertices.length - 1] = new Point(vertices[0].x, vertices[0].y);
     }
     return vertices;
 }
@@ -321,7 +417,7 @@ function decodeVec2DictionaryEncodedVertices(
     }
 
     if (isRing) {
-        vertices[vertices.length - 1] = vertices[0];
+        vertices[vertices.length - 1] = new Point(vertices[0].x, vertices[0].y);
     }
     return vertices;
 }
@@ -342,7 +438,7 @@ function decodeMortonDictionaryEncodedVertices(
         vertices[i] = new Point(vertex.x, vertex.y);
     }
     if (isRing) {
-        vertices[vertices.length - 1] = vertices[0];
+        vertices[vertices.length - 1] = new Point(vertices[0].x, vertices[0].y);
     }
 
     return vertices;
