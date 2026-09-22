@@ -10,6 +10,7 @@ export default abstract class Vector<T extends ArrayBufferView = ArrayBufferView
         sizeOrNullabilityBuffer: number | BitVector,
     ) {
         if (typeof sizeOrNullabilityBuffer === "number") {
+            this.nullabilityBuffer = null;
             this._size = sizeOrNullabilityBuffer;
         } else {
             this.nullabilityBuffer = sizeOrNullabilityBuffer;
@@ -31,6 +32,10 @@ export default abstract class Vector<T extends ArrayBufferView = ArrayBufferView
 
     get size(): number {
         return this._size;
+    }
+
+    get rawData(): T {
+        return this.dataBuffer;
     }
 
     protected abstract getValueFromBuffer(index: number): K;

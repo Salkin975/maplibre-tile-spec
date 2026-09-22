@@ -12,7 +12,6 @@ export function createConstGpuVector(
     return new ConstGpuVector(numGeometries, geometryType, triangleOffsets, indexBuffer, vertexBuffer, topologyVector);
 }
 
-//TODO: extend from GeometryVector -> make topology vector optional
 export class ConstGpuVector extends GpuVector {
     constructor(
         private readonly _numGeometries: number,
