@@ -1,8 +1,12 @@
 import { createFlatGeometryVector } from "./flatGeometryVector";
-import type { CoordinatesArray } from "./geometryVector";
+import { convertGeometryAtIndex } from "./geometryVectorConverter";
+import { filterByGeometryType, type CoordinatesArray } from "./geometryVector";
 import type { TopologyVector } from "./topologyVector";
+import type { SelectionVector } from "../filter/selectionVector";
+import type { GeometryCollection } from "./geometryCollection";
+import type { SINGLE_PART_GEOMETRY_TYPE } from "./geometryType";
 
-export abstract class GpuVector implements Iterable<CoordinatesArray> {
+export abstract class GpuVector implements GeometryCollection {
     protected constructor(
         private readonly _triangleOffsets: Uint32Array,
         private readonly _indexBuffer: Uint32Array,
@@ -32,29 +36,34 @@ export abstract class GpuVector implements Iterable<CoordinatesArray> {
         return this._topologyVector;
     }
 
+    getVertex(index: number): [number, number] {
+        const offset = index * 2;
+        return [this._vertexBuffer[offset], this._vertexBuffer[offset + 1]];
+    }
+
     getGeometries(): CoordinatesArray[] {
-        if (!this._topologyVector) {
-            throw new Error("Cannot convert GpuVector to coordinates without topology information");
-        }
+        // All topology fields are optional, the converter throws if a needed buffer is missing
+        const topology = this._topologyVector ?? {};
         const types = new Uint32Array(this.numGeometries);
         for (let i = 0; i < this.numGeometries; i++) {
             types[i] = this.geometryType(i);
         }
-        return createFlatGeometryVector(types, this._topologyVector, undefined, this._vertexBuffer).getGeometries();
+        return createFlatGeometryVector(types, topology, undefined, this._vertexBuffer).getGeometries();
     }
 
-    [Symbol.iterator](): Iterator<CoordinatesArray> {
-        /*for(let i = 1; i < this.triangleOffsets.length; i++) {
-           const numTriangles = this.triangleOffsets[i] - this.triangleOffsets[i-1];
-           const startIndex = this.triangleOffsets[i-1] * 3;
-           const endIndex = this.triangleOffsets[i] * 3;
-       }
+    getGeometry(index: number): CoordinatesArray {
+        return convertGeometryAtIndex(
+            {
+                numGeometries: this.numGeometries,
+                topologyVector: this._topologyVector ?? {},
+                geometryType: (i) => this.geometryType(i),
+                getVertex: (i) => this.getVertex(i),
+            },
+            index,
+        );
+    }
 
-        while (index < this.numGeometries) {
-            yield geometries[index++];
-        }*/
-
-        //throw new Error("Iterator on a GpuVector is not implemented yet.");
-        return null;
+    filter(geometryType: SINGLE_PART_GEOMETRY_TYPE): SelectionVector {
+        return filterByGeometryType(this, geometryType);
     }
 }

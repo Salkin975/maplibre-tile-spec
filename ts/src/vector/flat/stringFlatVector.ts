@@ -12,4 +12,12 @@ export class StringFlatVector extends VariableSizeVector<Uint8Array, string> {
         const end = this.offsetBuffer[index + 1];
         return decodeString(this.dataBuffer, start, end);
     }
+
+    get offsets(): Uint32Array {
+        return this.offsetBuffer;
+    }
+
+    get encodedValues(): Uint8Array {
+        return this.dataBuffer;
+    }
 }

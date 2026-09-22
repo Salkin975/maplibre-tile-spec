@@ -1,22 +1,13 @@
 import type { SelectionVector } from "./selectionVector";
 
-/**
- * Array-based SelectionVector for non-sequential selections.
- * Stores indices explicitly, suitable for irregular patterns and frequent modifications.
- */
 export class FlatSelectionVector implements SelectionVector {
-    /**
-     * @param _selectionVector
-     * @param _limit In write mode the limit of a Buffer is the limit of how much data you can write into the buffer.
-     * In write mode the limit is equal to the capacity of the Buffer.
-     */
+    private _limit: number;
+
     constructor(
-        private _selectionVector: number[],
-        private _limit?: number,
+        private readonly _selectionVector: Uint32Array,
+        limit?: number,
     ) {
-        if (!this._limit) {
-            this._limit = this._selectionVector.length;
-        }
+        this._limit = limit ?? this._selectionVector.length;
     }
 
     /** @inheritdoc */
@@ -46,8 +37,11 @@ export class FlatSelectionVector implements SelectionVector {
     }
 
     /** @inheritdoc */
-    selectionValues(): number[] {
-        return this._selectionVector;
+    selectionValues(): Uint32Array {
+        if (this._limit === this._selectionVector.length) {
+            return this._selectionVector;
+        }
+        return this._selectionVector.subarray(0, this._limit);
     }
 
     /** @inheritdoc */

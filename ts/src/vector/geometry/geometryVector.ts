@@ -1,11 +1,50 @@
-import { convertGeometryVector } from "./geometryVectorConverter";
+import { convertGeometryAtIndex, convertGeometryVector } from "./geometryVectorConverter";
 import { decodeZOrderCurve } from "./zOrderCurve";
 import type Point from "@mapbox/point-geometry";
-import type { GEOMETRY_TYPE } from "./geometryType";
+import { type GEOMETRY_TYPE, type SINGLE_PART_GEOMETRY_TYPE } from "./geometryType";
 import type { VertexBufferType } from "./vertexBufferType";
-import type { TopologyVector } from "../../vector/geometry/topologyVector";
+import type { TopologyVector } from "./topologyVector";
+import { ConstSelectionVector } from "../filter/constSelectionVector";
+import { FlatSelectionVector } from "../filter/flatSelectionVector";
+import type { SelectionVector } from "../filter/selectionVector";
+import type { GeometryCollection } from "./geometryCollection";
 
 export type CoordinatesArray = Array<Array<Point>>;
+
+/** Multi-part geometry types follow their single-part counterparts in {@link GEOMETRY_TYPE} at a fixed offset (POINT=0 -> MULTIPOINT=3, etc.). */
+const MULTI_PART_TYPE_OFFSET = 3;
+
+function matchesGeometryType(currentType: number, geometryType: SINGLE_PART_GEOMETRY_TYPE): boolean {
+    return currentType === geometryType || currentType === geometryType + MULTI_PART_TYPE_OFFSET;
+}
+
+/** Shared implementation of {@link GeometryCollection.filter}. */
+export function filterByGeometryType(
+    collection: GeometryCollection,
+    geometryType: SINGLE_PART_GEOMETRY_TYPE,
+): SelectionVector {
+    if (collection.containsSingleGeometryType()) {
+        return matchesGeometryType(collection.geometryType(0), geometryType)
+            ? ConstSelectionVector.full(collection.numGeometries)
+            : ConstSelectionVector.empty(collection.numGeometries);
+    }
+
+    const selected = new Uint32Array(collection.numGeometries);
+    let selectedCount = 0;
+    for (let i = 0; i < collection.numGeometries; i++) {
+        if (matchesGeometryType(collection.geometryType(i), geometryType)) {
+            selected[selectedCount++] = i;
+        }
+    }
+
+    if (selectedCount === 0) {
+        return ConstSelectionVector.empty(collection.numGeometries);
+    }
+    if (selectedCount === collection.numGeometries) {
+        return ConstSelectionVector.full(collection.numGeometries);
+    }
+    return new FlatSelectionVector(selected, selectedCount);
+}
 
 export type Geometry = {
     coordinates: CoordinatesArray;
@@ -17,7 +56,7 @@ export interface MortonSettings {
     coordinateShift: number;
 }
 
-export abstract class GeometryVector {
+export abstract class GeometryVector implements GeometryCollection {
     protected constructor(
         private readonly _vertexBufferType: VertexBufferType,
         private readonly _topologyVector: TopologyVector,
@@ -40,15 +79,6 @@ export abstract class GeometryVector {
 
     get vertexBuffer(): Int32Array | Uint32Array {
         return this._vertexBuffer;
-    }
-
-    /* Allows faster access to the vertices since morton encoding is currently not used in the POC. Morton encoding
-       will be used after adapting the shader to decode the morton codes on the GPU. */
-    getSimpleEncodedVertex(index: number): [number, number] {
-        const offset = this.vertexOffsets ? this.vertexOffsets[index] * 2 : index * 2;
-        const x = this.vertexBuffer[offset];
-        const y = this.vertexBuffer[offset + 1];
-        return [x, y];
     }
 
     //TODO: add scaling information to the constructor
@@ -74,6 +104,14 @@ export abstract class GeometryVector {
 
     getGeometries(): CoordinatesArray[] {
         return convertGeometryVector(this);
+    }
+
+    getGeometry(index: number): CoordinatesArray {
+        return convertGeometryAtIndex(this, index);
+    }
+
+    filter(geometryType: SINGLE_PART_GEOMETRY_TYPE): SelectionVector {
+        return filterByGeometryType(this, geometryType);
     }
 
     get mortonSettings(): MortonSettings | undefined {

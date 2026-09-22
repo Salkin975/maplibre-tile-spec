@@ -50,7 +50,7 @@ function ensureUint8Capacity(buffer: Uint8Array, requiredLength: number): Uint8A
  * Use one workspace per concurrent encode call.
  */
 export type FastPforEncoderWorkspace = {
-    dataToBePacked: Array<Uint32Array | undefined>;
+    dataToBePacked: Uint32Array[];
     dataPointers: Int32Array;
     byteContainer: Uint8Array;
     bitWidthFrequencies: Int32Array;
@@ -99,7 +99,9 @@ export function fastPack32(
 }
 
 export function createFastPforEncoderWorkspace(): FastPforEncoderWorkspace {
-    const dataToBePacked: Array<Uint32Array | undefined> = new Array(BIT_WIDTH_SLOTS);
+    const dataToBePacked: Uint32Array[] = new Array(BIT_WIDTH_SLOTS);
+    // Slot 0 is never indexed, it is filled to keep the array free of holes
+    dataToBePacked[0] = new Uint32Array(0);
     for (let k = 1; k < BIT_WIDTH_SLOTS; k++) {
         dataToBePacked[k] = new Uint32Array(INITIAL_PACKED_BUFFER_SIZE_WORDS);
     }
@@ -161,7 +163,7 @@ function writeByte(workspace: FastPforEncoderWorkspace, byteContainerPos: number
 }
 
 function ensureExceptionValuesCapacity(
-    dataToBePacked: Array<Uint32Array | undefined>,
+    dataToBePacked: Uint32Array[],
     dataPointers: Int32Array,
     exceptionBitWidth: number,
     exceptionCount: number,
