@@ -18,3 +18,8 @@ export type {
     PropertyType,
     PropertyValue,
 } from "./encoding/mltEncoder";
+export type { SelectionVector } from "./vector/filter/selectionVector";
+export { SINGLE_PART_GEOMETRY_TYPE } from "./vector/geometry/geometryType";
+export { unionSelectionVectors, intersectSelectionVectors } from "./vector/filter/selectionVectorUtils";
+export { filterFeatureTable } from "./processing/filter/execution/tableFilter";
+export { isColumnarBucketSupported } from "./processing/filter/planning/bucketSupport";
