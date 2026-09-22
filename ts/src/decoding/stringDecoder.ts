@@ -178,7 +178,7 @@ export function decodeSharedDictionary(
     data: Uint8Array,
     offset: IntWrapper,
     column: Column,
-    propertyColumnNames?: Set<string>,
+    propertyColumnNames?: ReadonlySet<string>,
 ): Vector[] {
     let dictionaryOffsetBuffer: Uint32Array | undefined;
     let dictionaryBuffer: Uint8Array | undefined;
@@ -187,6 +187,11 @@ export function decodeSharedDictionary(
 
     let dictionaryStreamDecoded = false;
     while (!dictionaryStreamDecoded) {
+        if (offset.get() >= data.length) {
+            throw new Error(
+                `No dictionary stream found for shared-dictionary column "${column.name}" before end of buffer`,
+            );
+        }
         const streamMetadata = decodeStreamMetadata(data, offset);
         switch (streamMetadata.physicalStreamType) {
             case PhysicalStreamType.LENGTH:

@@ -52,6 +52,78 @@ export function decodeVarintInt32(buf: Uint8Array, bufferOffset: IntWrapper, num
     return dst;
 }
 
+/**
+ * Reads a single varint without allocating, values beyond 32 bits are returned as float64.
+ * With `isSigned`, a 10-byte two's complement varint is read as a negative number.
+ */
+//based on https://github.com/mapbox/pbf/blob/main/index.js
+export function readVarint(buf: Uint8Array, offset: IntWrapper, isSigned = false): number {
+    let pos = offset.get();
+    const b0 = buf[pos++];
+    if (b0 < 0x80) {
+        offset.set(pos);
+        return b0;
+    }
+
+    let val = b0 & 0x7f;
+    let b = buf[pos++];
+    val |= (b & 0x7f) << 7;
+    if (b < 0x80) {
+        offset.set(pos);
+        return val;
+    }
+    b = buf[pos++];
+    val |= (b & 0x7f) << 14;
+    if (b < 0x80) {
+        offset.set(pos);
+        return val;
+    }
+    b = buf[pos++];
+    val |= (b & 0x7f) << 21;
+    if (b < 0x80) {
+        offset.set(pos);
+        return val;
+    }
+    // The fifth byte is read again by the remainder for bits 32..34
+    b = buf[pos];
+    val |= (b & 0x0f) << 28;
+
+    offset.set(pos);
+    return readVarintRemainder(val, isSigned, buf, offset);
+}
+
+function readVarintRemainder(low: number, isSigned: boolean, buf: Uint8Array, offset: IntWrapper): number {
+    let pos = offset.get();
+    let h: number;
+    let b: number;
+
+    b = buf[pos++];
+    h = (b & 0x70) >> 4;
+    if (b < 0x80) return finishVarint(low, h, isSigned, offset, pos);
+    b = buf[pos++];
+    h |= (b & 0x7f) << 3;
+    if (b < 0x80) return finishVarint(low, h, isSigned, offset, pos);
+    b = buf[pos++];
+    h |= (b & 0x7f) << 10;
+    if (b < 0x80) return finishVarint(low, h, isSigned, offset, pos);
+    b = buf[pos++];
+    h |= (b & 0x7f) << 17;
+    if (b < 0x80) return finishVarint(low, h, isSigned, offset, pos);
+    b = buf[pos++];
+    h |= (b & 0x7f) << 24;
+    if (b < 0x80) return finishVarint(low, h, isSigned, offset, pos);
+    b = buf[pos++];
+    h |= (b & 0x01) << 31;
+    if (b < 0x80) return finishVarint(low, h, isSigned, offset, pos);
+
+    throw new Error("Expected varint not more than 10 bytes");
+}
+
+function finishVarint(low: number, high: number, isSigned: boolean, offset: IntWrapper, pos: number): number {
+    offset.set(pos);
+    return (isSigned ? high : high >>> 0) * 0x100000000 + (low >>> 0);
+}
+
 export function decodeVarintInt64(src: Uint8Array, offset: IntWrapper, numValues: number): BigUint64Array {
     const dst = new BigUint64Array(numValues);
     for (let i = 0; i < dst.length; i++) {

@@ -58,6 +58,79 @@ describe("FeatureTable", () => {
     });
 });
 
+/**
+ * `propertyColumns` projects away whole columns. A struct column with a shared dictionary
+ * exposes its children as `${column.name}${child.name}` (`name` + `:de` -> `name:de`), so the
+ * projection has to match against those child names — matching only the parent name used to
+ * drop the entire column when a caller asked for a single child, yielding nothing at all.
+ *
+ * The shared dictionary streams are decoded either way; what the projection saves is the
+ * per-child offset streams and the vectors built from them.
+ */
+describe("MLT Decoder - propertyColumns projection", () => {
+    const OMT_STRUCT_TILE = path.resolve(__dirname, "../../test/expected/tag0x01/omt/4_8_10.mlt");
+    const LAYER = "water_name";
+
+    function waterNameTable(options?: Parameters<typeof decodeTile>[3]) {
+        const bytes = new Uint8Array(fs.readFileSync(OMT_STRUCT_TILE));
+        const table = decodeTile(bytes, undefined, true, options).find((t) => t.name === LAYER);
+        assert.ok(table, `expected a "${LAYER}" layer in the fixture`);
+        return table;
+    }
+
+    it("keeps a struct column when only one of its children is requested", () => {
+        const table = waterNameTable({ propertyColumns: new Set(["name:de"]) });
+        assert.deepEqual(
+            table.propertyVectors.map((vector) => vector.name),
+            ["name:de"],
+        );
+        assert.equal(table.getPropertyVector("name:de")?.getValue(0), "Tyrrhenisches Meer");
+    });
+
+    it("drops the siblings that were not requested", () => {
+        const table = waterNameTable({ propertyColumns: new Set(["name:de"]) });
+
+        assert.equal(table.getPropertyVector("name:en"), undefined);
+        assert.equal(table.getPropertyVector("name:fr"), undefined);
+        assert.equal(table.getPropertyVector("class"), undefined);
+    });
+
+    it("keeps every child when no projection is given", () => {
+        const names = waterNameTable().propertyVectors.map((vector) => vector.name);
+
+        assert.ok(names.includes("name:de"));
+        assert.ok(names.includes("name:en"));
+        assert.ok(names.includes("class"));
+        assert.ok(names.length > 10, `expected the full column set, got ${names.length}`);
+    });
+
+    it("combines a struct child with a plain scalar column", () => {
+        const table = waterNameTable({ propertyColumns: new Set(["name:de", "class"]) });
+
+        const names = table.propertyVectors.map((vector) => vector.name).sort();
+        assert.deepEqual(names, ["class", "name:de"]);
+    });
+});
+
+describe("MLT Decoder - malformed input", () => {
+    const OMT_TILE = path.resolve(__dirname, "../../test/expected/tag0x01/omt/4_8_10.mlt");
+
+    // truncation is caught by decodeTile's own block-length check before any stream is
+    // read, so this covers that guard.
+    it("rejects a truncated tile rather than decoding garbage", () => {
+        const full = new Uint8Array(fs.readFileSync(OMT_TILE));
+
+        for (const fraction of [0.1, 0.4, 0.7, 0.95]) {
+            const truncated = full.subarray(0, Math.floor(full.length * fraction));
+            assert.throws(
+                () => decodeTile(truncated, undefined, true),
+                /Block overruns tile/,
+                `expected a throw for a tile truncated to ${fraction * 100}%`,
+            );
+        }
+    }, 15000);
+});
+
 function testTiles(mltSearchDir: string, mvtSearchDir: string) {
     const mltFileNames = readdirSync(mltSearchDir)
         .filter((file) => parse(file).ext === ".mlt")
