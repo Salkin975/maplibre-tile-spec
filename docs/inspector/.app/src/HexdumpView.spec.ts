@@ -1,10 +1,14 @@
 import { mount } from "@vue/test-utils";
+import type { FeatureCollection } from "geojson";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { DecodedBlob, DumpTree } from "./annotate.ts";
+import GeometryView from "./GeometryView.vue";
 import HexdumpView from "./HexdumpView.vue";
-import { type AnnotateMode, defaultView } from "./hex.ts";
+import { defaultView } from "./hex.ts";
+import RegionTree from "./RegionTree.vue";
 import {
   region,
+  stubCanvas,
   TINY_BYTES,
   tinyTree,
   WRAPPED_BYTES,
@@ -17,6 +21,7 @@ beforeAll(() => {
     unobserve() {}
     disconnect() {}
   };
+  stubCanvas();
 });
 
 const decode = (): DecodedBlob => ({
@@ -28,7 +33,7 @@ const decode = (): DecodedBlob => ({
 function view(
   tree: DumpTree = tinyTree(),
   selected: number | null = null,
-  annotate: AnnotateMode = "both",
+  colorful = false,
   bytes: Uint8Array = TINY_BYTES,
 ) {
   return mount(HexdumpView, {
@@ -37,7 +42,7 @@ function view(
       bytes,
       decode,
       error: null,
-      view: { ...defaultView(), annotate },
+      view: { ...defaultView(), colorful },
       selected,
     },
     attachTo: document.body,
@@ -70,7 +75,7 @@ describe("the hex map", () => {
   });
 
   it("pads a short last row out to the width of a full one", () => {
-    const rows = view(wideTree, null, "both", WIDE_BYTES).findAll("tr.hexrow");
+    const rows = view(wideTree, null, false, WIDE_BYTES).findAll("tr.hexrow");
     const shape = rows.map((row) => [
       row.findAll("td.cell").length,
       row.findAll("td.pad").length,
@@ -88,6 +93,52 @@ describe("the hex map", () => {
   });
 });
 
+describe("the ascii column", () => {
+  const twins = (pane: ReturnType<typeof view>, selector: string) =>
+    pane
+      .findAll(selector)
+      .flatMap((el, at) => (el.classes().includes("twin") ? [at] : []));
+
+  it("marks the glyph of a hovered hex byte", async () => {
+    const pane = view();
+    await pane.findAll("td.cell")[3].trigger("mousemove");
+    expect(twins(pane, ".glyph")).toEqual([3]);
+    expect(twins(pane, "td.cell")).toEqual([3]);
+  });
+
+  it("marks the hex byte of a hovered glyph", async () => {
+    const pane = view();
+    await pane.findAll(".glyph")[5].trigger("mousemove");
+    expect(twins(pane, "td.cell")).toEqual([5]);
+    expect(twins(pane, ".glyph")).toEqual([5]);
+  });
+
+  it("lights the glyphs of the region a hovered glyph belongs to", async () => {
+    const pane = view();
+    await pane.findAll(".glyph")[1].trigger("mousemove");
+    const lit = (selector: string) =>
+      pane
+        .findAll(selector)
+        .flatMap((el, at) => (el.classes().includes("on") ? [at] : []));
+    expect(lit(".glyph")).toEqual([0, 1]);
+    expect(lit("td.cell")).toEqual([0, 1]);
+  });
+
+  it("names the region of a hovered glyph", async () => {
+    const pane = view();
+    await pane.findAll(".glyph")[2].trigger("mousemove");
+    expect(pane.get(".tip .path").text()).toBe("layer[0].geometry.encoding");
+  });
+
+  it("marks nothing once the pointer leaves the map", async () => {
+    const pane = view();
+    await pane.findAll(".glyph")[5].trigger("mousemove");
+    await pane.get("table.spacer").trigger("mouseleave");
+    expect(twins(pane, "td.cell")).toEqual([]);
+    expect(twins(pane, ".glyph")).toEqual([]);
+  });
+});
+
 describe("byte bands", () => {
   it("rounds a lit run at its first and last byte only", () => {
     const pane = view(tinyTree(), 0);
@@ -96,37 +147,35 @@ describe("byte bands", () => {
   });
 
   it("rounds a lit run at the row ends it outlasts", () => {
-    const pane = view(wideTree, 0, "both", WIDE_BYTES);
+    const pane = view(wideTree, 0, false, WIDE_BYTES);
     expect(cellsWith(pane, "opens")).toEqual([0, 16]);
     expect(cellsWith(pane, "closes")).toEqual([15, 23]);
   });
 
   it("tints a container and the scalars it holds as one block", () => {
-    const pane = view(tinyTree(), null, "sections");
+    const pane = view(tinyTree(), null, true);
     expect(cellsWith(pane, "b0")).toEqual([0, 1]);
     expect(cellsWith(pane, "b1")).toEqual([2, 3, 4, 5, 6, 7]);
   });
 
   it("rounds a block off where the next one starts", () => {
-    const pane = view(tinyTree(), null, "sections");
+    const pane = view(tinyTree(), null, true);
     expect(cellsWith(pane, "opens")).toEqual([0, 2]);
     expect(cellsWith(pane, "closes")).toEqual([1, 7]);
   });
 
   it("parts a block from the one beside it", () => {
-    expect(cellsWith(view(tinyTree(), null, "sections"), "tail")).toEqual([
-      1, 7,
-    ]);
+    expect(cellsWith(view(tinyTree(), null, true), "tail")).toEqual([1, 7]);
   });
 
   it("parts two touching blocks the tint wraps onto one slot", () => {
-    const pane = view(wrappedTree(), null, "sections", WRAPPED_BYTES);
+    const pane = view(wrappedTree(), null, true, WRAPPED_BYTES);
     expect(cellsWith(pane, "b0")).toEqual([5, 6]);
     expect(cellsWith(pane, "opens")).toEqual([0, 1, 2, 3, 4, 5, 6]);
     expect(cellsWith(pane, "closes")).toEqual([0, 1, 2, 3, 4, 5, 6]);
   });
 
-  it("tints nothing while the knob is off", () => {
+  it("tints nothing while colorful is off", () => {
     const tinted = view()
       .findAll("td.cell")
       .filter((cell) => cell.classes().some((name) => /^b\d$/.test(name)));
@@ -138,7 +187,7 @@ describe("the detail pane", () => {
   it("names the selected region and its span", () => {
     const pane = view(tinyTree(), 1);
     expect(pane.get("h2").text()).toBe("name");
-    expect(pane.get("dd").text()).toBe("00000000 ... 00000001 (2 B)");
+    expect(pane.get("dd").text()).toBe("0000 ... 0001 (2 B)");
   });
 
   it("waits for a region before it says anything", () => {
@@ -212,7 +261,7 @@ describe("the hover tip", () => {
   it("measures the region the byte belongs to", async () => {
     const pane = view();
     await hover(pane, 2);
-    expect(pane.get(".tip .span").text()).toBe("1 B at 00000002");
+    expect(pane.get(".tip .span").text()).toBe("1 B at 0002");
   });
 
   it("shows the value the region carries", async () => {
@@ -221,12 +270,16 @@ describe("the hover tip", () => {
     expect(pane.get(".tip .value").text()).toBe("water");
   });
 
+  /** Where the corner landed; the placement also caps the height, which is its own case. */
+  function corner(pane: ReturnType<typeof view>) {
+    const { left, top } = (pane.get(".tip").element as HTMLElement).style;
+    return { left, top };
+  }
+
   it("sits below and right of the pointer", async () => {
     const pane = view();
     await hover(pane, 0);
-    expect(pane.get(".tip").attributes("style")).toBe(
-      "left: 134px; top: 94px;",
-    );
+    expect(corner(pane)).toEqual({ left: "134px", top: "94px" });
   });
 
   it("moves with the pointer inside one region", async () => {
@@ -235,9 +288,7 @@ describe("the hover tip", () => {
     await pane
       .findAll("td.cell")[1]
       .trigger("mousemove", { clientX: 300, clientY: 80 });
-    expect(pane.get(".tip").attributes("style")).toBe(
-      "left: 314px; top: 94px;",
-    );
+    expect(corner(pane)).toEqual({ left: "314px", top: "94px" });
   });
 
   it("goes away once the pointer leaves the map", async () => {
@@ -269,7 +320,7 @@ describe("the hover tip", () => {
         }),
       ],
     };
-    const pane = view(bits, null, "both", new Uint8Array([0x01]));
+    const pane = view(bits, null, false, new Uint8Array([0x01]));
     await hover(pane, 0);
     expect(pane.findAll(".tip .meaning").map((line) => line.text())).toEqual([
       "logical: none",
@@ -312,7 +363,7 @@ describe("the hover tip", () => {
     });
     await hover(pane, 0);
     expect(pane.get(".tip .value").text()).toBe("1, 2, 3");
-    expect(pane.findAll(".tip .span")[1].text()).toBe("3 of 9 values");
+    expect(pane.get(".tip .span").text()).toBe("8 B at 0000, 3 of 9 values");
   });
 });
 
@@ -378,6 +429,80 @@ describe("arrow keys", () => {
     press("ArrowDown");
     expect(pane.emitted("update:selected")).toBeUndefined();
     sheet.remove();
+  });
+});
+
+/** Two layers, so a scope narrowed to one tells apart from the whole tile. */
+const pairTree: DumpTree = {
+  bufLen: 4,
+  regions: [
+    region({ offset: 0, len: 2, label: 'layer[0] "roads"', container: true }),
+    region({ offset: 0, len: 2, label: "name", depth: 1 }),
+    region({ offset: 2, len: 2, label: 'layer[1] "water"', container: true }),
+    region({ offset: 2, len: 2, label: "name", depth: 1 }),
+  ],
+};
+
+const pairTile: FeatureCollection = {
+  type: "FeatureCollection",
+  features: ["roads", "water"].map((name) => ({
+    type: "Feature",
+    geometry: { type: "Point", coordinates: [0, 0] },
+    properties: { _layer: name, _extent: 4096 },
+  })),
+};
+
+describe("the geometry panel", () => {
+  function panel(selected: number | null = null) {
+    return mount(HexdumpView, {
+      props: {
+        tree: pairTree,
+        bytes: new Uint8Array(4),
+        decode,
+        error: null,
+        view: defaultView(),
+        selected,
+        tile: pairTile,
+      },
+      attachTo: document.body,
+    });
+  }
+
+  /** Null is the whole tile drawn in its own colours; a name subdues everything else. */
+  function scope(pane: ReturnType<typeof panel>) {
+    return pane.getComponent(GeometryView).props("layer");
+  }
+
+  async function hover(pane: ReturnType<typeof panel>, index: number | null) {
+    pane.getComponent(RegionTree).vm.$emit("hover", index);
+    await pane.vm.$nextTick();
+  }
+
+  it("draws the whole tile while the pointer is away", () => {
+    expect(scope(panel())).toBeNull();
+  });
+
+  it("singles out the layer the pointer is over", async () => {
+    const pane = panel();
+    await hover(pane, 2);
+    expect(scope(pane)).toBe("water");
+  });
+
+  it("takes the layer from the container a row sits in, not the row", async () => {
+    const pane = panel();
+    await hover(pane, 3);
+    expect(scope(pane)).toBe("water");
+  });
+
+  it("shows everything again once the pointer leaves", async () => {
+    const pane = panel();
+    await hover(pane, 2);
+    await hover(pane, null);
+    expect(scope(pane)).toBeNull();
+  });
+
+  it("leaves a selected layer drawn like the rest, since a selection stays put", () => {
+    expect(scope(panel(2))).toBeNull();
   });
 });
 

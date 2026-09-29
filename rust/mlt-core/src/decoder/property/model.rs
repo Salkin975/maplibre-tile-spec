@@ -1,17 +1,21 @@
 use std::borrow::Cow;
 use std::ops::Deref;
+#[cfg(feature = "unstable-v2")]
+use std::rc::Rc;
 
 #[cfg(feature = "unstable-v2")]
 use bitvec::order::Lsb0;
 #[cfg(feature = "unstable-v2")]
 use bitvec::slice::BitSlice;
+#[cfg(feature = "unstable-v2")]
+use bitvec::vec::BitVec;
 use enum_dispatch::enum_dispatch;
 
 #[cfg(feature = "unstable-v2")]
 use crate::decoder::Alp;
 use crate::decoder::RawStream;
 use crate::utils::Presence;
-use crate::{DecodeState, Lazy};
+use crate::{DecodeState, Lazy, PropKind};
 
 /// Property column representation, parameterized by decode state.
 ///
@@ -110,7 +114,7 @@ pub enum RawStringsEncoding<'a> {
 }
 
 /// How a dictionary's entries sit in its blob.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumIter)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, strum::EnumIter)]
 pub enum DictLayout {
     /// Entries back to back, the lengths stream holding one length each.
     Plain,
@@ -118,6 +122,46 @@ pub enum DictLayout {
     /// only suffixes and the lengths stream holds every prefix length then every suffix length.
     #[cfg(feature = "unstable-v2")]
     FrontCoded,
+}
+
+/// How a string column's values sit in the tile, as the extension bits of its
+/// leading stream name.
+///
+/// Decoding reconstructs the values and resolves this away, so it is readable
+/// only from a column that has not been decoded yet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum StringLayout {
+    /// Lengths, then the values' bytes.
+    Plain,
+    /// Codes, then the distinct values' lengths and bytes.
+    Dict,
+    /// Lengths, then the FSST symbol table and the compressed corpus.
+    Fsst,
+    /// Codes, then the distinct values' lengths, the FSST symbol table and the corpus.
+    FsstDict,
+}
+
+/// What a column declares on the wire, before decoding resolves it away.
+///
+/// Decoding reconstructs values and drops how they were stored: every id widens to
+/// `u64`, and a presence field is consumed into the values themselves. A caller
+/// reporting on a tile therefore has to read this off the parsed-but-not-decoded
+/// stage, which is the only one that still represents the data as written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColumnDecl {
+    /// The layer's id column, 64-bit or 32-bit.
+    Id { wide: bool, optional: bool },
+    /// A property column, by the type its values decode to.
+    Value { kind: PropKind, optional: bool },
+}
+
+/// How a column stores its values, beyond what its streams' encodings already say.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ColumnStorage {
+    /// The layout of a string or shared-dictionary column; `None` for any other column.
+    pub string: Option<StringLayout>,
+    /// How the column's dictionary blob is laid out, when it carries one.
+    pub dictionary: Option<DictLayout>,
 }
 
 /// Raw encoding payload for a `SharedDict` column.
@@ -175,6 +219,28 @@ pub enum ParsedProperty<'a> {
     Str(ParsedStrings<'a>),
     SharedDict(ParsedSharedDict<'a>),
 }
+
+macro_rules! impl_parsed_property_kind {
+    (
+        scalar { $($sv:ident),* $(,)? }
+        string { $($gv:ident),* $(,)? }
+    ) => {
+        impl ParsedProperty<'_> {
+            /// The column's data type. A shared dictionary is a way of storing strings
+            /// rather than a type of its own, so it reads as [`PropKind::Str`].
+            #[must_use]
+            pub fn kind(&self) -> PropKind {
+                match self {
+                    $(Self::$sv(_) => PropKind::$sv,)*
+                    $(Self::$gv(_) => PropKind::$gv,)*
+                    Self::SharedDict(_) => PropKind::Str,
+                }
+            }
+        }
+    };
+}
+
+with_kinds!(impl_parsed_property_kind);
 
 /// Decoded scalar property column (bool, integer, or float).
 ///
@@ -296,6 +362,27 @@ pub enum RawPresence<'a> {
     /// Requires the `unstable-v2` feature.
     #[cfg(feature = "unstable-v2")]
     Bitfield(&'a BitSlice<u8, Lsb0>),
+    /// Tag `0x02`: presence that arrived run-coded or as a list of indices, so the
+    /// bits had to be built rather than borrowed.
+    ///
+    /// Behind an [`Rc`] because a shared field is read by every column that names it,
+    /// and one materialisation is enough for all of them: resolving a column's presence
+    /// costs a reference count either way, and only a reader that actually asks for the
+    /// bits of a field another column still holds pays to copy them.
+    /// Requires the `unstable-v2` feature.
+    #[cfg(feature = "unstable-v2")]
+    Decoded(Rc<BitVec<u8, Lsb0>>),
+}
+
+#[cfg(feature = "unstable-v2")]
+impl<'a> RawPresence<'a> {
+    /// Keep bits that were borrowed borrowed, and bits that were built built.
+    pub(crate) fn from_bits(bits: Cow<'a, BitSlice<u8, Lsb0>>) -> Self {
+        match bits {
+            Cow::Borrowed(bits) => Self::Bitfield(bits),
+            Cow::Owned(bits) => Self::Decoded(Rc::new(bits)),
+        }
+    }
 }
 
 impl RawPresence<'_> {
@@ -303,5 +390,72 @@ impl RawPresence<'_> {
     #[must_use]
     pub(crate) fn is_optional(&self) -> bool {
         !matches!(self, Self::AllPresent)
+    }
+}
+
+impl RawProperty<'_> {
+    /// How this column stores its values, or `None` when it has no layout to report.
+    #[must_use]
+    pub(crate) fn storage(&self) -> Option<ColumnStorage> {
+        let (string, dictionary) = match self {
+            Self::Str(column) => match &column.encoding {
+                RawStringsEncoding::Plain(_) => (StringLayout::Plain, None),
+                RawStringsEncoding::Dictionary { dict, .. } => (StringLayout::Dict, Some(*dict)),
+                RawStringsEncoding::FsstPlain(_) => (StringLayout::Fsst, None),
+                RawStringsEncoding::FsstDictionary { dict, .. } => {
+                    (StringLayout::FsstDict, Some(*dict))
+                }
+            },
+            // A shared dictionary's children are dictionary-coded strings, so it reports
+            // the layout its corpus is stored with, as a lone string column would.
+            Self::SharedDict(column) => match &column.encoding {
+                RawSharedDictEncoding::Plain(_) => (StringLayout::Dict, Some(column.dict)),
+                RawSharedDictEncoding::FsstPlain(_) => (StringLayout::FsstDict, Some(column.dict)),
+            },
+            Self::Bool(_)
+            | Self::I8(_)
+            | Self::U8(_)
+            | Self::I32(_)
+            | Self::U32(_)
+            | Self::I64(_)
+            | Self::U64(_)
+            | Self::F32(_)
+            | Self::F64(_) => return None,
+        };
+        Some(ColumnStorage {
+            string: Some(string),
+            dictionary,
+        })
+    }
+}
+
+impl RawProperty<'_> {
+    /// Call `cb` with what this column declares. A shared dictionary stores strings, so
+    /// it reads as [`PropKind::Str`], as the decoded form does.
+    pub(crate) fn for_each_decl(&self, cb: &mut dyn FnMut(ColumnDecl)) {
+        let (kind, optional) = match self {
+            Self::Bool(c) => (PropKind::Bool, c.presence.is_optional()),
+            Self::I8(c) => (PropKind::I8, c.presence.is_optional()),
+            Self::U8(c) => (PropKind::U8, c.presence.is_optional()),
+            Self::I32(c) => (PropKind::I32, c.presence.is_optional()),
+            Self::U32(c) => (PropKind::U32, c.presence.is_optional()),
+            Self::I64(c) => (PropKind::I64, c.presence.is_optional()),
+            Self::U64(c) => (PropKind::U64, c.presence.is_optional()),
+            Self::F32(c) => (PropKind::F32, c.presence.is_optional()),
+            Self::F64(c) => (PropKind::F64, c.presence.is_optional()),
+            Self::Str(c) => (PropKind::Str, c.presence.is_optional()),
+            // A shared dictionary holds no values of its own and declares no presence:
+            // its children are the columns, and each carries its own.
+            Self::SharedDict(c) => {
+                for child in &c.children {
+                    cb(ColumnDecl::Value {
+                        kind: PropKind::Str,
+                        optional: child.presence.is_optional(),
+                    });
+                }
+                return;
+            }
+        };
+        cb(ColumnDecl::Value { kind, optional });
     }
 }

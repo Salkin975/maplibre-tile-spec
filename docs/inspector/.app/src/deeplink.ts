@@ -1,20 +1,42 @@
-/** The `fixture`, `layer` and `region` query parameters, which are the whole deep-link contract. */
+/** The `fixture`, `url`, `layer` and `region` query parameters, the whole deep-link contract. */
+
+import { AXES, tileAddress } from "./fixtures.ts";
 
 export interface DeepLink {
-  /** Index key of a synthetic fixture, `<dir>/<name>`. An upload has none. */
+  /** Index key of a synthetic fixture, `<dir>/<name>`. An added tile has none. */
   fixture: string | null;
+  /** Address a tile was fetched from, for one that is not in the index. */
+  url: string | null;
   /** Index of the top-level layer the tree is filtered to. */
   layer: number | null;
   /** Index of the selected region in the tree as filtered by `layer`. */
   region: number | null;
+  /** Picked filter chips, each `<axis>:<value>`, so a combination can be handed over. */
+  filters: string[];
+  /** What the picker's filter box holds, which narrows by name and offers chips. */
+  query: string;
+  /** Whether the geometry panel is drawn. Only the off state is written down. */
+  geo: boolean;
 }
+
+const knownAxes = new Set(AXES.map((a) => a.key));
 
 export function readDeepLink(search: string): DeepLink {
   const params = new URLSearchParams(search);
+  const raw = params.get("url");
   return {
     fixture: params.get("fixture") || null,
+    url: raw === null ? null : tileAddress(raw),
     layer: index(params.get("layer")),
     region: index(params.get("region")),
+    // Repeated rather than joined: a value may hold any punctuation the spec spells it with.
+    filters: params.getAll("f").filter((value) => {
+      const colon = value.indexOf(":");
+      return colon > 0 && knownAxes.has(value.slice(0, colon));
+    }),
+    query: params.get("q") ?? "",
+    // Shown unless the link says otherwise, so a bare URL opens the whole app.
+    geo: params.get("geo") !== "0",
   };
 }
 
@@ -22,19 +44,27 @@ export function readDeepLink(search: string): DeepLink {
 export function deepLinkSearch(link: DeepLink): string {
   const params = new URLSearchParams();
   if (link.fixture !== null) params.set("fixture", link.fixture);
+  if (link.url !== null) params.set("url", link.url);
   if (link.layer !== null) params.set("layer", String(link.layer));
   if (link.region !== null) params.set("region", String(link.region));
+  for (const picked of link.filters) params.append("f", picked);
+  if (link.query !== "") params.set("q", link.query);
+  if (!link.geo) params.set("geo", "0");
   const search = params.toString();
   return search === "" ? "" : `?${search}`;
 }
 
-/** Puts the link in the address bar without adding a history entry per hovered region. */
-export function writeDeepLink(link: DeepLink): void {
-  history.replaceState(
-    null,
-    "",
-    `${location.pathname}${deepLinkSearch(link)}${location.hash}`,
-  );
+/**
+ * Puts the link in the address bar.
+ *
+ * A `fresh` link is one that opened another tile, which is a place the Back button should
+ * return to; a layer or a region is a move within the tile, and replaces what is there
+ * rather than leaving an entry behind every byte the reader walks over.
+ */
+export function writeDeepLink(link: DeepLink, fresh = false): void {
+  const url = `${location.pathname}${deepLinkSearch(link)}${location.hash}`;
+  if (fresh) history.pushState(null, "", url);
+  else history.replaceState(null, "", url);
 }
 
 function index(raw: string | null): number | null {

@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0](https://github.com/maplibre/maplibre-tile-spec/compare/rust-mlt-core-v0.15.1...rust-mlt-core-v0.16.0) - 2026-09-27
+
+### Added
+
+- *(rust,v2)* store only the triangles of an all-polygon tessellated layer ([#1780](https://github.com/maplibre/maplibre-tile-spec/pull/1780))
+- *(rust,v2)* count triangle indices from the layer's first vertex ([#1784](https://github.com/maplibre/maplibre-tile-spec/pull/1784))
+- *(docs)* inspector filter and layout improvements ([#1781](https://github.com/maplibre/maplibre-tile-spec/pull/1781))
+
+### Other
+
+- *(rust)* pull geometry topology decoding into decode_topology ([#1783](https://github.com/maplibre/maplibre-tile-spec/pull/1783))
+
+## [0.15.1](https://github.com/maplibre/maplibre-tile-spec/compare/rust-mlt-core-v0.15.0...rust-mlt-core-v0.15.1) - 2026-09-27
+
+### Added
+
+- *(rust,v2)* pack ALP e and f into one byte instead of two varints ([#1779](https://github.com/maplibre/maplibre-tile-spec/pull/1779))
+- *(docs)* show all possible filters with dynamic counts ([#1773](https://github.com/maplibre/maplibre-tile-spec/pull/1773))
+
+## [0.15.0](https://github.com/maplibre/maplibre-tile-spec/compare/rust-mlt-core-v0.14.5...rust-mlt-core-v0.15.0) - 2026-09-25
+
+### Added
+
+- *(docs)* add layer name to the inspector ([#1767](https://github.com/maplibre/maplibre-tile-spec/pull/1767))
+
+### Other
+
+- *(rust)* [**breaking**] split Layer01 and Layer02 ([#1771](https://github.com/maplibre/maplibre-tile-spec/pull/1771))
+- *(rust)* re-add ByteRLE for presence variants ([#1768](https://github.com/maplibre/maplibre-tile-spec/pull/1768))
+- *(rust)* add i8 and u8 property synthetics, mark them as stable in v2 and remove them from v1 because broken ([#1769](https://github.com/maplibre/maplibre-tile-spec/pull/1769))
+- *(docs)* inspector m-value and types filter ([#1760](https://github.com/maplibre/maplibre-tile-spec/pull/1760))
+
+## [0.14.5](https://github.com/maplibre/maplibre-tile-spec/compare/rust-mlt-core-v0.14.4...rust-mlt-core-v0.14.5) - 2026-09-23
+
+### Added
+
+- *(rust)* fill the v2 layer header byte's reserved nibble ([#1753](https://github.com/maplibre/maplibre-tile-spec/pull/1753))
+
+### Fixed
+
+- minor issues in the tile inspector ([#1755](https://github.com/maplibre/maplibre-tile-spec/pull/1755))
+
+### Other
+
+- *(rust)* cleanup cmd, rm aws-sdk dep from mlt ([#1757](https://github.com/maplibre/maplibre-tile-spec/pull/1757))
+
+## [0.14.4](https://github.com/maplibre/maplibre-tile-spec/compare/rust-mlt-core-v0.14.3...rust-mlt-core-v0.14.4) - 2026-09-22
+
+### Added
+
+- *(rust)* code the v2 extent as one nibble ([#1749](https://github.com/maplibre/maplibre-tile-spec/pull/1749))
+
+### Other
+
+- *(rust)* add more test coverage ([#1740](https://github.com/maplibre/maplibre-tile-spec/pull/1740))
+- *(rust)* increase coverage ([#1745](https://github.com/maplibre/maplibre-tile-spec/pull/1745))
+- *(java)* drop the 0x02-java synthetic fixtures ([#1744](https://github.com/maplibre/maplibre-tile-spec/pull/1744))
+- migrate to cargo-nextest ([#1742](https://github.com/maplibre/maplibre-tile-spec/pull/1742))
+- *(rust)* multiply don't divide ALP ([#1741](https://github.com/maplibre/maplibre-tile-spec/pull/1741))
+
 ## [0.14.3](https://github.com/maplibre/maplibre-tile-spec/compare/rust-mlt-core-v0.14.2...rust-mlt-core-v0.14.3) - 2026-09-21
 
 ### Added

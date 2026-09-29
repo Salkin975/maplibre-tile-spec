@@ -74,12 +74,21 @@ pub enum MltError {
     #[error("error parsing v2 geometry layout: code={0}")]
     ParsingGeoLayout(u8),
     #[cfg(feature = "unstable-v2")]
+    #[error("error parsing v2 layer header byte: 0x{0:02X}")]
+    ParsingLayerHeader02(u8),
+    #[cfg(feature = "unstable-v2")]
+    #[error("error parsing v2 layer layout byte: 0x{0:02X}")]
+    ParsingLayerLayout02(u8),
+    #[cfg(feature = "unstable-v2")]
+    #[error("v2 extent {0} is not a power of two in 64..=2097152")]
+    UnsupportedExtent02(u32),
+    #[cfg(feature = "unstable-v2")]
     #[error(
         "v2 geometry layout {0} gives no per-feature vertex count, so it cannot carry m-values"
     )]
     MValuesNeedVertexCounts(&'static str),
     #[cfg(feature = "unstable-v2")]
-    #[error("the v2 layer layout byte claims an m-value section, but it holds no columns")]
+    #[error("the v2 layer header byte claims an m-value section, but it holds no columns")]
     EmptyMValueSection,
     #[cfg(feature = "unstable-v2")]
     #[error(
@@ -125,6 +134,8 @@ pub enum MltError {
         expected: usize,
         actual: usize,
     },
+    #[error("8-bit integers are a v2 feature, so column {0} cannot be written as v1")]
+    EightBitNeedsV2(String),
     #[cfg(feature = "unstable-v2")]
     #[error("m-values are a v2 feature, so layer {0} cannot be written as v1")]
     MValuesNeedV2(String),
@@ -242,6 +253,14 @@ pub enum MltError {
     FastPforDecode(u32, usize),
     #[error("invalid RLE run length (cannot convert to usize): value={0}")]
     RleRunLenInvalid(i128),
+    #[error("presence runs overflow the {0} features they cover")]
+    PresenceRunOverflow(u32),
+    #[error("presence names {0} present features out of {1}")]
+    PresenceRunShort(u32, u32),
+    #[error("presence indices are not strictly increasing within {0} features")]
+    PresenceIndexOrder(u32),
+    #[error("unknown presence coding byte: 0x{0:02X}")]
+    PresenceCodingByte(u8),
 
     // Structural constraints (lengths, counts, shapes)
     #[error("geometry requires at least 1 stream, got 0")]
@@ -294,6 +313,8 @@ pub enum MltError {
     NoAlpParameters,
     #[error("invalid ALP parameters: e={0}, f={1}")]
     InvalidAlpParams(u8, u8),
+    #[error("invalid ALP scale byte {0}")]
+    InvalidAlpScale(u8),
     #[error("presence stream has {0} bits set but {1} values provided")]
     PresenceValueCountMismatch(usize, usize),
     #[error("need to encode before being able to write")]
@@ -364,6 +385,8 @@ pub enum MltError {
     UnexpectedOffsetCombination(usize, GeometryType),
     #[error("geometry: ring lengths without part lengths")]
     RingLengthsWithoutPartLengths,
+    #[error("geometry[{0}]: {1} requires outlines, which a triangles-only layer does not store")]
+    NonPolygonWithoutOutlines(usize, GeometryType),
 
     #[error("FastPFor error: {0}")]
     FastPfor(#[from] fastpfor::FastPForError),

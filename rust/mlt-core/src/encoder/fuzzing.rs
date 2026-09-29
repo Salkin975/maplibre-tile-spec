@@ -26,7 +26,8 @@ impl Arbitrary<'_> for EncoderConfig {
         let config = config
             .with_wire_version(u.arbitrary()?)
             .with_float_dict(u.arbitrary()?)
-            .with_float_alp(u.arbitrary()?);
+            .with_float_alp(u.arbitrary()?)
+            .with_triangles_only(u.arbitrary()?);
         Ok(config)
     }
 }
@@ -47,7 +48,15 @@ impl Arbitrary<'_> for StagedLayer {
         let name: String = (0..len)
             .map(|_| u.arbitrary::<char>())
             .collect::<Result<_>>()?;
-        let extent: u32 = u.arbitrary()?;
+        // v2 codes the extent as a power of two in 64..=2097152, so drawing from that
+        // set keeps most layers encodable to both wire versions.
+        // v1 writes the extent as a varint and takes any of them, so the rarer draw
+        // reaches extents only v1 can hold.
+        let extent: u32 = if u.int_in_range(0..=7u8)? == 0 {
+            u.int_in_range(1..=u32::MAX)?
+        } else {
+            1 << u.int_in_range(6..=21u32)?
+        };
         // Generate geometry first -- its feature count drives ID and property columns.
         let geometry: crate::decoder::GeometryValues = u.arbitrary()?;
         let fc = geometry.vector_types().len();

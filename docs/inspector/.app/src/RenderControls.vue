@@ -17,20 +17,45 @@ const props = defineProps<{ layers: string[] }>();
         </option>
       </select>
     </label>
-    <label>
-      annotate
-      <select v-model="view.annotate">
-        <option value="sections">sections</option>
-        <option value="both">both</option>
-        <option value="blob">blob</option>
-        <option value="decoded">decoded</option>
-        <option value="hidden">hidden</option>
-      </select>
-    </label>
+    <button
+      type="button"
+      class="knob"
+      :class="{ on: view.geo }"
+      :aria-pressed="view.geo"
+      @click="view.geo = !view.geo"
+    >
+      Geometries
+    </button>
+    <button
+      type="button"
+      class="knob"
+      :class="{ on: view.colorful }"
+      :aria-pressed="view.colorful"
+      @click="view.colorful = !view.colorful"
+    >
+      Tints
+    </button>
   </div>
 </template>
 
 <style scoped>
+.knob {
+  background: var(--control);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-inline);
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 0.1rem 0.5rem;
+  cursor: pointer;
+}
+.knob:hover {
+  background: var(--hover);
+}
+.knob.on {
+  color: var(--text);
+  border-color: var(--accent-rule);
+}
 .knobs {
   display: flex;
   gap: var(--pad);

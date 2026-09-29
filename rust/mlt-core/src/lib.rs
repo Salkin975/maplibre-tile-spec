@@ -54,9 +54,9 @@ pub(crate) use decoder::{
 };
 #[cfg(feature = "unstable-v2")]
 pub use decoder::{
-    MValueColumn, MValueSpans, MValues, Nested, ParsedInterior, ParsedLeaf, ParsedList,
-    ParsedMValue, ParsedMap, ParsedNested, ParsedNode, ParsedStruct, RawInterior, RawLeaf, RawList,
-    RawMValue, RawMap, RawNested, RawNode, RawStruct,
+    Layer02, MValueColumn, MValueSpans, MValues, Nested, ParsedInterior, ParsedLayer02, ParsedLeaf,
+    ParsedList, ParsedMValue, ParsedMap, ParsedNested, ParsedNode, ParsedStruct, RawInterior,
+    RawLeaf, RawList, RawMValue, RawMap, RawNested, RawNode, RawStruct,
 };
 pub(crate) use errors::MltRefResult;
 pub use errors::{MltError, MltResult};
@@ -75,12 +75,14 @@ pub(crate) use utils::lazy_state::{Decode, DecodeState, Lazy, LazyParsed, Parsed
 /// MLT tile. Normal tile consumers (parse -> iterate features) do not need this
 /// module; it is intended for tools that inspect or report encoding statistics.
 pub mod wire {
-    pub use crate::decoder::ColumnType;
     pub use crate::decoder::stream::model::{
         Alp, BoolLogical, DictionaryType, FastPForKind, FloatLogical, IntEncoding, IntLogical,
         LengthType, LogicalEncoding, LogicalTechnique, Morton, OffsetType, PhysicalEncoding,
         RleLayout, RleMeta, StreamMeta, StreamType, ValueKind, VertexLogical,
     };
+    pub use crate::decoder::{ColumnDecl, ColumnStorage, ColumnType, DictLayout, StringLayout};
+    #[cfg(feature = "unstable-v2")]
+    pub use crate::decoder::{GeoLayout, LayerLayout};
     pub use crate::utils::analyze::{Analyze, StatType};
 }
 

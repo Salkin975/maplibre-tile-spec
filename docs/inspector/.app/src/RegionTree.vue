@@ -1,10 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import type { DumpTree, Region } from "./annotate.ts";
 import { ancestors, bandTint, UNANNOTATED } from "./hex.ts";
-
-/** Containers deeper than this start collapsed, which opens a z14 tile on its ten layers. */
-const AUTO_OPEN_DEPTH = 1;
 
 const props = defineProps<{
   tree: DumpTree;
@@ -18,24 +15,95 @@ const emit = defineEmits<{
 }>();
 
 const collapsed = ref(new Set<number>());
+const scroller = ref<HTMLElement | null>(null);
 
+/** One row of the tree, once the wrappers that only pass a region through are gone. */
+interface Row {
+  /** The outermost region of the chain, which is what the row is keyed and picked by. */
+  index: number;
+  /** The innermost, whose children the row opens onto. */
+  tail: number;
+  depth: number;
+  hasChildren: boolean;
+}
+
+/**
+ * The tree with every sole-container child folded into its parent.
+ *
+ * A column that holds one stream and nothing else costs a row to say so twice, and the
+ * reader has to open it to reach anything. The wrapper's own name goes with it: across
+ * the fixtures it is only ever `id`, `data` or `vertices`, each of which the parent
+ * already implies. `rowOf` maps a region back to the row that swallowed it, since a
+ * pick from the map still names the region.
+ */
+const folded = computed(() => {
+  const regions = props.tree.regions;
+  const { parent, kids } = shape(regions);
+  const rows: Row[] = [];
+  /** Which row each region ended up in, so a pick from the map still finds its line. */
+  const rowOf = new Int32Array(regions.length);
+  regions.forEach((region, index) => {
+    const up = parent[index];
+    // A wrapper is a container that is its parent's one and only child.
+    if (up >= 0 && region.container && kids[up] === 1) {
+      rows[rowOf[up]].tail = index;
+      rowOf[index] = rowOf[up];
+      return;
+    }
+    rowOf[index] = rows.length;
+    rows.push({
+      index,
+      tail: index,
+      depth: up < 0 ? 0 : rows[rowOf[up]].depth + 1,
+      hasChildren: false,
+    });
+  });
+  for (const row of rows) row.hasChildren = kids[row.tail] > 0;
+  return { rows, rowOf };
+});
+
+/** Each region's parent (-1 at the root) and how many children it has, in one pass. */
+function shape(regions: Region[]) {
+  const parent = new Int32Array(regions.length).fill(-1);
+  const kids = new Int32Array(regions.length);
+  const open: number[] = [];
+  regions.forEach((region, index) => {
+    while (open.length && regions[open.at(-1) as number].depth >= region.depth)
+      open.pop();
+    const up = open.at(-1) ?? -1;
+    parent[index] = up;
+    if (up >= 0) kids[up] += 1;
+    if (region.container) open.push(index);
+  });
+  return { parent, kids };
+}
+
+/**
+ * A tile of one layer opens it a single level, which is the whole tile at a glance.
+ * Several layers stay shut: opening them all buries the list a reader came to skim.
+ */
 watch(
   () => props.tree,
   () => {
+    const layers = folded.value.rows.filter(
+      (row) => row.depth === 0 && row.hasChildren,
+    ).length;
     collapsed.value = new Set(
-      containers(props.tree, (region) => region.depth > AUTO_OPEN_DEPTH),
+      folded.value.rows
+        .filter((row) => row.hasChildren && (layers > 1 || row.depth > 0))
+        .map((row) => row.index),
     );
   },
   { immediate: true },
 );
 
-/** The containers that carry a caret, which are the only ones the bar can move. */
+/** The rows that carry a caret, which are the only ones the bar can move. */
 const toggleable = computed(() =>
-  containers(
-    props.tree,
-    (region, index) =>
-      (props.tree.regions[index + 1]?.depth ?? 0) > region.depth,
-  ),
+  folded.value.rows.filter((row) => row.hasChildren).map((row) => row.index),
+);
+/** The row the selection lands on, which is the parent of a folded wrapper. */
+const active = computed(() =>
+  props.activeIndex === null ? null : rowIndex(props.activeIndex),
 );
 /** A half-open tree expands first, so one button covers both directions. */
 const opens = computed(() =>
@@ -46,10 +114,8 @@ function toggleAll() {
   collapsed.value = new Set(opens.value ? [] : toggleable.value);
 }
 
-interface Node {
-  index: number;
+interface Node extends Row {
   region: Region;
-  hasChildren: boolean;
   /** Band this row sits in, or -1 for a row no container holds. */
   band: number;
   /** Whether the band's tint rounds off here, so a run of rows reads as one band. */
@@ -62,25 +128,22 @@ const nodes = computed<Node[]>(() => {
   const regions = props.tree.regions;
   const bands = props.bands;
   let hideBelow = Number.POSITIVE_INFINITY;
-  regions.forEach((region, index) => {
-    if (region.depth > hideBelow) return;
+  for (const row of folded.value.rows) {
+    if (regions[row.index].depth > hideBelow) continue;
     hideBelow = Number.POSITIVE_INFINITY;
-    const hasChildren =
-      region.container && (regions[index + 1]?.depth ?? 0) > region.depth;
-    if (region.container && collapsed.value.has(index))
-      hideBelow = region.depth;
-    const band = bands?.[index] ?? -1;
+    if (row.hasChildren && collapsed.value.has(row.index))
+      hideBelow = regions[row.tail].depth;
+    const band = bands?.[row.index] ?? -1;
     const above = out.at(-1);
     if (above) above.bottom = above.band !== band;
     out.push({
-      index,
-      region,
-      hasChildren,
+      ...row,
+      region: regions[row.index],
       band,
       top: above === undefined || above.band !== band,
       bottom: true,
     });
-  });
+  }
   return out;
 });
 
@@ -90,21 +153,36 @@ function toggle(index: number) {
   collapsed.value = next;
 }
 
-/** Opens every container on the way to `index`, so revealing from the map cannot land nowhere. */
-function reveal(index: number) {
+/** A double click opens or shuts a section, so a single one can select without moving the list. */
+function expand(node: Node) {
+  if (node.hasChildren) toggle(node.index);
+}
+
+/** Opens every container on the way to `index` and scrolls to its row, so revealing from the map cannot land nowhere. */
+async function reveal(index: number) {
   if (!props.tree.regions[index]) return;
   const next = new Set(collapsed.value);
   for (const at of ancestors(props.tree.regions, index)) next.delete(at);
   collapsed.value = next;
+  await nextTick();
+  scrollToRow(rowIndex(index));
 }
 
-function containers(
-  tree: DumpTree,
-  keep: (region: Region, index: number) => boolean,
-): number[] {
-  return tree.regions.flatMap((region, index) =>
-    region.container && keep(region, index) ? [index] : [],
-  );
+/** The row a region shows up in, which is a wrapper's parent once folded. */
+function rowIndex(index: number): number {
+  const { rows, rowOf } = folded.value;
+  return rows[rowOf[index] ?? -1]?.index ?? index;
+}
+
+/** Scrolls a row into view, but only when it is not on screen already. */
+function scrollToRow(index: number) {
+  const el = scroller.value;
+  const row = el?.querySelector(`[data-index="${index}"]`);
+  if (!el || !row) return;
+  const box = el.getBoundingClientRect();
+  const at = row.getBoundingClientRect();
+  if (at.top >= box.top && at.bottom <= box.bottom) return;
+  el.scrollTop += at.top - box.top - el.clientHeight / 3;
 }
 
 defineExpose({ reveal });
@@ -122,10 +200,11 @@ defineExpose({ reveal });
         {{ opens ? "expand all" : "collapse all" }}
       </button>
     </div>
-    <div class="scroll">
+    <div ref="scroller" class="scroll">
       <div
         v-for="node in nodes"
         :key="node.index"
+        :data-index="node.index"
         class="node"
         :class="{
           [`b${bandTint(node.band)}`]: node.band >= 0,
@@ -135,9 +214,9 @@ defineExpose({ reveal });
           container: node.region.container,
           blob: node.region.kind === 'dataBlob',
           unannotated: node.region.label === UNANNOTATED,
-          on: node.index === props.activeIndex,
+          on: node.index === active,
         }"
-        :style="{ paddingLeft: `${node.region.depth * 0.8 + 0.3}rem` }"
+        :style="{ paddingLeft: `${node.depth * 0.8 + 0.3}rem` }"
       >
         <button
           v-if="node.hasChildren"
@@ -172,6 +251,7 @@ defineExpose({ reveal });
           @mouseenter="emit('hover', node.index)"
           @focus="emit('hover', node.index)"
           @click="emit('pick', node.index)"
+          @dblclick="expand(node)"
         >
           <span class="name">{{ node.region.label }}</span>
           <span class="size">{{ node.region.len }} B</span>
@@ -183,7 +263,6 @@ defineExpose({ reveal });
 
 <style scoped>
 .tree {
-  border-top: 1px solid var(--line);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -303,6 +382,8 @@ defineExpose({ reveal });
   cursor: pointer;
   padding: 0.16rem 0.3rem;
   text-align: left;
+  /* A double click toggles the section, so it must not also select the label text. */
+  user-select: none;
 }
 .name {
   overflow: hidden;

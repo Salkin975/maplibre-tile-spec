@@ -1,5 +1,6 @@
 //! Round-trip and differential tests for the experimental v2 (tag `0x02`) wire format.
 
+use insta::{assert_snapshot, with_settings};
 use mlt_core::dump::{DumpTree, RenderOpts, annotate_tile, render};
 use mlt_core::encoder::{EncoderConfig, WireVersion};
 use mlt_core::geo_types::{
@@ -37,14 +38,15 @@ fn decode(bytes: &[u8]) -> (u8, TileLayer) {
         Layer::Tag02(_) => 2,
         _ => panic!("unexpected layer kind"),
     };
-    let layer = layers
+    let mut dec = Decoder::default();
+    let tile = layers
         .into_iter()
         .next()
         .unwrap()
-        .into_layer01()
-        .expect("layer01 representation");
-    let mut dec = Decoder::default();
-    (tag, layer.into_tile(&mut dec).expect("into_tile"))
+        .into_tile(&mut dec)
+        .expect("into_tile")
+        .expect("a known layer tag");
+    (tag, tile)
 }
 
 fn assert_differential(layer: &TileLayer) -> (usize, usize) {
@@ -276,20 +278,6 @@ fn all_scalar_types_non_optional() {
                 .collect(),
         ),
         (
-            "i8",
-            vec![-1_i8, 0, 127]
-                .into_iter()
-                .map(|v| PropValue::I8(Some(v)))
-                .collect(),
-        ),
-        (
-            "u8",
-            vec![0_u8, 128, 255]
-                .into_iter()
-                .map(|v| PropValue::U8(Some(v)))
-                .collect(),
-        ),
-        (
             "i32",
             vec![-100_000_i32, 0, 100_000]
                 .into_iter()
@@ -336,6 +324,43 @@ fn all_scalar_types_non_optional() {
 }
 
 #[test]
+fn eight_bit_ints_widen_in_v1_only() {
+    let geoms = vec![pt(0, 0), pt(1, 1)];
+    let props = [
+        (
+            "i8",
+            vec![PropValue::I8(Some(i8::MIN)), PropValue::I8(None)],
+        ),
+        (
+            "u8",
+            vec![PropValue::U8(None), PropValue::U8(Some(u8::MAX))],
+        ),
+    ];
+    let src = layer(geoms, None, &props);
+    let props_of = |cfg: EncoderConfig| -> Vec<Vec<PropValue>> {
+        let (_, tile) = decode(&src.clone().encode(cfg).expect("encode"));
+        tile.features()
+            .iter()
+            .map(|f| f.properties().to_vec())
+            .collect()
+    };
+    assert_eq!(
+        props_of(cfg_v1()),
+        [
+            [PropValue::I32(Some(-128)), PropValue::U32(None)],
+            [PropValue::I32(None), PropValue::U32(Some(255))],
+        ]
+    );
+    assert_eq!(
+        props_of(cfg_v2()),
+        [
+            [PropValue::I8(Some(i8::MIN)), PropValue::U8(None)],
+            [PropValue::I8(None), PropValue::U8(Some(u8::MAX))],
+        ]
+    );
+}
+
+#[test]
 fn all_scalar_types_optional_with_nulls() {
     let geoms = vec![pt(0, 0), pt(1, 1), pt(2, 2), pt(3, 3)];
     let props = [
@@ -346,24 +371,6 @@ fn all_scalar_types_optional_with_nulls() {
                 PropValue::Bool(Some(true)),
                 PropValue::Bool(None),
                 PropValue::Bool(Some(false)),
-            ],
-        ),
-        (
-            "i8",
-            vec![
-                PropValue::I8(None),
-                PropValue::I8(Some(-5)),
-                PropValue::I8(Some(5)),
-                PropValue::I8(None),
-            ],
-        ),
-        (
-            "u8",
-            vec![
-                PropValue::U8(Some(9)),
-                PropValue::U8(None),
-                PropValue::U8(None),
-                PropValue::U8(Some(200)),
             ],
         ),
         (
@@ -477,7 +484,7 @@ fn multiple_layers() {
     let mut dec = Decoder::default();
     for l in layers {
         assert!(matches!(l, Layer::Tag02(_)));
-        l.into_layer01().unwrap().into_tile(&mut dec).unwrap();
+        l.into_tile(&mut dec).unwrap().expect("a known layer tag");
     }
 }
 
@@ -612,10 +619,10 @@ fn columns_with_the_same_nulls_share_one_presence_bitfield() {
 
 #[test]
 fn shared_presence_count_is_capped_by_the_layout_byte() {
-    // Nine features give more than seven distinct masks to go around.
-    let masks: Vec<String> = (0..8)
+    // Sixteen features give more than seven distinct masks to go around.
+    let masks: Vec<String> = (0..15)
         .map(|i| {
-            let mut mask = vec![b'0'; 9];
+            let mut mask = vec![b'0'; 16];
             mask[0] = b'1';
             mask[i + 1] = b'1';
             String::from_utf8(mask).unwrap()
@@ -634,9 +641,9 @@ fn shared_presence_count_is_capped_by_the_layout_byte() {
     let dump = dump_text(&l.encode(cfg_v2()).unwrap());
     assert!(dump.contains("shared presence bitfields = 7"), "{dump}");
     assert_eq!(dump.matches("presence = Shared(6)").count(), 2, "{dump}");
-    // Every group is shared by two columns, so the last one loses the tie-break.
-    assert_eq!(dump.matches("presence = Inline").count(), 2, "{dump}");
-    assert_eq!(dump.matches("[Present ").count(), 9, "{dump}");
+    // Eight of the fifteen groups lose the tie-break, and both their columns go inline.
+    assert_eq!(dump.matches("presence = Inline").count(), 16, "{dump}");
+    assert_eq!(dump.matches("[Present ").count(), 23, "{dump}");
 }
 
 #[test]
@@ -723,6 +730,79 @@ mod geometry_layouts {
         assert_differential_with(&l, cfg_tessellated());
     }
 
+    /// The meaning of every bit field of the layer's two header bytes, in wire order.
+    fn header_bits(bytes: &[u8]) -> Vec<String> {
+        annotate(bytes)
+            .regions
+            .iter()
+            .filter(|r| r.label == "header" || r.label == "layout")
+            .flat_map(|r| r.bits.iter().map(|b| b.meaning().to_string()))
+            .collect()
+    }
+
+    /// The streams of the layer's geometry section, in wire order.
+    fn geometry_streams(bytes: &[u8]) -> Vec<String> {
+        let tree = annotate(bytes);
+        let geometry = tree
+            .regions
+            .iter()
+            .find(|r| r.label == "geometry")
+            .expect("a geometry section");
+        tree.regions
+            .iter()
+            .skip_while(|r| r.label != "geometry")
+            .skip(1)
+            .take_while(|r| r.depth > geometry.depth)
+            .filter(|r| r.depth == geometry.depth + 1)
+            .map(|r| r.label.clone())
+            .collect()
+    }
+
+    #[rstest]
+    #[case::points(vec![pt(1, 2), pt(3, 4)], "Point")]
+    #[case::lines(vec![line(&[(0, 0), (1, 1)]), line(&[(2, 2), (3, 3)])], "LineString")]
+    #[case::polygons(vec![Geometry::Polygon(square(0, 0))], "Polygon")]
+    #[case::multi_points(
+        vec![Geometry::MultiPoint(MultiPoint(vec![Point::new(1, 2), Point::new(3, 4)]))],
+        "MultiPoint"
+    )]
+    #[case::multi_polygons(
+        vec![Geometry::MultiPolygon(MultiPolygon(vec![square(0, 0), square(20, 20)]))],
+        "MultiPolygon"
+    )]
+    fn one_geometry_type_moves_into_the_header_byte(
+        #[case] geoms: Vec<Geometry<i32>>,
+        #[case] geometry_type: &str,
+    ) {
+        let l = layer(geoms, None, &[]);
+        let bytes = l.clone().encode(cfg_v2()).unwrap();
+        with_settings!({snapshot_suffix => geometry_type}, {
+            assert_snapshot!(header_bits(&bytes).join("\n"));
+        });
+        assert!(!geometry_streams(&bytes).contains(&"types".to_string()));
+        assert_differential(&l);
+    }
+
+    #[test]
+    fn mixed_geometry_types_keep_their_stream() {
+        let l = layer(vec![pt(5, 5), line(&[(0, 0), (10, 10)])], None, &[]);
+        let bytes = l.clone().encode(cfg_v2()).unwrap();
+        assert_snapshot!(header_bits(&bytes).join("\n"), @"
+        no m-value section
+        a types stream leads the geometry section
+        extent 2^(n+6) = 4096
+        shared bitfields are bitmaps
+        shared presence bitfields = 0
+        geometry layout = Lines
+        ");
+        assert_snapshot!(geometry_streams(&bytes).join("\n"), @"
+        types
+        part_lengths
+        vertices
+        ");
+        assert_differential(&l);
+    }
+
     #[test]
     fn a_layer_without_polygons_is_not_tessellated() {
         let l = layer(vec![pt(5, 5), line(&[(0, 0), (10, 10)])], None, &[]);
@@ -733,6 +813,136 @@ mod geometry_layouts {
         );
         assert!(dump.contains("geometry layout = Lines"), "{dump}");
         assert_differential_with(&l, cfg_tessellated());
+    }
+
+    fn cfg_triangles_only() -> EncoderConfig {
+        cfg_tessellated()
+            .with_wire_version(WireVersion::V02)
+            .with_triangles_only(true)
+    }
+
+    fn exteriors(tile: &TileLayer) -> Vec<Vec<Vec<(i32, i32)>>> {
+        tile.features()
+            .iter()
+            .map(|f| {
+                let Geometry::MultiPolygon(mp) = f.geometry() else {
+                    panic!("expected a MultiPolygon, got {:?}", f.geometry());
+                };
+                mp.iter()
+                    .map(|p| p.exterior().coords().map(|c| (c.x, c.y)).collect())
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_polygon_layer_stores_only_its_triangles() {
+        let l = layer(
+            vec![
+                Geometry::Polygon(square(0, 0)),
+                Geometry::MultiPolygon(MultiPolygon(vec![square(20, 20), square(40, 40)])),
+            ],
+            None,
+            &[],
+        );
+        let bytes = l.encode(cfg_triangles_only()).unwrap();
+        assert_snapshot!(header_bits(&bytes).join("\n"), @"
+        no m-value section
+        a types stream leads the geometry section
+        extent 2^(n+6) = 4096
+        shared bitfields are bitmaps
+        shared presence bitfields = 0
+        geometry layout = TessPolygons
+        ");
+        assert_snapshot!(geometry_streams(&bytes).join("\n"), @"
+        types
+        tri_lengths
+        tri_indexes
+        vertices
+        ");
+        let (_, tile) = decode(&bytes);
+        assert_snapshot!(format!("{:?}", exteriors(&tile)), @"[[[(10, 10), (0, 10), (0, 0), (10, 10)], [(0, 0), (10, 0), (10, 10), (0, 0)]], [[(30, 30), (20, 30), (20, 20), (30, 30)], [(20, 20), (30, 20), (30, 30), (20, 20)], [(50, 50), (40, 50), (40, 40), (50, 50)], [(40, 40), (50, 40), (50, 50), (40, 40)]]]");
+    }
+
+    #[test]
+    fn a_polygon_with_no_triangles_decodes_as_an_empty_multipolygon() {
+        let collinear = Polygon::new(ring(&[(0, 0), (10, 0), (20, 0)]), vec![]);
+        let l = layer(
+            vec![
+                Geometry::Polygon(collinear),
+                Geometry::Polygon(square(40, 40)),
+            ],
+            None,
+            &[],
+        );
+        let (_, tile) = decode(&l.encode(cfg_triangles_only()).unwrap());
+        assert_snapshot!(format!("{:?}", exteriors(&tile)), @"[[], [[(50, 50), (40, 50), (40, 40), (50, 50)], [(40, 40), (50, 40), (50, 50), (40, 40)]]]");
+    }
+
+    #[test]
+    fn dropping_the_outlines_is_smaller() {
+        let l = layer(
+            vec![
+                Geometry::Polygon(square(0, 0)),
+                Geometry::MultiPolygon(MultiPolygon(vec![square(20, 20), square(40, 40)])),
+            ],
+            None,
+            &[],
+        );
+        let with_outlines = l
+            .clone()
+            .encode(cfg_tessellated().with_wire_version(WireVersion::V02))
+            .unwrap();
+        let triangles_only = l.encode(cfg_triangles_only()).unwrap();
+        assert_eq!((with_outlines.len(), triangles_only.len()), (87, 73));
+    }
+
+    #[rstest]
+    #[case::lines_and_polygons(vec![
+        line(&[(0, 0), (10, 10), (20, 0)]),
+        Geometry::Polygon(square(40, 40)),
+    ])]
+    #[case::points_and_polygons(vec![pt(5, 5), Geometry::Polygon(square(20, 20))])]
+    fn a_layer_with_more_than_polygons_keeps_its_outlines(#[case] geoms: Vec<Geometry<i32>>) {
+        let l = layer(geoms, None, &[]);
+        let bytes = l.clone().encode(cfg_triangles_only()).unwrap();
+        assert_eq!(
+            header_bits(&bytes).last().map(String::as_str),
+            Some("geometry layout = TessPolygonsWithOutlines"),
+        );
+        assert_differential_with(&l, cfg_tessellated().with_triangles_only(true));
+    }
+
+    #[test]
+    fn v1_ignores_triangles_only() {
+        let l = layer(vec![Geometry::Polygon(square(0, 0))], None, &[]);
+        let v1 = cfg_tessellated();
+        assert_eq!(
+            l.clone().encode(v1.with_triangles_only(true)).unwrap(),
+            l.encode(v1).unwrap(),
+        );
+    }
+
+    #[test]
+    fn a_point_among_bare_triangles_is_rejected() {
+        let l = layer(vec![Geometry::Polygon(square(0, 0))], None, &[]);
+        let mut bytes = l.encode(cfg_triangles_only()).unwrap();
+        let header = annotate(&bytes)
+            .regions
+            .iter()
+            .find(|r| r.label == "header")
+            .expect("a header region")
+            .offset;
+        let uniform_point = 1 << 4;
+        bytes[header] = (bytes[header] & 0b1000_1111) | uniform_point;
+        let layers = Parser::default().parse_layers(&bytes).expect("parse");
+        let err = layers
+            .into_iter()
+            .next()
+            .unwrap()
+            .into_tile(&mut Decoder::default())
+            .expect_err("a point has no triangles");
+        assert_snapshot!(err, @"geometry[0]: Point requires outlines, which a triangles-only layer does not store");
     }
 }
 
@@ -1141,11 +1351,11 @@ mod strings {
         }
 
         #[test]
-        fn dict_children_compete_for_the_seven_slots_the_layout_byte_allows() {
-            // Eight masks, each held by two children: one group has to lose the tie-break.
-            let masks: Vec<String> = (0..8)
+        fn dict_children_compete_for_the_slots_the_layout_byte_allows() {
+            // Fifteen masks, each held by two children: eight groups lose the tie-break.
+            let masks: Vec<String> = (0..15)
                 .map(|i| {
-                    let mut mask = vec![b'0'; 9];
+                    let mut mask = vec![b'0'; 16];
                     mask[0] = b'1';
                     mask[1] = b'1';
                     if i > 0 {
@@ -1162,8 +1372,8 @@ mod strings {
             assert_differential(&l);
 
             assert_eq!(count(&l, "shared presence bitfields = 7"), 1);
-            assert_eq!(count(&l, "presence = Inline"), 2);
-            assert_eq!(count(&l, "[Present "), 9);
+            assert_eq!(count(&l, "presence = Inline"), 16);
+            assert_eq!(count(&l, "[Present "), 23);
         }
 
         #[test]
@@ -1618,7 +1828,6 @@ mod bit_packing {
         assert_eq!(
             stream_physicals(&packed),
             [
-                PhysicalEncoding::VarInt,
                 PhysicalEncoding::FastPFor(FastPForKind::Block128Le),
                 PhysicalEncoding::BitPacked,
                 PhysicalEncoding::VarInt,
@@ -1639,4 +1848,43 @@ mod bit_packing {
             l.encode(cfg_v1()).unwrap()
         );
     }
+}
+
+/// A presence field that is not a bitmap builds its bits instead of borrowing them, so a
+/// tile can name far more of them than the bytes it spent naming them. The bits are
+/// charged to the parse budget before they are allocated, which this holds to.
+#[test]
+fn a_run_coded_presence_is_charged_to_the_parse_budget() {
+    // One block of present features over enough of them that the mask costs runs, not a
+    // bitmap: three varints on the wire, 2000 bits once read.
+    let mask: String = (0..2000)
+        .map(|i| if (500..1500).contains(&i) { 'x' } else { '-' })
+        .collect();
+    let values: Vec<PropValue> = mask
+        .chars()
+        .map(|c| {
+            if c == 'x' {
+                PropValue::U32(Some(1))
+            } else {
+                PropValue::U32(None)
+            }
+        })
+        .collect();
+    let layer = layer(points(&mask), None, &[("v", values)]);
+    let tile = layer.encode(cfg_v2()).unwrap();
+
+    // The field is tiny on the wire, so a budget that small still reads the header.
+    assert!(
+        tile.len() < 4096,
+        "the mask should cost runs, not a bitmap: {}",
+        tile.len()
+    );
+
+    // A budget with room decodes it; one without fails rather than allocating the bits.
+    assert!(Parser::default().parse_layers(&tile).is_ok());
+    let err = Parser::with_max_size(64).parse_layers(&tile).unwrap_err();
+    assert!(
+        matches!(err, mlt_core::MltError::MemoryLimitExceeded { .. }),
+        "the bits should be refused by the budget, not by something else: {err}"
+    );
 }

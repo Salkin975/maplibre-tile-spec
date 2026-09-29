@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2](https://github.com/maplibre/maplibre-tile-spec/compare/python-mlt-v0.2.1...python-mlt-v0.2.2) - 2026-09-27
+
+### Other
+
+- updated the following local packages: mlt-core
+
+## [0.2.1](https://github.com/maplibre/maplibre-tile-spec/compare/python-mlt-v0.2.0...python-mlt-v0.2.1) - 2026-09-27
+
+### Other
+
+- updated the following local packages: mlt-core
+
+## [0.2.0](https://github.com/maplibre/maplibre-tile-spec/compare/python-mlt-v0.1.38...python-mlt-v0.2.0) - 2026-09-25
+
+### Other
+
+- *(rust)* [**breaking**] split Layer01 and Layer02 ([#1771](https://github.com/maplibre/maplibre-tile-spec/pull/1771))
+
+## [0.1.38](https://github.com/maplibre/maplibre-tile-spec/compare/python-mlt-v0.1.37...python-mlt-v0.1.38) - 2026-09-23
+
+### Other
+
+- updated the following local packages: mlt-core
+
+## [0.1.37](https://github.com/maplibre/maplibre-tile-spec/compare/python-mlt-v0.1.36...python-mlt-v0.1.37) - 2026-09-22
+
+### Other
+
+- updated the following local packages: mlt-core
+
 ## [0.1.36](https://github.com/maplibre/maplibre-tile-spec/compare/python-mlt-v0.1.35...python-mlt-v0.1.36) - 2026-09-21
 
 ### Other
