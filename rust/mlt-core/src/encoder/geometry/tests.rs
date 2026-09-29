@@ -1,10 +1,11 @@
 use std::collections::HashSet;
 
 use geo_types::{Coord, Geometry, LineString, Point, Polygon, point, wkt};
+use insta::assert_debug_snapshot;
 use pretty_assertions::assert_eq;
 use rstest::rstest;
 
-use crate::decoder::RawGeometry;
+use crate::decoder::{GeoTypes, RawGeometry, RawStream};
 use crate::encoder::model::EncoderConfig;
 use crate::encoder::{Codecs, Encoder, ExplicitEncoder, IntEncoder, VertexBufferType};
 use crate::test_helpers::{assert_empty, dec, parser};
@@ -47,7 +48,7 @@ fn automatic_optimization_distinct_points_picks_vec2() {
             .map(|i| point! { x: i, y: i }.into())
             .collect::<Vec<_>>(),
     );
-    insta::assert_debug_snapshot!(auto_mode_streams(&decoded), @r"
+    assert_debug_snapshot!(auto_mode_streams(&decoded), @r"
     [
         Data(
             Vertex,
@@ -64,7 +65,7 @@ fn automatic_optimization_repeated_points_beyond_curve_range_picks_vec2() {
     let decoded = push_geoms(
         &std::iter::repeat_n(point! { x: 2_686_984, y: 0 }.into(), 20).collect::<Vec<_>>(),
     );
-    insta::assert_debug_snapshot!(auto_mode_streams(&decoded), @r"
+    assert_debug_snapshot!(auto_mode_streams(&decoded), @r"
     [
         Data(
             Vertex,
@@ -84,7 +85,7 @@ fn automatic_optimization_repeated_points_picks_dict() {
     // or the heuristic ever changes it should fail loudly.
     let decoded =
         push_geoms(&std::iter::repeat_n(point! { x: 5, y: 5 }.into(), 20).collect::<Vec<_>>());
-    insta::assert_debug_snapshot!(auto_mode_streams(&decoded), @r"
+    assert_debug_snapshot!(auto_mode_streams(&decoded), @r"
     [
         Data(
             Vertex,
@@ -110,7 +111,7 @@ fn encoded_output_always_has_meta_stream() {
     let raw = assert_empty(RawGeometry::from_bytes(enc.data(), &mut parser()));
 
     assert_eq!(
-        raw.meta.meta.stream_type,
+        v1_types_stream(&raw).meta.stream_type,
         StreamType::Length(LengthType::VarBinary),
         "meta (VarBinary) stream must always be present"
     );
@@ -175,7 +176,7 @@ fn repeated_multipoint() -> GeometryValues {
 #[test]
 fn forced_vec2_streams() {
     let streams = forced_vertex_strategy_streams(&repeated_multipoint(), VertexBufferType::Vec2);
-    insta::assert_debug_snapshot!(streams, @r"
+    assert_debug_snapshot!(streams, @r"
     [
         Data(
             Vertex,
@@ -193,7 +194,7 @@ fn forced_vec2_streams() {
 #[test]
 fn forced_morton_streams() {
     let streams = forced_vertex_strategy_streams(&repeated_multipoint(), VertexBufferType::Morton);
-    insta::assert_debug_snapshot!(streams, @r"
+    assert_debug_snapshot!(streams, @r"
     [
         Data(
             Morton,
@@ -214,7 +215,7 @@ fn forced_morton_streams() {
 #[test]
 fn forced_hilbert_streams() {
     let streams = forced_vertex_strategy_streams(&repeated_multipoint(), VertexBufferType::Hilbert);
-    insta::assert_debug_snapshot!(streams, @r"
+    assert_debug_snapshot!(streams, @r"
     [
         Data(
             Vertex,
@@ -373,10 +374,64 @@ fn a_degenerate_geometry_survives_a_v1_roundtrip(
     assert_eq!(v1_geojson_roundtrip(&geoms, tessellate), geoms);
 }
 
+fn two_squares() -> Vec<Geometry<i32>> {
+    vec![
+        wkt!(POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))).into(),
+        wkt!(POLYGON((20 20, 30 20, 30 30, 20 30, 20 20))).into(),
+    ]
+}
+
+fn squares_after_a_point_and_a_line() -> Vec<Geometry<i32>> {
+    vec![
+        wkt!(POINT(1 2)).into(),
+        wkt!(LINESTRING(0 0, 5 5, 9 0)).into(),
+        wkt!(POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))).into(),
+        wkt!(MULTIPOLYGON(((20 20, 30 20, 30 30, 20 30, 20 20)), ((40 40, 50 40, 50 50, 40 50, 40 40)))).into(),
+    ]
+}
+
+#[test]
+fn triangle_indices_count_from_the_layer_first_vertex() {
+    let staged = push_geoms_tessellated(&two_squares());
+    assert_eq!(staged.triangle_offsets(), Some(&[0, 2, 4][..]));
+    assert_eq!(
+        staged.index_buffer(),
+        Some(&[2, 3, 0, 0, 1, 2, 6, 7, 4, 4, 5, 6][..])
+    );
+}
+
+#[rstest]
+#[case::two_squares(two_squares())]
+#[case::squares_after_a_point_and_a_line(squares_after_a_point_and_a_line())]
+fn triangle_indices_survive_a_v1_roundtrip(#[case] geoms: Vec<Geometry<i32>>) {
+    let staged = push_geoms_tessellated(&geoms);
+    let mut enc = Encoder::default();
+    let mut codecs = Codecs::default();
+    staged
+        .clone()
+        .write_to(&mut enc, &mut codecs)
+        .expect("encode failed");
+    let raw = assert_empty(RawGeometry::from_bytes(enc.data(), &mut parser()));
+    let out = raw.decode(&mut dec()).unwrap();
+    assert_eq!(
+        (out.triangle_offsets(), out.index_buffer()),
+        (staged.triangle_offsets(), staged.index_buffer())
+    );
+}
+
+/// The types stream of a v1 section, which always spells its types out.
+fn v1_types_stream<'a>(raw: &'a RawGeometry<'a>) -> &'a RawStream<'a> {
+    match &raw.types {
+        GeoTypes::Stream(stream) => stream,
+        #[cfg(feature = "unstable-v2")]
+        GeoTypes::Uniform { .. } => panic!("a v1 geometry section always writes a types stream"),
+    }
+}
+
 /// Collect all stream types present in the encoded geometry bytes (meta + items).
 fn encoded_stream_types(data: &[u8]) -> HashSet<StreamType> {
     let raw = assert_empty(RawGeometry::from_bytes(data, &mut parser()));
-    std::iter::once(raw.meta.meta.stream_type)
+    std::iter::once(v1_types_stream(&raw).meta.stream_type)
         .chain(raw.items.iter().map(|s| s.meta.stream_type))
         .collect()
 }

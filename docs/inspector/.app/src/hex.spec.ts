@@ -1,19 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
-  type AnnotateMode,
   ancestors,
   bandTint,
   byteOwners,
   defaultView,
   fadedFrom,
   fitColumns,
-  hex8,
+  hexOffset,
   leafStep,
   regionBands,
   regionDotPath,
   regionPath,
-  showsDecoded,
-  showsSections,
   tipPlacement,
   wholeIndices,
 } from "./hex.ts";
@@ -22,16 +19,22 @@ import { region, tinyTree } from "./testing.ts";
 const tree = tinyTree();
 
 describe("fitColumns", () => {
-  it("fits 16 columns into the docs page's 61rem cap", () => {
-    expect(fitColumns(976)).toBe(16);
+  it("fits 16 columns into the map pane of the docs page's 61rem cap", () => {
+    expect(fitColumns(624)).toBe(16);
   });
 
-  it("fits 24 columns into an uncapped page", () => {
-    expect(fitColumns(1300)).toBe(24);
+  it("fits 28 columns into the map pane of an uncapped page", () => {
+    expect(fitColumns(948)).toBe(28);
   });
 
-  it("fits 40 columns into a standalone 1700px window", () => {
-    expect(fitColumns(1700)).toBe(40);
+  it("fits 40 columns into the map pane of a standalone 1700px window", () => {
+    expect(fitColumns(1348)).toBe(40);
+  });
+
+  it("leaves under one column of slack, so the bytes reach the gutter", () => {
+    const pane = 900;
+    const used = 84 + fitColumns(pane) * 30.3;
+    expect(pane - used).toBeLessThan(4 * 30.3);
   });
 
   it("clamps a narrow pane to eight columns", () => {
@@ -127,6 +130,46 @@ describe("regionPath", () => {
   it("is empty for a top-level container", () => {
     expect(regionPath(tree.regions, 0)).toEqual([]);
   });
+
+  it("skips the column data and stream header groupings", () => {
+    const regions = [
+      region({ offset: 0, len: 4, label: "layer[0]", container: true }),
+      region({
+        offset: 0,
+        len: 4,
+        label: "column data",
+        depth: 1,
+        container: true,
+      }),
+      region({
+        offset: 0,
+        len: 4,
+        label: "column[1] Geometry",
+        depth: 2,
+        container: true,
+      }),
+      region({
+        offset: 0,
+        len: 4,
+        label: "stream[2]",
+        depth: 3,
+        container: true,
+      }),
+      region({
+        offset: 0,
+        len: 2,
+        label: "header",
+        depth: 4,
+        container: true,
+      }),
+      region({ offset: 0, len: 1, label: "stream_type", depth: 5 }),
+    ];
+    expect(regionPath(regions, 5)).toEqual([
+      "layer[0]",
+      "column[1] Geometry",
+      "stream[2]",
+    ]);
+  });
 });
 
 describe("regionDotPath", () => {
@@ -145,30 +188,63 @@ describe("tipPlacement", () => {
 
   it("sits below and right of the pointer", () => {
     expect(tipPlacement({ x: 300, y: 400 }, tip, viewport)).toEqual({
-      x: 314,
-      y: 414,
+      left: "314px",
+      top: "414px",
+      maxHeight: "372px",
     });
   });
 
   it("stops short of the right edge", () => {
-    expect(tipPlacement({ x: 980, y: 400 }, tip, viewport).x).toBe(786);
+    expect(tipPlacement({ x: 980, y: 400 }, tip, viewport).left).toBe("786px");
   });
 
   it("flips above a pointer near the bottom edge", () => {
-    expect(tipPlacement({ x: 300, y: 760 }, tip, viewport).y).toBe(646);
+    expect(tipPlacement({ x: 300, y: 760 }, tip, viewport)).toEqual({
+      left: "314px",
+      bottom: "54px",
+      maxHeight: "732px",
+    });
+  });
+
+  it("hangs a flipped tip from its foot, which a late height cannot then move", () => {
+    const short = tipPlacement({ x: 300, y: 760 }, tip, viewport);
+    const grown = tipPlacement(
+      { x: 300, y: 760 },
+      { width: 200, height: 400 },
+      viewport,
+    );
+    expect(grown.bottom).toBe(short.bottom);
+  });
+
+  /** The cap must never decide the side, or a tip walked down the screen would never flip. */
+  it("flips on the height a tip wants, not the height a cap would leave it", () => {
+    const at = { x: 300, y: 700 };
+    expect(tipPlacement(at, { width: 200, height: 200 }, viewport).bottom).toBe(
+      "114px",
+    );
+    // 72px is the room below, which is exactly what the cap there would have left it.
+    expect(tipPlacement(at, { width: 200, height: 72 }, viewport).top).toBe(
+      "714px",
+    );
+  });
+
+  it("stays below a pointer at the top, where squeezing in above would leave nothing", () => {
+    expect(
+      tipPlacement({ x: 300, y: 30 }, { width: 200, height: 900 }, viewport),
+    ).toEqual({ left: "314px", top: "44px", maxHeight: "742px" });
   });
 
   it("keeps a tip wider than the viewport at the left edge", () => {
     expect(
       tipPlacement({ x: 300, y: 400 }, { width: 2000, height: 100 }, viewport)
-        .x,
-    ).toBe(14);
+        .left,
+    ).toBe("14px");
   });
 
-  it("keeps a tip taller than the viewport at the top edge", () => {
+  it("caps a tip taller than the room it has, rather than running off the edge", () => {
     expect(
-      tipPlacement({ x: 300, y: 400 }, { width: 200, height: 900 }, viewport).y,
-    ).toBe(14);
+      tipPlacement({ x: 300, y: 500 }, { width: 200, height: 900 }, viewport),
+    ).toEqual({ left: "314px", bottom: "314px", maxHeight: "472px" });
   });
 });
 
@@ -180,46 +256,17 @@ describe("ancestors", () => {
 
 describe("fadedFrom", () => {
   it("never fades metadata", () => {
-    expect(fadedFrom(tree.regions[1], defaultView())).toBe(
-      Number.POSITIVE_INFINITY,
-    );
+    expect(fadedFrom(tree.regions[1])).toBe(Number.POSITIVE_INFINITY);
   });
 
   it("fades a blob past its first byte", () => {
-    expect(fadedFrom(tree.regions[4], defaultView())).toBe(4);
-  });
-
-  it("fades a whole blob that the data knob hides", () => {
-    expect(
-      fadedFrom(tree.regions[4], { ...defaultView(), annotate: "hidden" }),
-    ).toBe(3);
-  });
-
-  it("fades the raw bytes the data knob replaces with decoded values", () => {
-    expect(
-      fadedFrom(tree.regions[4], { ...defaultView(), annotate: "decoded" }),
-    ).toBe(3);
+    expect(fadedFrom(tree.regions[4])).toBe(4);
   });
 });
 
-const MODES: AnnotateMode[] = ["sections", "both", "blob", "decoded", "hidden"];
-
-describe("the annotate knob", () => {
-  it("asks for decoded values everywhere but blob and hidden", () => {
-    expect(
-      MODES.filter((annotate) => showsDecoded({ ...defaultView(), annotate })),
-    ).toEqual(["sections", "both", "decoded"]);
-  });
-
-  it("tints the sections in the one mode named for them", () => {
-    expect(
-      MODES.filter((annotate) => showsSections({ ...defaultView(), annotate })),
-    ).toEqual(["sections"]);
-  });
-
-  it("starts on both, which tints nothing", () => {
-    expect(defaultView().annotate).toBe("both");
-    expect(showsSections(defaultView())).toBe(false);
+describe("defaultView", () => {
+  it("starts with the sections untinted", () => {
+    expect(defaultView().colorful).toBe(false);
   });
 });
 
@@ -249,8 +296,16 @@ describe("leafStep", () => {
   });
 });
 
-describe("hex8", () => {
-  it("pads an offset to eight digits", () => {
-    expect(hex8(0x2a)).toBe("0000002a");
+describe("hexOffset", () => {
+  it("pads an offset to four digits", () => {
+    expect(hexOffset(0x2a, 0x100)).toBe("002a");
+  });
+
+  it("keeps four digits for a tile of exactly 64 KiB", () => {
+    expect(hexOffset(0x2a, 0x10000)).toBe("002a");
+  });
+
+  it("widens every offset of a tile past 64 KiB", () => {
+    expect(hexOffset(0x2a, 0x10001)).toBe("0002a");
   });
 });

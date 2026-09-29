@@ -4,7 +4,8 @@ use mlt_core::{Decoder, Layer, MltError, Parser, TileLayer};
 /// Encode `staged` with `cfg`, then parse and decode it back to a row-oriented [`TileLayer`].
 ///
 /// Returns `None` when the wire version cannot represent the layer, e.g. a v2-only
-/// column under a v1 config, or a stream whose wanted encoding has no header yet.
+/// column under a v1 config, an extent only v1 can hold, or a stream whose wanted
+/// encoding has no header yet.
 /// Every other encode failure is a bug and panics.
 pub fn encode_decode(staged: StagedLayer, cfg: EncoderConfig) -> Option<TileLayer> {
     let bytes = encode(staged, cfg)?;
@@ -23,7 +24,9 @@ pub fn encode(staged: StagedLayer, cfg: EncoderConfig) -> Option<Vec<u8>> {
             MltError::NotImplemented(_)
             | MltError::MValuesNeedV2(_)
             | MltError::MValuesNeedVertexCounts(_)
-            | MltError::NestedNeedsV2(_),
+            | MltError::NestedNeedsV2(_)
+            | MltError::EightBitNeedsV2(_)
+            | MltError::UnsupportedExtent02(_),
         ) => None,
         Err(e) => panic!("encode should not fail: {e}"),
     }
@@ -38,10 +41,9 @@ pub fn decode(bytes: &[u8], tag: u8) -> TileLayer {
     let layer = layers.remove(0);
     assert_eq!(actual_tag(&layer), tag, "encoder wrote the wrong layer tag");
     layer
-        .into_layer01()
-        .expect("layer01 representation")
         .into_tile(&mut Decoder::default())
         .expect("into_tile should not fail")
+        .expect("a known layer tag")
 }
 
 pub fn expected_tag(cfg: EncoderConfig) -> u8 {

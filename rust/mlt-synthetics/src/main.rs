@@ -14,6 +14,8 @@
 //! * `fpf` - uses `FastPFor` compression
 //! * `plain` - `PhysicalLevelTechnique::NONE`, i.e. fixed-width little-endian ints
 //! * `tes` - includes tessellation triangles stream
+//! * `tri` - stores only the tessellation triangles, without the polygon outlines.
+//!   A v2-only layout, so a `*_tri` fixture has no v1 sibling.
 //! * `fs` - forces normally-empty streams to still be written, as the Java encoder used to do
 //! * `bp` - bit-packed dictionary codes, i.e. every code in the same number of bits.
 //!   A v2-only physical layout, so the v1 sibling of each `*_bp*` fixture holds the
@@ -175,6 +177,10 @@ fn generate_geometry(w: &mut SynthWriter) {
         .tessellate()
         .geo(poly1())
         .write(w, "poly_fpf_tes");
+    geo_varint()
+        .triangles_only()
+        .geo(poly1())
+        .write(w, "poly_tri");
 
     geo_varint()
         .geo(poly_collinear())
@@ -197,6 +203,10 @@ fn generate_geometry(w: &mut SynthWriter) {
         .tessellate()
         .geo(poly_self_intersect())
         .write(w, "poly_self_intersect_fpf_tes");
+    geo_varint()
+        .triangles_only()
+        .geo(poly_self_intersect())
+        .write(w, "poly_self_intersect_tri");
 
     geo_varint()
         .parts_ring(E::rle_varint())
@@ -216,6 +226,10 @@ fn generate_geometry(w: &mut SynthWriter) {
         .tessellate()
         .geo(poly1h())
         .write(w, "poly_hole_fpf_tes");
+    geo_varint()
+        .triangles_only()
+        .geo(poly1h())
+        .write(w, "poly_hole_tri");
 
     geo_varint()
         .parts_ring(E::varint())
@@ -235,6 +249,10 @@ fn generate_geometry(w: &mut SynthWriter) {
         .tessellate()
         .geo(poly_hole_touching())
         .write(w, "poly_hole_touching_fpf_tes");
+    geo_varint()
+        .triangles_only()
+        .geo(poly_hole_touching())
+        .write(w, "poly_hole_touching_tri");
 
     geo_varint()
         .rings(E::rle_varint())
@@ -254,6 +272,10 @@ fn generate_geometry(w: &mut SynthWriter) {
         .tessellate()
         .geo(MultiPolygon(vec![poly1(), poly2()]))
         .write(w, "poly_multi_tes");
+    geo_varint()
+        .triangles_only()
+        .geo(MultiPolygon(vec![poly1(), poly2()]))
+        .write(w, "poly_multi_tri");
     // v1-only for the same reason as `poly_multi_fpf`.
     geo_fastpfor()
         .rings(E::rle_fastpfor())
@@ -339,9 +361,11 @@ fn generate_geometry(w: &mut SynthWriter) {
 
     // Regression test for https://github.com/maplibre/maplibre-gl-js/issues/7659:
     // rust encoder and ts decoder disagreed on single-element geometry streams.
+    // v1-only: every feature here is a MultiLineString, so v2 writes no types stream to pin.
     geo_varint()
         .meta(E::delta_varint())
         .no_rings(E::rle_varint())
+        .no_v2()
         .geo(MultiLineString(vec![line1(), line2()]))
         .write(w, "multiline_meta_delta-rust");
 
@@ -359,6 +383,7 @@ fn generate_geometry(w: &mut SynthWriter) {
 fn write_mix(w: &mut SynthWriter, current: &[usize]) {
     let mut builder = geo_varint();
     let mut builder_t = Some(geo_varint().tessellate());
+    let mut builder_tri = Some(geo_varint().triangles_only());
     let mut builder_t_with_lines = Some(geo_varint().tessellate());
     let mut has_polygon = false;
     let mut has_line = false;
@@ -384,6 +409,9 @@ fn write_mix(w: &mut SynthWriter, current: &[usize]) {
                 builder_t = None;
             }
         }
+        if let Some(bldr) = builder_tri {
+            builder_tri = is_polygon.then(|| bldr.geo(mix_type.1.clone()));
+        }
         if let Some(b) = builder_t_with_lines {
             if is_polygon || is_line {
                 builder_t_with_lines = Some(b.geo(mix_type.1.clone()));
@@ -391,6 +419,9 @@ fn write_mix(w: &mut SynthWriter, current: &[usize]) {
                 builder_t_with_lines = None;
             }
         }
+    }
+    if let Some(bldr) = builder_tri {
+        bldr.write(w, format!("{name}_tri"));
     }
     if let Some(bldr) = builder_t {
         bldr.write(w, format!("{name}_tes"));
@@ -432,15 +463,21 @@ fn generate_mixed(w: &mut SynthWriter) {
 }
 
 fn generate_extent(w: &mut SynthWriter) {
-    for e in [512_i32, 4096, 131_072, 1_073_741_824] {
-        geo_varint()
+    for e in [32_i32, 512, 4096, 32_768, 131_072, 1_073_741_824] {
+        let v2_legal_extents = 64..=2_097_152;
+        let plain = geo_varint()
             .extent(e.cast_unsigned())
-            .geo(line![c(0_i32, 0), c(e - 1, e - 1)])
-            .write(w, format!("extent_{e}"));
-        geo_varint()
+            .geo(line![c(0_i32, 0), c(e - 1, e - 1)]);
+        let buffered = geo_varint()
             .extent(e.cast_unsigned())
-            .geo(line![c(-42_i32, -42), c(e + 42, e + 42)])
-            .write(w, format!("extent_buf_{e}"));
+            .geo(line![c(-42_i32, -42), c(e + 42, e + 42)]);
+        if v2_legal_extents.contains(&e) {
+            plain.write(w, format!("extent_{e}"));
+            buffered.write(w, format!("extent_buf_{e}"));
+        } else {
+            plain.no_v2().write(w, format!("extent_{e}"));
+            buffered.no_v2().write(w, format!("extent_buf_{e}"));
+        }
     }
 }
 
@@ -591,6 +628,112 @@ fn generate_properties(w: &mut SynthWriter) {
         .write(w, "prop_bool_null_false");
 
     let e_int = E::varint();
+    p0().no_v1()
+        .add_prop(e_int, P::i8("val", vec![42]))
+        .write(w, "prop_i8_np");
+    p0().no_v1()
+        .add_prop(e_int, P::opt_i8("val", vec![Some(42)]))
+        .write(w, "prop_i8");
+    p0().no_v1()
+        .add_prop(E::delta_varint(), P::i8("val", vec![42]))
+        .write(w, "prop_i8_delta_np");
+    p0().no_v1()
+        .add_prop(E::delta_varint(), P::opt_i8("val", vec![Some(42)]))
+        .write(w, "prop_i8_delta");
+    p0().no_v1()
+        .add_prop(E::rle_varint(), P::i8("val", vec![42]))
+        .write(w, "prop_i8_rle_np");
+    p0().no_v1()
+        .add_prop(E::rle_varint(), P::opt_i8("val", vec![Some(42)]))
+        .write(w, "prop_i8_rle-rust");
+    p0().no_v1()
+        .add_prop(E::delta_rle_varint(), P::i8("val", vec![42]))
+        .write(w, "prop_i8_delta_rle_np");
+    p0().no_v1()
+        .add_prop(E::delta_rle_varint(), P::opt_i8("val", vec![Some(42)]))
+        .write(w, "prop_i8_delta_rle-rust");
+    p0().no_v1()
+        .add_prop(e_int, P::i8("val", vec![-42]))
+        .write(w, "prop_i8_neg_np");
+    p0().no_v1()
+        .add_prop(e_int, P::opt_i8("val", vec![Some(-42)]))
+        .write(w, "prop_i8_neg");
+    p0().no_v1()
+        .add_prop(E::plain(), P::i8("val", vec![-0x12]))
+        .write(w, "prop_i8_plain_np-rust");
+    p0().no_v1()
+        .add_prop(e_int, P::i8("val", vec![i8::MIN]))
+        .write(w, "prop_i8_min_np");
+    p0().no_v1()
+        .add_prop(e_int, P::opt_i8("val", vec![Some(i8::MIN)]))
+        .write(w, "prop_i8_min");
+    p0().no_v1()
+        .add_prop(e_int, P::i8("val", vec![i8::MAX]))
+        .write(w, "prop_i8_max_np");
+    p0().no_v1()
+        .add_prop(e_int, P::opt_i8("val", vec![Some(i8::MAX)]))
+        .write(w, "prop_i8_max");
+    geo_varint_with_rle()
+        .no_v1()
+        .geos([P0, P0])
+        .add_prop(e_int, P::opt_i8("val", vec![Some(42), None]))
+        .write(w, "prop_i8_val_null");
+    geo_varint_with_rle()
+        .no_v1()
+        .geos([P0, P0])
+        .add_prop(e_int, P::opt_i8("val", vec![None, Some(42)]))
+        .write(w, "prop_i8_null_val");
+
+    p0().no_v1()
+        .add_prop(e_int, P::u8("val", vec![42]))
+        .write(w, "prop_u8_np");
+    p0().no_v1()
+        .add_prop(e_int, P::opt_u8("val", vec![Some(42)]))
+        .write(w, "prop_u8");
+    p0().no_v1()
+        .add_prop(E::delta_varint(), P::u8("val", vec![42]))
+        .write(w, "prop_u8_delta_np");
+    p0().no_v1()
+        .add_prop(E::delta_varint(), P::opt_u8("val", vec![Some(42)]))
+        .write(w, "prop_u8_delta");
+    p0().no_v1()
+        .add_prop(E::rle_varint(), P::u8("val", vec![42]))
+        .write(w, "prop_u8_rle_np");
+    p0().no_v1()
+        .add_prop(E::rle_varint(), P::opt_u8("val", vec![Some(42)]))
+        .write(w, "prop_u8_rle-rust");
+    p0().no_v1()
+        .add_prop(E::delta_rle_varint(), P::u8("val", vec![42]))
+        .write(w, "prop_u8_delta_rle_np");
+    p0().no_v1()
+        .add_prop(E::delta_rle_varint(), P::opt_u8("val", vec![Some(42)]))
+        .write(w, "prop_u8_delta_rle-rust");
+    p0().no_v1()
+        .add_prop(E::plain(), P::u8("val", vec![0x12]))
+        .write(w, "prop_u8_plain_np-rust");
+    p0().no_v1()
+        .add_prop(e_int, P::u8("val", vec![0]))
+        .write(w, "prop_u8_min_np");
+    p0().no_v1()
+        .add_prop(e_int, P::opt_u8("val", vec![Some(0)]))
+        .write(w, "prop_u8_min");
+    p0().no_v1()
+        .add_prop(e_int, P::u8("val", vec![u8::MAX]))
+        .write(w, "prop_u8_max_np");
+    p0().no_v1()
+        .add_prop(e_int, P::opt_u8("val", vec![Some(u8::MAX)]))
+        .write(w, "prop_u8_max");
+    geo_varint_with_rle()
+        .no_v1()
+        .geos([P0, P0])
+        .add_prop(e_int, P::opt_u8("val", vec![Some(42), None]))
+        .write(w, "prop_u8_val_null");
+    geo_varint_with_rle()
+        .no_v1()
+        .geos([P0, P0])
+        .add_prop(e_int, P::opt_u8("val", vec![None, Some(42)]))
+        .write(w, "prop_u8_null_val");
+
     p0().add_prop(e_int, P::i32("val", vec![42]))
         .write(w, "prop_i32_np");
     p0().add_prop(e_int, P::opt_i32("val", vec![Some(42)]))
@@ -954,6 +1097,7 @@ fn generate_properties(w: &mut SynthWriter) {
     generate_float_codecs(w);
     generate_props_str(w);
     generate_shared_presence(w);
+    generate_presence_codings(w);
     generate_shared_dictionaries(w);
 }
 
@@ -1552,6 +1696,73 @@ fn points(count: usize) -> Layer {
 /// One point per feature of a presence mask.
 fn masked_points(mask: &str) -> Layer {
     points(mask.len())
+}
+
+/// A mask of `len` features, present exactly where `present` says.
+fn mask_of(len: usize, present: impl Fn(usize) -> bool) -> String {
+    (0..len)
+        .map(|i| if present(i) { 'x' } else { '-' })
+        .collect()
+}
+
+/// One fixture per presence coding, each over a mask that coding stores smallest.
+///
+/// The three compete by size on every column, so a mask is what picks the coding:
+/// scattered bits over few features favor the bitmap, one block of present features
+/// favors runs, and a handful of present features spread over many favors indices.
+///
+/// v2 only: v1 has one way of storing presence and nothing here would vary it.
+fn generate_presence_codings(w: &mut SynthWriter) {
+    let e = E::varint();
+
+    // Eight features, every other one present. Runs would take a varint each and
+    // indices four, where the whole bitmap is one byte.
+    let scattered = mask_of(8, |i| i % 2 == 0);
+    masked_points(&scattered)
+        .no_v1()
+        .add_prop(e, P::opt_u32("val", masked(&scattered)))
+        .write(w, "presence_bitmap");
+
+    // One block of present features: three runs against a 25-byte bitmap.
+    let block = mask_of(200, |i| (50..150).contains(&i));
+    masked_points(&block)
+        .no_v1()
+        .add_prop(e, P::opt_u32("val", masked(&block)))
+        .write(w, "presence_runs");
+
+    // Two present features in three hundred: two gaps against a 38-byte bitmap.
+    let sparse = mask_of(300, |i| i == 100 || i == 250);
+    masked_points(&sparse)
+        .no_v1()
+        .add_prop(e, P::opt_u32("val", masked(&sparse)))
+        .write(w, "presence_indices");
+
+    // All three in one layer, which is what a column-by-column choice is for:
+    // a layer's columns do not agree on how their nulls are shaped.
+    masked_points(&block)
+        .no_v1()
+        .add_prop(
+            e,
+            P::opt_u32("bitmap", masked(&mask_of(200, |i| i % 2 == 0))),
+        )
+        .add_prop(e, P::opt_u32("runs", masked(&block)))
+        .add_prop(e, P::opt_u32("indices", masked(&mask_of(200, |i| i == 77))))
+        .add_prop(e, P::u32("always", vec![7; block.len()]))
+        .write(w, "presence_mixed");
+
+    // The same three codings again, this time on shared fields, which name their
+    // coding in a byte of their own rather than in a column's nibble.
+    for (name, mask) in [
+        ("presence_shared_bitmap", &scattered),
+        ("presence_shared_runs", &block),
+        ("presence_shared_indices", &sparse),
+    ] {
+        masked_points(mask)
+            .no_v1()
+            .add_prop(e, P::opt_u32("a", masked(mask)))
+            .add_prop(e, P::opt_u32("b", masked(mask)))
+            .write(w, name);
+    }
 }
 
 /// Columns that are null on exactly the same features.

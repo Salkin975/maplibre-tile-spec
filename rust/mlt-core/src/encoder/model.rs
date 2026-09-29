@@ -462,6 +462,9 @@ pub struct EncoderConfig {
     /// Code a nested struct's or map's row shapes instead of per-field presence or per-entry keys.
     #[cfg(feature = "unstable-v2")]
     allow_row_shapes: bool,
+    /// Let a tessellated all-polygon layer store its triangles without the outlines.
+    #[cfg(feature = "unstable-v2")]
+    allow_triangles_only: bool,
 }
 impl Default for EncoderConfig {
     fn default() -> Self {
@@ -484,6 +487,8 @@ impl Default for EncoderConfig {
             allow_row_shapes: false,
             #[cfg(feature = "unstable-v2")]
             allow_packed_dict_codes: false,
+            #[cfg(feature = "unstable-v2")]
+            allow_triangles_only: false,
         }
     }
 }
@@ -556,6 +561,15 @@ impl EncoderConfig {
         self
     }
 
+    /// Whether 8-bit integer columns stay 8-bit, which only v2 can express.
+    #[must_use]
+    pub fn allow_8bit_ints(self) -> bool {
+        #[cfg(feature = "unstable-v2")]
+        return self.wire_version != WireVersion::V01;
+        #[cfg(not(feature = "unstable-v2"))]
+        return false;
+    }
+
     /// Whether float columns may use a dictionary, which only v2 can express.
     #[cfg(feature = "unstable-v2")]
     #[must_use]
@@ -580,6 +594,22 @@ impl EncoderConfig {
     #[must_use]
     pub fn with_tessellation(mut self, enabled: bool) -> Self {
         self.tessellate = enabled;
+        self
+    }
+
+    /// Whether a tessellated layer may drop its outlines, which only v2 can express.
+    #[cfg(feature = "unstable-v2")]
+    #[must_use]
+    pub fn allow_triangles_only(self) -> bool {
+        self.allow_triangles_only && self.wire_version != WireVersion::V01
+    }
+
+    /// Let a tessellated layer of only polygons, with no m-values, store its triangles without the outlines.
+    /// Each of its polygons then decodes as the triangles it was cut into.
+    #[cfg(feature = "unstable-v2")]
+    #[must_use]
+    pub fn with_triangles_only(mut self, enabled: bool) -> Self {
+        self.allow_triangles_only = enabled;
         self
     }
 

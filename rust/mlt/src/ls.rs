@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::ffi::OsStr;
 use std::fs;
 use std::io::Write as _;
@@ -15,10 +15,11 @@ use mlt_core::geojson::FeatureCollection;
 use mlt_core::mvt::mvt_to_feature_collection;
 use mlt_core::wire::StatType::{DecodedDataSize, DecodedMetaSize, FeatureCount};
 use mlt_core::wire::{
-    Analyze as _, BoolLogical, DictionaryType, FloatLogical, IntLogical, LengthType,
-    LogicalEncoding, OffsetType, PhysicalEncoding, StreamMeta, StreamType, VertexLogical,
+    Analyze as _, BoolLogical, ColumnDecl, ColumnStorage, DictLayout, DictionaryType, FastPForKind,
+    FloatLogical, IntLogical, LengthType, LogicalEncoding, OffsetType, PhysicalEncoding,
+    StreamMeta, StreamType, StringLayout, VertexLogical,
 };
-use mlt_core::{Decoder, GeometryType, Parser};
+use mlt_core::{Decoder, GeometryType, Layer, ParsedLayer, Parser, PropKind};
 use rayon::iter::{IntoParallelRefIterator as _, ParallelIterator as _};
 use serde::Serialize;
 use size_format::SizeFormatterSI;
@@ -133,93 +134,215 @@ pub enum FileSortColumn {
 }
 
 /// Algorithm description for a file (MLT stream combo or protobuf for MVT).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum FileAlgorithm {
     Mlt(StreamType, PhysicalEncoding, StatLogicalCodec),
     Mvt,
 }
 
+/// Spec vocabulary for the wire enums.
+///
+/// These live here rather than as `Serialize` derives on the wire types themselves,
+/// which deliberately carry none so they do not become frozen public JSON API.
+/// Every token is the name the v2 spec uses, lowercased and hyphenated.
+fn stream_token(stream: StreamType) -> &'static str {
+    match stream {
+        StreamType::Present => "present",
+        StreamType::Data(v) => match v {
+            DictionaryType::None => "data",
+            DictionaryType::Single => "data[single]",
+            DictionaryType::Shared => "data[shared]",
+            DictionaryType::Vertex => "data[vertex]",
+            DictionaryType::Morton => "data[morton]",
+            DictionaryType::Fsst => "data[fsst]",
+        },
+        StreamType::Offset(v) => match v {
+            OffsetType::Vertex => "offset[vertex]",
+            OffsetType::Index => "offset[index]",
+            OffsetType::String => "offset[string]",
+            OffsetType::Key => "offset[key]",
+        },
+        StreamType::Length(v) => match v {
+            LengthType::VarBinary => "length[var-binary]",
+            LengthType::Geometries => "length[geometries]",
+            LengthType::Parts => "length[parts]",
+            LengthType::Rings => "length[rings]",
+            LengthType::Triangles => "length[triangles]",
+            LengthType::Symbol => "length[symbol]",
+            LengthType::Dictionary => "length[dictionary]",
+            #[cfg(feature = "unstable-v2")]
+            LengthType::Nested => "length[nested]",
+            // `mlt-core` resolves its features separately, so it may hand this
+            // build a nested length stream the match above cannot name.
+            #[cfg(not(feature = "unstable-v2"))]
+            #[allow(unreachable_patterns, reason = "reachable only when mlt-core has v2")]
+            _ => "length[nested]",
+        },
+    }
+}
+
+/// `None` for a stream that names no physical encoding, which JSON spells as `null`
+/// rather than as an empty string that would read as a value of its own.
+fn physical_token(physical: PhysicalEncoding) -> Option<&'static str> {
+    // `mlt-core` may carry v2-only encodings this build has no name for,
+    // since its features are resolved separately from this crate's.
+    #[cfg_attr(
+        not(feature = "unstable-v2"),
+        expect(
+            clippy::wildcard_enum_match_arm,
+            reason = "v2 encodings exist only when mlt-core has them"
+        )
+    )]
+    let token = match physical {
+        PhysicalEncoding::None => return None,
+        PhysicalEncoding::FastPFor(kind) => match kind {
+            FastPForKind::Block256Be => "fastpfor[256be]",
+            #[cfg(feature = "unstable-v2")]
+            FastPForKind::Block128Le => "fastpfor[128le]",
+            #[cfg(not(feature = "unstable-v2"))]
+            #[allow(unreachable_patterns, reason = "reachable only when mlt-core has v2")]
+            _ => "fastpfor[128le]",
+        },
+        PhysicalEncoding::VarInt => "varint",
+        #[cfg(feature = "unstable-v2")]
+        PhysicalEncoding::BitPacked => "bit-packed",
+        #[cfg(not(feature = "unstable-v2"))]
+        #[allow(
+            unreachable_patterns,
+            reason = "reachable only when mlt-core has v2, but this crate doesn't"
+        )]
+        _ => "unknown",
+    };
+    Some(token)
+}
+
+/// `None` for a stream stored as it is, matching [`physical_token`].
+fn logical_token(logical: StatLogicalCodec) -> Option<&'static str> {
+    Some(match logical {
+        StatLogicalCodec::None => return None,
+        StatLogicalCodec::Delta => "delta",
+        StatLogicalCodec::DeltaRle => "delta-rle",
+        StatLogicalCodec::Rle => "rle",
+        StatLogicalCodec::ComponentwiseDelta => "componentwise-delta",
+        StatLogicalCodec::Morton => "morton",
+        StatLogicalCodec::MortonDelta => "morton-delta",
+        StatLogicalCodec::MortonRle => "morton-rle",
+        StatLogicalCodec::Dict => "dict",
+        StatLogicalCodec::Alp => "alp",
+    })
+}
+
+/// A type paired with whether the column declares a presence field
+fn optionality_token(decl: ColumnDecl) -> &'static str {
+    match decl {
+        ColumnDecl::Id {
+            wide: false,
+            optional: false,
+        } => "id!",
+        ColumnDecl::Id {
+            wide: false,
+            optional: true,
+        } => "id?",
+        ColumnDecl::Id {
+            wide: true,
+            optional: false,
+        } => "id64!",
+        ColumnDecl::Id {
+            wide: true,
+            optional: true,
+        } => "id64?",
+        ColumnDecl::Value { kind, optional } => match (kind, optional) {
+            (PropKind::Bool, false) => "bool!",
+            (PropKind::Bool, true) => "bool?",
+            (PropKind::I8, false) => "i8!",
+            (PropKind::I8, true) => "i8?",
+            (PropKind::U8, false) => "u8!",
+            (PropKind::U8, true) => "u8?",
+            (PropKind::I32, false) => "i32!",
+            (PropKind::I32, true) => "i32?",
+            (PropKind::U32, false) => "u32!",
+            (PropKind::U32, true) => "u32?",
+            (PropKind::I64, false) => "i64!",
+            (PropKind::I64, true) => "i64?",
+            (PropKind::U64, false) => "u64!",
+            (PropKind::U64, true) => "u64?",
+            (PropKind::F32, false) => "f32!",
+            (PropKind::F32, true) => "f32?",
+            (PropKind::F64, false) => "f64!",
+            (PropKind::F64, true) => "f64?",
+            (PropKind::Str, false) => "str!",
+            (PropKind::Str, true) => "str?",
+        },
+    }
+}
+
+fn geometry_token(geometry: GeometryType) -> &'static str {
+    match geometry {
+        GeometryType::Point => "point",
+        GeometryType::LineString => "line-string",
+        GeometryType::Polygon => "polygon",
+        GeometryType::MultiPoint => "multi-point",
+        GeometryType::MultiLineString => "multi-line-string",
+        GeometryType::MultiPolygon => "multi-polygon",
+    }
+}
+
+fn string_layout_token(layout: StringLayout) -> &'static str {
+    match layout {
+        StringLayout::Plain => "plain",
+        StringLayout::Dict => "dict",
+        StringLayout::Fsst => "fsst",
+        StringLayout::FsstDict => "fsst-dict",
+    }
+}
+
+fn dict_layout_token(layout: DictLayout) -> &'static str {
+    match layout {
+        DictLayout::Plain => "plain",
+        #[cfg(feature = "unstable-v2")]
+        DictLayout::FrontCoded => "front-coded",
+        #[cfg(not(feature = "unstable-v2"))]
+        #[allow(unreachable_patterns, reason = "reachable only when mlt-core has v2")]
+        _ => "front-coded",
+    }
+}
+
+#[cfg(feature = "unstable-v2")]
+fn geom_layout_token(layout: mlt_core::wire::GeoLayout) -> &'static str {
+    use mlt_core::wire::GeoLayout as G;
+    match layout {
+        G::Points => "points",
+        G::PointsDict => "points-dict",
+        G::MultiPoints => "multi-points",
+        G::MultiPointsDict => "multi-points-dict",
+        G::Lines => "lines",
+        G::LinesDict => "lines-dict",
+        G::MultiLines => "multi-lines",
+        G::MultiLinesDict => "multi-lines-dict",
+        G::Polygons => "polygons",
+        G::PolygonsDict => "polygons-dict",
+        G::MultiPolygons => "multi-polygons",
+        G::MultiPolygonsDict => "multi-polygons-dict",
+        G::TessPolygons => "tess-polygons",
+        G::TessPolygonsWithOutlines => "tess-polygons-with-outlines",
+    }
+}
+
+/// The human-readable form, which only the table and the TUI's filter list read.
+///
+/// Unlike the JSON form this joins the three fields into one string, and carries no
+/// compatibility guarantee: a caller that needs the parts reads them from JSON.
 impl std::fmt::Display for FileAlgorithm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Mvt => write!(f, "Protobuf"),
-            Self::Mlt(phys_type, physical, logical) => {
-                let phys_type = match phys_type {
-                    StreamType::Present => "Present",
-                    StreamType::Data(v) => match v {
-                        DictionaryType::None => "RawData",
-                        DictionaryType::Vertex => "Vertex",
-                        DictionaryType::Single => "Single",
-                        DictionaryType::Shared => "Shared",
-                        DictionaryType::Morton => "Morton",
-                        DictionaryType::Fsst => "Fsst",
-                    },
-                    StreamType::Offset(v) => match v {
-                        OffsetType::Vertex => "VertexOffset",
-                        OffsetType::Index => "IndexOffset",
-                        OffsetType::String => "StringOffset",
-                        OffsetType::Key => "KeyOffset",
-                    },
-                    StreamType::Length(v) => match v {
-                        LengthType::VarBinary => "VarBinaryLen",
-                        LengthType::Geometries => "GeomLen",
-                        LengthType::Parts => "PartsLen",
-                        LengthType::Rings => "RingsLen",
-                        LengthType::Triangles => "TrianglesLen",
-                        LengthType::Symbol => "SymbolLen",
-                        LengthType::Dictionary => "DictLen",
-                        #[cfg(feature = "unstable-v2")]
-                        LengthType::Nested => "NestedLen",
-                        // `mlt-core` resolves its features separately, so it may hand this
-                        // build a nested length stream the match above cannot name.
-                        #[cfg(not(feature = "unstable-v2"))]
-                        #[allow(
-                            unreachable_patterns,
-                            reason = "reachable only when mlt-core has v2"
-                        )]
-                        _ => "NestedLen",
-                    },
-                };
-                // `mlt-core` may carry v2-only encodings this build has no name for,
-                // since its features are resolved separately from this crate's.
-                #[cfg_attr(
-                    not(feature = "unstable-v2"),
-                    expect(
-                        clippy::wildcard_enum_match_arm,
-                        reason = "v2 encodings exist only when mlt-core has them"
-                    )
-                )]
-                let physical = match physical {
-                    PhysicalEncoding::None => "",
-                    PhysicalEncoding::FastPFor(_) => "FastPFOR",
-                    PhysicalEncoding::VarInt => "VarInt",
-                    #[cfg(feature = "unstable-v2")]
-                    PhysicalEncoding::BitPacked => "BitPacked",
-                    #[cfg(not(feature = "unstable-v2"))]
-                    #[allow(
-                        unreachable_patterns,
-                        reason = "reachable only when mlt-core has v2, but this crate doesn't"
-                    )]
-                    _ => "Unknown",
-                };
-                let logical = match logical {
-                    StatLogicalCodec::None => "",
-                    StatLogicalCodec::Delta => "Delta",
-                    StatLogicalCodec::DeltaRle => "DeltaRle",
-                    StatLogicalCodec::Rle => "Rle",
-                    StatLogicalCodec::ComponentwiseDelta => "CwDelta",
-                    StatLogicalCodec::Morton => "Morton",
-                    StatLogicalCodec::MortonDelta => "MortonDelta",
-                    StatLogicalCodec::MortonRle => "MortonRle",
-                    StatLogicalCodec::Dict => "Dict",
-                    StatLogicalCodec::Alp => "ALP",
-                };
-                write!(f, "{phys_type}")?;
-                if !physical.is_empty() {
-                    write!(f, "-{physical}")?;
+            Self::Mvt => write!(f, "protobuf"),
+            Self::Mlt(stream, physical, logical) => {
+                write!(f, "{}", stream_token(*stream))?;
+                if let Some(physical) = physical_token(*physical) {
+                    write!(f, "/{physical}")?;
                 }
-                if !logical.is_empty() {
-                    write!(f, "-{logical}")?;
+                if let Some(logical) = logical_token(*logical) {
+                    write!(f, "/{logical}")?;
                 }
                 Ok(())
             }
@@ -232,7 +355,20 @@ impl Serialize for FileAlgorithm {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(&self.to_string())
+        use serde::ser::SerializeStruct as _;
+        let mut row = serializer.serialize_struct("FileAlgorithm", 3)?;
+        let (stream, physical, logical) = match self {
+            Self::Mvt => ("protobuf", None, None),
+            Self::Mlt(stream, physical, logical) => (
+                stream_token(*stream),
+                physical_token(*physical),
+                logical_token(*logical),
+            ),
+        };
+        row.serialize_field("stream", stream)?;
+        row.serialize_field("physical", &physical)?;
+        row.serialize_field("logical", &logical)?;
+        row.end()
     }
 }
 
@@ -242,6 +378,76 @@ pub const NA: &str = "-";
 #[must_use]
 pub fn na(v: Option<String>) -> String {
     v.unwrap_or_else(|| NA.to_string())
+}
+
+/// The filter vocabulary a tile answers to, one sorted array of strings per axis.
+///
+/// Every value is spelled as the v2 spec names it, lowercased and hyphenated, so a
+/// caller can show them as they are. `geometry` restates what `geometries` already
+/// holds: that keeps the shape its own consumers need, while this is the one flat
+/// surface a facet filter reads.
+///
+/// TODO: a `presence` axis (bitmap / runs / indices / shared) belongs here, but
+/// `RawPresence` collapses `Runs` and `Indices` into one variant and does not record
+/// whether a bitfield was inline or shared, so the coding is lost during parsing.
+/// Reporting it needs the coding retained in `mlt-core`'s v2 parse path first.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Facets {
+    /// The tile extent of each layer, in coordinate units. The one axis whose values
+    /// are measured rather than named, so the only one that owns its strings.
+    pub extent: BTreeSet<String>,
+    /// The geometry types the layers hold.
+    pub geometry: BTreeSet<&'static str>,
+    /// The geometry section layout each layer was written with. v2 only.
+    pub geom_layout: BTreeSet<&'static str>,
+    /// Each feature-scoped column as a type paired with its nullability, `i32!` or
+    /// `i32?`, the id column included.
+    pub data_type: BTreeSet<&'static str>,
+    /// The data types carried by m-value columns, which run over vertices rather than
+    /// features and so count on their own.
+    pub m_value: BTreeSet<&'static str>,
+    /// How the string columns store their values.
+    pub str_layout: BTreeSet<&'static str>,
+    /// How the dictionary blobs are laid out.
+    pub dict_layout: BTreeSet<&'static str>,
+    /// The kinds of stream present, unpaired from their encodings.
+    pub stream_type: BTreeSet<&'static str>,
+    /// The physical encodings present, unpaired from the streams carrying them.
+    pub physical: BTreeSet<&'static str>,
+    /// The logical encodings present, unpaired from the streams carrying them.
+    pub logical: BTreeSet<&'static str>,
+}
+
+impl Facets {
+    fn add_algorithm(&mut self, algorithm: FileAlgorithm) {
+        let FileAlgorithm::Mlt(stream, physical, logical) = algorithm else {
+            return;
+        };
+        self.stream_type.insert(stream_token(stream));
+        if let Some(physical) = physical_token(physical) {
+            self.physical.insert(physical);
+        }
+        if let Some(logical) = logical_token(logical) {
+            self.logical.insert(logical);
+        }
+    }
+
+    fn add_decl(&mut self, decl: ColumnDecl) {
+        // Type and nullability in one token: chips are AND-ed, so a bare type and a
+        // separate nullability chip could not say "an optional i32" from "an i32 and,
+        // separately, something optional".
+        self.data_type.insert(optionality_token(decl));
+    }
+
+    fn add_storage(&mut self, storage: ColumnStorage) {
+        if let Some(layout) = storage.string {
+            self.str_layout.insert(string_layout_token(layout));
+        }
+        if let Some(layout) = storage.dictionary {
+            self.dict_layout.insert(dict_layout_token(layout));
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -256,13 +462,16 @@ pub struct MltFileInfo {
     pub gzip_pct: Option<f64>,
     pub layers: usize,
     pub features: usize,
+    /// What the tile holds, as flags: the data types of its property and m-value
+    /// columns, plus `m_values` when it has any.
+    pub content: BTreeSet<&'static str>,
     pub streams: Option<usize>,
-    pub algorithms: HashSet<FileAlgorithm>,
-    pub geometries: HashSet<GeometryType>,
+    pub algorithms: BTreeSet<FileAlgorithm>,
+    pub geometries: BTreeSet<GeometryType>,
     pub matches_json: Option<bool>,
+    /// The flat per-axis vocabulary a facet filter reads.
+    pub facets: Facets,
 }
-
-impl MltFileInfo {}
 
 impl MltFileInfo {
     #[must_use]
@@ -594,29 +803,72 @@ pub fn analyze_mlt_buffer(buffer: &[u8], path: &Path, flags: LsFlags) -> AnyResu
 
     let mut stream_count = 0;
     let mut algorithms: HashSet<StreamStat> = HashSet::new();
+    let mut facets = Facets::default();
+    // Column storage and the geometry layout are only readable before decoding
+    // resolves them away, so they are collected on this pass rather than the next.
     for layer in &layers {
-        if let Some(layer01) = layer.as_layer01() {
-            layer01.for_each_stream(&mut |stream_meta| {
-                stream_count += 1;
-                collect_stream_info(stream_meta, &mut algorithms);
-            });
+        match layer {
+            Layer::Tag01(l) => {
+                l.for_each_stream(&mut |stream_meta| {
+                    stream_count += 1;
+                    collect_stream_info(stream_meta, &mut algorithms);
+                });
+                l.for_each_column_storage(&mut |storage| facets.add_storage(storage));
+                l.for_each_column_decl(&mut |decl| facets.add_decl(decl));
+                facets.extent.insert(l.extent().get().to_string());
+            }
+            #[cfg(feature = "unstable-v2")]
+            Layer::Tag02(l) => {
+                l.for_each_stream(&mut |stream_meta| {
+                    stream_count += 1;
+                    collect_stream_info(stream_meta, &mut algorithms);
+                });
+                l.for_each_column_storage(&mut |storage| facets.add_storage(storage));
+                l.layer()
+                    .for_each_column_decl(&mut |decl| facets.add_decl(decl));
+                facets.extent.insert(l.layer().extent().get().to_string());
+                facets
+                    .geom_layout
+                    .insert(geom_layout_token(l.layout().geometry));
+            }
+            // Unknown, and any tag a later version adds
+            _ => {}
         }
     }
 
     let layers = Decoder::default().decode_all(layers)?;
 
-    let mut geometries = HashSet::new();
+    let mut geometries = BTreeSet::new();
     let mut feature_count = 0;
     let mut data_size = 0;
     let mut meta_size = 0;
+    let mut content: BTreeSet<&'static str> = BTreeSet::new();
 
     for layer in &layers {
-        if let Some(layer01) = layer.as_layer01() {
-            data_size += layer01.collect_statistic(DecodedDataSize);
-            meta_size += layer01.collect_statistic(DecodedMetaSize);
-            feature_count += layer01.collect_statistic(FeatureCount);
-            for &geom_type in layer01.geometry_values().vector_types() {
-                geometries.insert(geom_type);
+        let layer01 = match layer {
+            ParsedLayer::Tag01(l) => l,
+            #[cfg(feature = "unstable-v2")]
+            ParsedLayer::Tag02(l) => l.layer(),
+            _ => continue,
+        };
+        data_size += layer01.collect_statistic(DecodedDataSize);
+        meta_size += layer01.collect_statistic(DecodedMetaSize);
+        feature_count += layer01.collect_statistic(FeatureCount);
+        for &geom_type in layer01.geometry_values().vector_types() {
+            geometries.insert(geom_type);
+        }
+        for property in layer01.properties() {
+            content.insert(property.kind().into());
+        }
+        // an m-value column's type counts the same as a property column's
+        #[cfg(feature = "unstable-v2")]
+        if let ParsedLayer::Tag02(layer02) = layer {
+            for column in layer02.m_values() {
+                content.insert("m-values");
+                content.insert(column.values().kind().into());
+                // An m-value runs over vertices, so its type counts on its own axis
+                // rather than among the columns a feature has values for.
+                facets.m_value.insert(column.values().kind().into());
             }
         }
     }
@@ -636,10 +888,14 @@ pub fn analyze_mlt_buffer(buffer: &[u8], path: &Path, flags: LsFlags) -> AnyResu
         None
     };
 
-    let algorithms: HashSet<FileAlgorithm> = algorithms
+    let algorithms: BTreeSet<FileAlgorithm> = algorithms
         .into_iter()
         .map(|(a, b, c)| FileAlgorithm::Mlt(a, b, c))
         .collect();
+    for &algorithm in &algorithms {
+        facets.add_algorithm(algorithm);
+    }
+    facets.geometry = geometries.iter().map(|&g| geometry_token(g)).collect();
 
     Ok(MltFileInfo {
         size: buffer.len(),
@@ -649,10 +905,12 @@ pub fn analyze_mlt_buffer(buffer: &[u8], path: &Path, flags: LsFlags) -> AnyResu
         meta_pct: Some(percent_of(meta_size, data_size)),
         layers: layer_count,
         features: feature_count,
+        content,
         streams: Some(stream_count),
         algorithms,
         geometries,
         matches_json,
+        facets,
         ..MltFileInfo::default()
     })
 }
@@ -661,7 +919,7 @@ fn analyze_mvt_buffer(buffer: &[u8]) -> AnyResult<MltFileInfo> {
     let fc = mvt_to_feature_collection(buffer)?;
 
     let mut layer_names = HashSet::new();
-    let mut geometries = HashSet::new();
+    let mut geometries = BTreeSet::new();
     for feat in &fc.features {
         // FIXME: we shouldn't use "magical" properties to pass values around
         if let Some(name) = feat.properties.get("_layer").and_then(|v| v.as_str()) {
@@ -672,12 +930,17 @@ fn analyze_mvt_buffer(buffer: &[u8]) -> AnyResult<MltFileInfo> {
         }
     }
 
+    let facets = Facets {
+        geometry: geometries.iter().map(|&g| geometry_token(g)).collect(),
+        ..Facets::default()
+    };
     Ok(MltFileInfo {
         size: buffer.len(),
         layers: layer_names.len(),
         features: fc.features.len(),
         algorithms: std::iter::once(FileAlgorithm::Mvt).collect(),
         geometries,
+        facets,
         ..MltFileInfo::default()
     })
 }
@@ -735,7 +998,7 @@ fn estimate_gzip_size(data: &[u8]) -> AnyResult<usize> {
     Ok(compressed.len())
 }
 
-fn geometries_display(geometries: &HashSet<GeometryType>) -> String {
+fn geometries_display(geometries: &BTreeSet<GeometryType>) -> String {
     let abbrev = |g: GeometryType| match g {
         GeometryType::Point => "Pt",
         GeometryType::LineString => "Line",
@@ -749,7 +1012,7 @@ fn geometries_display(geometries: &HashSet<GeometryType>) -> String {
     v.iter().map(|g| abbrev(*g)).collect::<Vec<_>>().join(",")
 }
 
-fn algorithms_display(algorithms: &HashSet<FileAlgorithm>) -> String {
+fn algorithms_display(algorithms: &BTreeSet<FileAlgorithm>) -> String {
     let mut v: Vec<_> = algorithms.iter().map(ToString::to_string).collect();
     v.sort_unstable();
     v.join(",")
@@ -965,6 +1228,7 @@ mod tests {
             gzip_pct: Some(27.1),
             layers: 3,
             features: 1_234,
+            content: ["str", "i32", "m-values"].into_iter().collect(),
             streams: Some(42),
             algorithms: std::iter::once(FileAlgorithm::Mlt(
                 StreamType::Data(DictionaryType::None),
@@ -976,6 +1240,7 @@ mod tests {
                 .into_iter()
                 .collect(),
             matches_json: None,
+            facets: Facets::default(),
         }
     }
 
@@ -1028,7 +1293,7 @@ mod tests {
     };
 
     #[test]
-    fn a_file_algorithm_serializes_as_its_display_string() {
+    fn a_file_algorithm_serializes_as_its_three_wire_fields() {
         let algorithms = [
             FileAlgorithm::Mvt,
             FileAlgorithm::Mlt(
@@ -1053,8 +1318,20 @@ mod tests {
             ),
         ];
         insta::assert_snapshot!(
-            serde_json::to_string(&algorithms).expect("algorithms serialize"),
-            @r#"["Protobuf","Present","Vertex-VarInt-DeltaRle","StringOffset-Rle","RingsLen"]"#
+            serde_json::to_string_pretty(&algorithms).expect("algorithms serialize")
+        );
+    }
+
+    #[test]
+    fn a_file_algorithm_displays_as_one_slash_joined_string() {
+        insta::assert_snapshot!(
+            FileAlgorithm::Mlt(
+                StreamType::Data(DictionaryType::Vertex),
+                PhysicalEncoding::VarInt,
+                StatLogicalCodec::ComponentwiseDelta,
+            )
+            .to_string(),
+            @"data[vertex]/varint/componentwise-delta"
         );
     }
 

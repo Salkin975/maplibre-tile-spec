@@ -26,7 +26,8 @@ pub(crate) mod stream;
 // ── Crate-internal re-exports ─────────────────────────────────────────────────
 // Allow internal modules to keep using `crate::decoder::*` paths without
 // reaching into sub-module paths explicitly.
-pub(crate) use geometry::{Geometry, RawGeometry};
+pub(crate) use geometry::decode::{Levels, decode_topology};
+pub(crate) use geometry::{GeoTypes, Geometry, IndexBase, RawGeometry};
 pub use geometry::{GeometryType, GeometryValues};
 pub use id::ParsedId;
 // pub (not pub(crate)) so __private module can re-export it
@@ -36,15 +37,17 @@ pub use iterators::{
     PropValueRef,
 };
 pub use limits::{Decoder, Parser};
-pub use model::{Layer, Layer01, ParsedLayer, ParsedLayer01, Unknown};
-pub use model01::ColumnType;
+pub use model::{Layer, ParsedLayer, Unknown};
 pub(crate) use model01::{BASE_TYPE_MASK, Column, OPTIONAL_FLAG};
+pub use model01::{ColumnType, Layer01, ParsedLayer01};
 #[cfg(feature = "unstable-v2")]
 pub(crate) use model02::{
-    Column02, ColumnCounts, ColumnKind02, ColumnType02, DataType02, GeoLayout, IdWidth02,
-    Interior02, LayerLayout, NodeKind02, NodePresence, NodeType02, Presence02, SharedDictKind,
+    Column02, ColumnCounts, ColumnKind02, ColumnType02, DataType02, Extent02, IdWidth02,
+    Interior02, LayerHeader02, NodeKind02, NodePresence, NodeType02, Presence02, SharedDictKind,
     Topology, ValueType02, ValuesColumn02, VertexStorage,
 };
+#[cfg(feature = "unstable-v2")]
+pub use model02::{GeoLayout, Layer02, LayerLayout, ParsedLayer02};
 #[cfg(feature = "unstable-v2")]
 pub use mvalue::{MValueColumn, MValueSpans, MValues, ParsedMValue, RawMValue};
 #[cfg(feature = "unstable-v2")]
@@ -54,10 +57,11 @@ pub use nested::{
 };
 // Re-export strings sub-module so encoder can use `crate::decoder::strings::*`
 pub(crate) use property::strings;
+pub use property::{ColumnDecl, ColumnStorage, DictLayout, StringLayout};
 pub(crate) use property::{
-    DictLayout, DictRange, ParsedProperty, ParsedScalar, ParsedSharedDict, ParsedSharedDictItem,
-    ParsedStrings, Property, RawFloats, RawFloatsEncoding, RawFsstData, RawPlainData, RawPresence,
-    RawProperty, RawScalar, RawSharedDict, RawSharedDictEncoding, RawSharedDictItem, RawStrings,
+    DictRange, ParsedProperty, ParsedScalar, ParsedSharedDict, ParsedSharedDictItem, ParsedStrings,
+    Property, RawFloats, RawFloatsEncoding, RawFsstData, RawPlainData, RawPresence, RawProperty,
+    RawScalar, RawSharedDict, RawSharedDictEncoding, RawSharedDictItem, RawStrings,
     RawStringsEncoding,
 };
 #[cfg(feature = "unstable-v2")]

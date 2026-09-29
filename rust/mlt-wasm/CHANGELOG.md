@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.33](https://github.com/maplibre/maplibre-tile-spec/compare/rust-mlt-wasm-v0.1.32...rust-mlt-wasm-v0.1.33) - 2026-09-27
+
+### Added
+
+- *(docs)* inspector filter and layout improvements ([#1781](https://github.com/maplibre/maplibre-tile-spec/pull/1781))
+
+## [0.1.32](https://github.com/maplibre/maplibre-tile-spec/compare/rust-mlt-wasm-v0.1.31...rust-mlt-wasm-v0.1.32) - 2026-09-27
+
+### Other
+
+- updated the following local packages: mlt-core
+
+## [0.1.31](https://github.com/maplibre/maplibre-tile-spec/compare/rust-mlt-wasm-v0.1.30...rust-mlt-wasm-v0.1.31) - 2026-09-25
+
+### Added
+
+- *(docs)* add layer name to the inspector ([#1767](https://github.com/maplibre/maplibre-tile-spec/pull/1767))
+- *(docs)* show geometry visualization in inspector ([#1763](https://github.com/maplibre/maplibre-tile-spec/pull/1763))
+
+### Other
+
+- *(rust)* re-add ByteRLE for presence variants ([#1768](https://github.com/maplibre/maplibre-tile-spec/pull/1768))
+
+## [0.1.30](https://github.com/maplibre/maplibre-tile-spec/compare/rust-mlt-wasm-v0.1.29...rust-mlt-wasm-v0.1.30) - 2026-09-23
+
+### Added
+
+- *(rust)* fill the v2 layer header byte's reserved nibble ([#1753](https://github.com/maplibre/maplibre-tile-spec/pull/1753))
+
+### Fixed
+
+- minor issues in the tile inspector ([#1755](https://github.com/maplibre/maplibre-tile-spec/pull/1755))
+
+### Other
+
+- *(rust)* cleanup cmd, rm aws-sdk dep from mlt ([#1757](https://github.com/maplibre/maplibre-tile-spec/pull/1757))
+
+## [0.1.29](https://github.com/maplibre/maplibre-tile-spec/compare/rust-mlt-wasm-v0.1.28...rust-mlt-wasm-v0.1.29) - 2026-09-22
+
+### Added
+
+- *(rust)* code the v2 extent as one nibble ([#1749](https://github.com/maplibre/maplibre-tile-spec/pull/1749))
+
+### Other
+
+- move the default extent in the synthetics to 64 instead of 80 ([#1751](https://github.com/maplibre/maplibre-tile-spec/pull/1751))
+- *(java)* drop the 0x02-java synthetic fixtures ([#1744](https://github.com/maplibre/maplibre-tile-spec/pull/1744))
+- *(rust)* maybe increase coverage in CI by being more accurate ([#1743](https://github.com/maplibre/maplibre-tile-spec/pull/1743))
+
 ## [0.1.28](https://github.com/maplibre/maplibre-tile-spec/compare/rust-mlt-wasm-v0.1.27...rust-mlt-wasm-v0.1.28) - 2026-09-21
 
 ### Added
