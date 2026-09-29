@@ -5,9 +5,6 @@ import type { DumpTree, Region } from "./annotate.ts";
 /** Label of the synthetic leaf covering the bytes a bailed-out walk never reached. */
 export const UNANNOTATED = "<unannotated>";
 
-/** How much of a data blob the map draws brightly, and whether it tints the sections. */
-export type AnnotateMode = "sections" | "both" | "blob" | "decoded" | "hidden";
-
 /** Bytes of a data blob the map draws brightly, which is enough to find the blob and not read it. */
 export const MAX_BLOB = 1;
 
@@ -15,7 +12,10 @@ export const MAX_BLOB = 1;
 export interface ViewState {
   /** Hex columns per row, fitted to the pane rather than chosen. */
   width: number;
-  annotate: AnnotateMode;
+  /** Whether the map and the tree tint each section. */
+  colorful: boolean;
+  /** Whether the geometry panel is drawn, which a narrow window may not have room for. */
+  geo: boolean;
   layer: number | null;
 }
 
@@ -23,7 +23,8 @@ export interface ViewState {
 export function defaultView(): ViewState {
   return {
     width: 16,
-    annotate: "both",
+    colorful: false,
+    geo: true,
     layer: null,
   };
 }
@@ -32,8 +33,10 @@ export function hex2(byte: number): string {
   return byte.toString(16).padStart(2, "0");
 }
 
-export function hex8(offset: number): string {
-  return offset.toString(16).padStart(8, "0");
+/** Offset in hex, padded to four digits or to as many as the last byte of a larger tile needs. */
+export function hexOffset(offset: number, bufLen: number): string {
+  const digits = Math.max(4, Math.max(0, bufLen - 1).toString(16).length);
+  return offset.toString(16).padStart(digits, "0");
 }
 
 export function printable(byte: number): string {
@@ -47,11 +50,12 @@ export const ROW = 26;
 const CELL = 23.2;
 const GLYPH = 7.1;
 
-/** The offset gutter, the ascii margin, the map's own padding and the detail pane beside it. */
-const CHROME = 468;
+/** The offset gutter, the two column gaps and the map's own padding, measured at 8 columns.
+ * Only what sits beside the bytes inside the left pane - the sidebar is not this pane's. */
+const CHROME = 84;
 
 /**
- * Hex columns that fill a pane of `paneWidth` pixels, fitted in #15 at 976, 1300 and 1700 px.
+ * Hex columns that fill the map pane's `paneWidth` pixels.
  * A terminal is 80 columns wide, a browser is not, so the row follows the pane instead.
  */
 export function fitColumns(paneWidth: number): number {
@@ -97,18 +101,14 @@ export function bandTint(band: number): number {
   return band < 0 ? -1 : band % BLOCKS;
 }
 
-/** Enclosing container labels, outermost first, found by walking back up the depths. */
+/** Containers that only group indexed siblings, whose own label a path would repeat. */
+const GROUPINGS = new Set(["column data", "columns", "m_values", "header"]);
+
+/** Enclosing container labels, outermost first, without the pure groupings. */
 export function regionPath(regions: Region[], index: number): string[] {
-  const path: string[] = [];
-  let depth = regions[index].depth;
-  for (let at = index - 1; at >= 0 && depth > 0; at--) {
-    const region = regions[at];
-    if (region.container && region.depth < depth) {
-      path.unshift(region.label);
-      depth = region.depth;
-    }
-  }
-  return path;
+  return ancestors(regions, index)
+    .map((at) => regions[at].label)
+    .filter((label) => !GROUPINGS.has(label));
 }
 
 /** The same path as one name, which is how the hover tip and the detail pane title a region. */
@@ -137,25 +137,9 @@ export function layerLabels(tree: DumpTree): string[] {
 }
 
 /** Offset from which a blob's bytes are drawn faded, which is what `data` means to a map that never drops a row. */
-export function fadedFrom(region: Region, view: ViewState): number {
+export function fadedFrom(region: Region): number {
   if (region.kind !== "dataBlob") return Number.POSITIVE_INFINITY;
-  if (view.annotate === "hidden" || view.annotate === "decoded")
-    return region.offset;
   return region.offset + MAX_BLOB;
-}
-
-/** Whether the detail pane asks for decoded values at all. */
-export function showsDecoded(view: ViewState): boolean {
-  return (
-    view.annotate === "sections" ||
-    view.annotate === "both" ||
-    view.annotate === "decoded"
-  );
-}
-
-/** Whether the map and the tree tint each section, which is what `sections` adds to `both`. */
-export function showsSections(view: ViewState): boolean {
-  return view.annotate === "sections";
 }
 
 /**
@@ -198,21 +182,32 @@ export interface Pointer {
 const TIP_GAP = 14;
 
 /**
- * Top-left corner of the hover tip, kept inside the viewport and clear of the pointer.
- * A tip that would hang off the bottom sits above the pointer instead, since sliding it up would cover the byte.
+ * Where the hover tip sits: inside the viewport and clear of the pointer. One that will not
+ * fit below goes above instead, since sliding it up would cover the byte it describes, and
+ * one that fits neither side takes the roomier one rather than squeezing in at an edge.
+ *
+ * A flipped tip hangs from its foot rather than standing on its head, and either side is
+ * capped to the room it has, so a height measured a frame late changes how much of the tip
+ * scrolls instead of pushing its end off the screen.
+ *
+ * `tip.height` must be the height the tip wants, not the height the cap left it: measuring
+ * a capped tip would feed this back on itself, and a tip walked down the screen in small
+ * steps would shrink against the bottom edge rather than ever flipping.
  */
 export function tipPlacement(
   pointer: Pointer,
   tip: { width: number; height: number },
   viewport: { width: number; height: number },
-): Pointer {
+): Record<string, string> {
   const right = viewport.width - tip.width - TIP_GAP;
-  const below = pointer.y + TIP_GAP;
-  return {
-    x: Math.max(TIP_GAP, Math.min(pointer.x + TIP_GAP, right)),
-    y:
-      below + tip.height > viewport.height
-        ? Math.max(TIP_GAP, pointer.y - TIP_GAP - tip.height)
-        : below,
-  };
+  const left = `${Math.max(TIP_GAP, Math.min(pointer.x + TIP_GAP, right))}px`;
+  const under = Math.max(0, viewport.height - pointer.y - TIP_GAP * 2);
+  const over = Math.max(0, pointer.y - TIP_GAP * 2);
+  return tip.height > under && over > under
+    ? {
+        left,
+        bottom: `${viewport.height - pointer.y + TIP_GAP}px`,
+        maxHeight: `${over}px`,
+      }
+    : { left, top: `${pointer.y + TIP_GAP}px`, maxHeight: `${under}px` };
 }

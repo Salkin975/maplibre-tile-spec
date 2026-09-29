@@ -1,7 +1,7 @@
 [package]
 name = "mlt-wasm"
 description = "WebAssembly bindings for the MapLibre Tile (MLT) format"
-version = "0.1.28"
+version = "0.1.33"
 authors.workspace = true
 categories.workspace = true
 edition.workspace = true
@@ -27,6 +27,7 @@ minicov = { workspace = true, optional = true }
 mlt-core = { workspace = true, features = ["unstable-v2"] }
 serde.workspace = true
 serde-wasm-bindgen.workspace = true
+serde_json.workspace = true
 wasm-bindgen.workspace = true
 
 [lints]

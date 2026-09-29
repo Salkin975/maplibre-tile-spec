@@ -232,6 +232,10 @@ pub struct ConvertArgs {
     #[cfg(feature = "unstable-v2")]
     #[clap(long)]
     packed_dict_codes: bool,
+    /// With `--tessellate`, store only the triangles of an all-polygon layer, without its outlines
+    #[cfg(feature = "unstable-v2")]
+    #[clap(long, requires = "tessellate")]
+    triangles_only: bool,
     /// Output tile format (`mlt` re-encodes; `mvt` decodes MLT inputs back to MVT)
     #[clap(long, default_value = "mlt")]
     to: TileFormat,
@@ -284,7 +288,8 @@ pub fn convert(args: &ConvertArgs) -> AnyResult<()> {
         .with_wire_version(args.mlt_version.into())
         .with_float_alp(!args.no_alp)
         .with_float_dict(!args.no_float_dict)
-        .with_packed_dict_codes(args.packed_dict_codes);
+        .with_packed_dict_codes(args.packed_dict_codes)
+        .with_triangles_only(args.triangles_only);
 
     let filter = BboxFilter::new(&args.bbox)?;
     let input_container = args.input_container();
@@ -391,9 +396,8 @@ fn convert_mlt_buffer(buffer: &[u8], cfg: EncoderConfig) -> AnyResult<Vec<u8>> {
             continue;
         }
         let tile = layer
-            .into_layer01()
-            .expect("every layer but Unknown holds a Layer01")
-            .into_tile(&mut dec)?;
+            .into_tile(&mut dec)?
+            .expect("unknown layers are handled above");
         out.extend_from_slice(&tile.encode(cfg)?);
     }
 
@@ -417,12 +421,12 @@ fn mlt_buffer_to_tile_layers(buffer: &[u8]) -> AnyResult<Vec<mlt_core::TileLayer
     let mut dec = Decoder::default();
     let mut tiles = Vec::new();
     for layer in layers {
-        let Some(layer) = layer.into_layer01() else {
+        let Some(tile) = layer.into_tile(&mut dec)? else {
             bail!(
                 "cannot convert MLT tile to MVT: tile contains unknown/extension layers that MVT cannot represent"
             );
         };
-        tiles.push(layer.into_tile(&mut dec)?);
+        tiles.push(tile);
     }
     Ok(tiles)
 }

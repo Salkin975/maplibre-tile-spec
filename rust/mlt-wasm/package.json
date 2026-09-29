@@ -1,6 +1,6 @@
 {
   "name": "@maplibre/mlt-wasm",
-  "version": "0.1.28",
+  "version": "0.1.33",
   "description": "WebAssembly-backed MapLibre Tile (MLT) decoder",
   "type": "module",
   "main": "dist/index.js",
@@ -33,6 +33,7 @@
     "build:ts": "tsc",
     "build": "npm run build:wasm && npm run build:ts && npm run build:wasm-gz",
     "test": "vitest --coverage --coverage.reportOnFailure --run",
+    "test:bless": "vitest --run --update",
     "test:watch": "vitest --coverage --coverage.reportOnFailure --ui",
     "bench": "node --expose-gc --no-liftoff --no-wasm-tier-up node_modules/.bin/vitest bench"
   },
@@ -41,6 +42,7 @@
   },
   "devDependencies": {
     "@maplibre/vt-pbf": "4.3.0",
+    "@types/geojson": "^7946.0.16",
     "@types/node": "^24.10.2",
     "@vitest/coverage-v8": "^4.0.1",
     "@vitest/ui": "^4.0.18",

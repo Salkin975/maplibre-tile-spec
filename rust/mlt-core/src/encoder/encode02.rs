@@ -1,6 +1,6 @@
 //! Layer envelope and column writers for tag `0x02` (v2) layers.
 //!
-//! A v2 layer body is: header (`name`, `extent`, `feature_count`, layout byte),
+//! A v2 layer body is: header (`name`, header byte, `feature_count`, layout byte),
 //! the layer's shared presence bitfields, geometry section, the column counts
 //! varint, then each counted column as
 //! `[type byte][name?][presence bitfield?][data stream]` - metadata and data
@@ -20,13 +20,14 @@ use std::collections::HashMap;
 
 use integer_encoding::VarIntWriter as _;
 
+use crate::codecs::presence_coding::{self, PresenceCoding};
 use crate::decoder::stream::header02::{Count02, Family, StreamCtx02, WordWidth};
 use crate::decoder::{
-    BoolLogical, ColumnCounts, ColumnType02, DataType02, DictionaryType, LayerLayout, LengthType,
-    LogicalEncoding, NodeKind02, NodePresence, NodeType02, PhysicalEncoding, Presence02,
-    StreamMeta, StreamType, ValueType02,
+    BoolLogical, ColumnCounts, ColumnType02, DataType02, DictionaryType, Extent02, LayerHeader02,
+    LayerLayout, LengthType, LogicalEncoding, NodeKind02, NodePresence, NodeType02,
+    PhysicalEncoding, Presence02, StreamMeta, StreamType, ValueType02,
 };
-use crate::encoder::geometry::encode02::encode_geometry02;
+use crate::encoder::geometry::encode02::{Outlines, encode_geometry02};
 use crate::encoder::model::{StagedLayer, StrAt, StreamCtx};
 use crate::encoder::nested::RowShapes;
 use crate::encoder::{
@@ -53,6 +54,8 @@ use crate::{MltError, MltResult};
 pub(crate) struct SharedPresence {
     /// The masks in wire index order.
     masks: Vec<Vec<bool>>,
+    /// The smallest coding of each mask, in the same order.
+    codings: Vec<PresenceCoding>,
     /// Wire index of each mask, for resolving a column's nibble.
     index: HashMap<Vec<bool>, u8>,
 }
@@ -96,7 +99,12 @@ impl SharedPresence {
                 )
             })
             .collect();
-        Self { masks, index }
+        let codings = masks.iter().map(|m| presence_coding::smallest(m)).collect();
+        Self {
+            masks,
+            codings,
+            index,
+        }
     }
 
     /// How many masks the layout byte declares.
@@ -104,18 +112,32 @@ impl SharedPresence {
         u8::try_from(self.masks.len()).expect("at most MAX_SHARED_PRESENCE masks")
     }
 
+    /// Whether any mask codes smaller than a bitmap, which is what earns every
+    /// shared bitfield a byte naming its coding.
+    fn coded(&self) -> bool {
+        self.codings.iter().any(|&c| c != PresenceCoding::Bitmap)
+    }
+
     /// Where an optional column's nulls live: this layer's shared bitfield when
     /// another column has the same mask, the column's own bitfield otherwise.
     pub(crate) fn nibble_for(&self, mask: &[bool]) -> Presence02 {
-        self.index
-            .get(mask)
-            .map_or(Presence02::Inline, |&i| Presence02::Shared(i))
+        self.index.get(mask).map_or_else(
+            || Presence02::Inline(presence_coding::smallest(mask)),
+            |&i| Presence02::Shared(i),
+        )
     }
 
     /// Write the bitfields in index order, right after the layout byte.
+    /// Each leads with the byte naming its coding only when [`Self::coded`] - a
+    /// shared field has no nibble to ride in.
     fn write_to(&self, enc: &mut Encoder) {
-        for mask in &self.masks {
-            write_presence_bits(enc.data_mut(), mask);
+        let coded = self.coded();
+        let data = enc.data_mut();
+        for (mask, &coding) in self.masks.iter().zip(&self.codings) {
+            if coded {
+                data.push(coding as u8);
+            }
+            presence_coding::write(data, mask, coding);
         }
     }
 }
@@ -185,8 +207,16 @@ fn column_masks<'a>(
     id.into_iter().chain(props).chain(nested).chain(m_values)
 }
 
+/// Append a column's own presence bits in whichever coding `nibble` named, which is
+/// nothing at all when every feature has a value or a shared field holds them.
+pub(crate) fn write_inline_presence(data: &mut Vec<u8>, nibble: Presence02, bits: &[bool]) {
+    if let Presence02::Inline(coding) = nibble {
+        presence_coding::write(data, bits, coding);
+    }
+}
+
 /// Append `bits` as `ceil(len/8)` LSB-first packed bytes - the layout v2 uses for
-/// both presence bitfields and bool column data.
+/// bool column data.
 pub(crate) fn write_presence_bits(data: &mut Vec<u8>, bits: &[bool]) {
     let start = data.len();
     data.resize(start + bits.len().div_ceil(8), 0);
@@ -216,12 +246,21 @@ pub(crate) fn encode_into02(
         nested,
     } = layer;
 
+    // v2 spends one nibble on the extent, so an extent it cannot code is rejected
+    // before any of the layer is written.
+    let extent = Extent02::new(extent.get())?;
     let feature_count = u32::try_from(geometry.feature_count())?;
     enc.count_context = Count02::Implied(feature_count);
 
     // ── Layer layout byte + shared presence bitfields ─────────────────────
     let shared = SharedPresence::plan(&id, &properties, &nested, &m_values);
-    let geometry = encode_geometry02(geometry)?;
+    // An m-value column reads its vertex counts from the outlines.
+    let outlines = if enc.config().allow_triangles_only() && m_values.is_empty() {
+        Outlines::DropForPolygons
+    } else {
+        Outlines::Keep
+    };
+    let geometry = encode_geometry02(geometry, outlines)?;
     // The geometry layout is only settled once its vertex streams are written, so
     // the byte is reserved here and patched below.
     let layout_pos = enc.data().len();
@@ -229,14 +268,14 @@ pub(crate) fn encode_into02(
     shared.write_to(&mut enc);
 
     // ── Geometry section (not part of column_count) ───────────────────────
-    let geo_layout = geometry.write_to(&mut enc, codecs)?;
+    let geo = geometry.write_to(&mut enc, codecs)?;
     // Only the geometry layout says whether a feature's vertex count can be read
     // back, which is the one thing an m-value column cannot do without.
-    if !m_values.is_empty() && !geo_layout.allows_m_values() {
-        return Err(MltError::MValuesNeedVertexCounts(geo_layout.into()));
+    if !m_values.is_empty() && !geo.layout.allows_m_values() {
+        return Err(MltError::MValuesNeedVertexCounts(geo.layout.into()));
     }
     enc.data_mut()[layout_pos] =
-        LayerLayout::new(geo_layout, shared.count(), !m_values.is_empty()).to_byte();
+        LayerLayout::new(geo.layout, shared.count(), shared.coded()).to_byte();
 
     // ── Counted columns ───────────────────────────────────────────────────
     let column_count = usize::from(!matches!(id, StagedId::None)) + properties.len() + nested.len();
@@ -259,7 +298,8 @@ pub(crate) fn encode_into02(
         write_m_value02(m_value, &shared, &mut enc, codecs)?;
     }
 
-    enc.write_header02(&name, extent.get(), feature_count)?;
+    let header = LayerHeader02::new(extent, geo.uniform_type, !m_values.is_empty());
+    enc.write_header02(&name, header, feature_count)?;
     Ok(enc)
 }
 
@@ -301,9 +341,7 @@ where
 {
     let nibble = shared.nibble_for(presence);
     begin_col02(enc, nibble, typ, name)?;
-    if nibble == Presence02::Inline {
-        write_presence_bits(enc.data_mut(), presence);
-    }
+    write_inline_presence(enc.data_mut(), nibble, presence);
 
     let popcount = u32::try_from(presence.iter().filter(|&&p| p).count())?;
     let feature_count = enc.count_context;
@@ -491,8 +529,8 @@ fn write_m_value02(
         None => Presence02::AllPresent,
     };
     begin_col02(enc, nibble, typ, Some(name))?;
-    if let (Presence02::Inline, Some(mask)) = (nibble, &m_value.presence) {
-        write_presence_bits(enc.data_mut(), mask);
+    if let Some(mask) = &m_value.presence {
+        write_inline_presence(enc.data_mut(), nibble, mask);
     }
 
     let features = enc.count_context;
@@ -639,8 +677,8 @@ fn write_nested_root02(
     let presence = root.presence();
     let nibble = presence.map_or(Presence02::AllPresent, |mask| shared.nibble_for(mask));
     begin_col02(enc, nibble, interior_type02(root), Some(name))?;
-    if let (Presence02::Inline, Some(mask)) = (nibble, presence) {
-        write_presence_bits(enc.data_mut(), mask);
+    if let Some(mask) = presence {
+        write_inline_presence(enc.data_mut(), nibble, mask);
     }
     // A root has no node type byte to carry the shapes bit: its high nibble is the
     // column's presence, which uses all sixteen values. One byte is what either

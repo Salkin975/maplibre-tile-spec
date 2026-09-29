@@ -47,8 +47,6 @@ fn decode_err(bytes: &[u8]) -> MltError {
             .into_iter()
             .next()
             .expect("a layer")
-            .into_layer01()
-            .expect("layer01")
             .into_tile(&mut Decoder::default())
             .expect_err("expected a rejection"),
     }
@@ -80,12 +78,12 @@ fn assert_dump_covers(bytes: &[u8]) {
     render(&tree, bytes, &RenderOpts::default(), &mut Vec::new()).expect("render");
 }
 
-fn layout_bits_and_column_types(bytes: &[u8]) -> String {
+fn header_bits_and_column_types(bytes: &[u8]) -> String {
     let tree = annotate(bytes);
     let mut lines = Vec::new();
     let mut column = None;
     for region in &tree.regions {
-        if region.label == "layout" {
+        if region.label == "header" || region.label == "layout" {
             lines.extend(region.bits.iter().map(|b| b.meaning().to_string()));
         }
         if region.container {
@@ -158,8 +156,11 @@ fn a_line_layer_holds_one_value_per_vertex() {
         &[("dist", i32s(&[&[0, 10, 20], &[0, 30]]))],
     );
     let bytes = assert_round_trips_as_v2(&l);
-    insta::assert_snapshot!(layout_bits_and_column_types(&bytes), @r#"
+    insta::assert_snapshot!(header_bits_and_column_types(&bytes), @r#"
     an m-value section ends the body
+    every feature is a LineString, no types stream
+    extent 2^(n+6) = 4096
+    shared bitfields are bitmaps
     shared presence bitfields = 0
     geometry layout = Lines
     m_value[0] I32 "dist": presence = AllPresent
@@ -299,14 +300,17 @@ fn a_feature_with_no_values_stores_an_inline_bitfield_and_no_values() {
         )],
     );
     let bytes = assert_round_trips_as_v2(&l);
-    insta::assert_snapshot!(layout_bits_and_column_types(&bytes), @r#"
+    insta::assert_snapshot!(header_bits_and_column_types(&bytes), @r#"
     an m-value section ends the body
+    every feature is a LineString, no types stream
+    extent 2^(n+6) = 4096
+    shared bitfields are bitmaps
     shared presence bitfields = 0
     geometry layout = Lines
-    m_value[0] OptI32 "m": presence = Inline
+    m_value[0] OptI32 "m": presence = Inline(Bitmap)
     "#);
     // Four values for the two features that have them, not six.
-    let (count, _) = region_after(&bytes, "m_values", "num_values");
+    let (count, _) = region_after(&bytes, "m_value[", "num_values");
     assert_eq!(bytes[count], 4);
     assert_eq!(
         decode(&bytes).features()[1].m_values()[0],
@@ -330,8 +334,11 @@ fn two_m_value_columns_with_the_same_nulls_share_one_bitfield() {
     };
     let l = layer(geoms, &[("a", column()), ("b", column())]);
     let bytes = assert_round_trips_as_v2(&l);
-    insta::assert_snapshot!(layout_bits_and_column_types(&bytes), @r#"
+    insta::assert_snapshot!(header_bits_and_column_types(&bytes), @r#"
     an m-value section ends the body
+    every feature is a LineString, no types stream
+    extent 2^(n+6) = 4096
+    shared bitfields are bitmaps
     shared presence bitfields = 1
     geometry layout = Lines
     m_value[0] OptI32 "a": presence = Shared(0)
@@ -357,8 +364,11 @@ fn an_m_value_column_shares_a_bitfield_with_a_property_column() {
     }
     let l = builder.finish();
     let bytes = assert_round_trips_as_v2(&l);
-    insta::assert_snapshot!(layout_bits_and_column_types(&bytes), @r#"
+    insta::assert_snapshot!(header_bits_and_column_types(&bytes), @r#"
     an m-value section ends the body
+    every feature is a LineString, no types stream
+    extent 2^(n+6) = 4096
+    shared bitfields are bitmaps
     shared presence bitfields = 1
     geometry layout = Lines
     column[0] OptU32 "p": presence = Shared(0)
@@ -379,6 +389,29 @@ fn m_values_on_a_point_layer_are_rejected() {
         matches!(err, MltError::MValuesNeedVertexCounts("Points")),
         "{err:?}"
     );
+}
+
+#[test]
+fn m_values_keep_the_outlines_of_a_triangles_only_layer() {
+    let l = layer(
+        vec![Geometry::Polygon(Polygon::new(
+            ring(&[(0, 0), (10, 0), (10, 10), (0, 10)]),
+            vec![],
+        ))],
+        &[("m", i32s(&[&[1, 2, 3, 4]]))],
+    );
+    let cfg = cfg_v2().with_tessellation(true).with_triangles_only(true);
+    let bytes = l.clone().encode(cfg).unwrap();
+    assert_eq!(&decode(&bytes), &l);
+    insta::assert_snapshot!(header_bits_and_column_types(&bytes), @r#"
+    an m-value section ends the body
+    every feature is a Polygon, no types stream
+    extent 2^(n+6) = 4096
+    shared bitfields are bitmaps
+    shared presence bitfields = 0
+    geometry layout = TessPolygonsWithOutlines
+    m_value[0] I32 "m": presence = AllPresent
+    "#);
 }
 
 #[test]
@@ -458,8 +491,8 @@ fn encode_four_one_byte_m_values() -> Vec<u8> {
 #[test]
 fn a_leading_stream_without_its_own_count_is_rejected() {
     let mut bytes = encode_four_one_byte_m_values();
-    let (encoding, _) = region_after(&bytes, "m_values", "encoding");
-    let (count, count_len) = region_after(&bytes, "m_values", "num_values");
+    let (encoding, _) = region_after(&bytes, "m_value[", "encoding");
+    let (count, count_len) = region_after(&bytes, "m_value[", "num_values");
     assert_eq!(count_len, 1, "the count has to be a single byte to drop it");
     bytes[encoding] &= 0b0111_1111;
     bytes.remove(count);
@@ -476,8 +509,8 @@ fn a_leading_stream_without_its_own_count_is_rejected() {
 #[test]
 fn a_count_the_geometry_disagrees_with_is_rejected() {
     let mut bytes = encode_four_one_byte_m_values();
-    let (count, _) = region_after(&bytes, "m_values", "num_values");
-    let (byte_length, _) = region_after(&bytes, "m_values", "byte_length");
+    let (count, _) = region_after(&bytes, "m_value[", "num_values");
+    let (byte_length, _) = region_after(&bytes, "m_value[", "byte_length");
     assert_eq!(bytes[count], 4);
     assert_eq!(bytes[byte_length], 4);
     bytes[count] = 3;
@@ -509,7 +542,7 @@ fn both_column_counts_share_one_morton_coded_byte() {
         "no columns on the even bits, one m-value on the odd bits"
     );
     assert_eq!(
-        region_after(&bytes, "column_counts", "m_values").0,
+        region_after(&bytes, "m_value[", "type").0,
         counts + 1,
         "no m_value_count varint opens the section"
     );
@@ -534,7 +567,7 @@ fn an_empty_m_value_section_is_rejected() {
 #[case::unassigned(0x0C)]
 fn a_type_byte_no_vertex_can_hold_is_rejected(#[case] data_type: u8) {
     let mut bytes = encode_four_one_byte_m_values();
-    let (typ, _) = region_after(&bytes, "m_values", "type");
+    let (typ, _) = region_after(&bytes, "m_value[", "type");
     bytes[typ] = (bytes[typ] & 0b1111_0000) | data_type;
 
     let err = decode_err(&bytes);
@@ -675,13 +708,16 @@ fn encode_dictionary_vertex_layer() -> Vec<u8> {
 #[test]
 fn a_dictionary_vertex_layout_holds_one_value_per_offset() {
     let bytes = encode_dictionary_vertex_layer();
-    insta::assert_snapshot!(layout_bits_and_column_types(&bytes), @r#"
+    insta::assert_snapshot!(header_bits_and_column_types(&bytes), @r#"
     an m-value section ends the body
+    every feature is a LineString, no types stream
+    extent 2^(n+6) = 4096
+    shared bitfields are bitmaps
     shared presence bitfields = 0
     geometry layout = LinesDict
     m_value[0] I32 "m": presence = AllPresent
     "#);
-    let (count, _) = region_after(&bytes, "m_values", "num_values");
+    let (count, _) = region_after(&bytes, "m_value[", "num_values");
     // Six vertices over a dictionary of three.
     assert_eq!(bytes[count], 6);
 

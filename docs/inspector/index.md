@@ -15,6 +15,42 @@
     border-radius: 10px;
     background: var(--md-default-bg-color);
   }
+  /* A loaded tile wants the height the page heading was taking. */
+  body.inspector-loaded .md-content__inner > h1 { display: none; }
+  /* Tall enough for the app's floor, the page stops scrolling and the frame takes whatever the title leaves. */
+  @media (min-height: 44rem) {
+    body { height: 100dvh; }
+    .md-footer { display: none; }
+    .md-container, .md-main, .md-content { display: flex; flex-direction: column; min-height: 0; }
+    .md-main__inner, .md-content, .md-content__inner { flex: 1; min-height: 0; }
+    .md-main__inner { width: 100%; }
+    .md-content__inner { display: flex; flex-direction: column; }
+    .inspector-embed { flex: 1; height: auto; min-height: 0; }
+  }
 </style>
 
 <iframe class="inspector-embed" src="app/index.html" title="MLT Tile Inspector" loading="lazy"></iframe>
+
+<script>
+  // Scoped, not top-level: `navigation.instant` re-runs this script in the page's own
+  // global, where a second `const` of the same name would throw.
+  (() => {
+    const embed = document.querySelector(".inspector-embed");
+
+    // A link back from the app's own window carries the tile in this page's query, which
+    // only the frame can act on, so it is handed over before the frame settles on a URL.
+    if (location.search) embed.src = "app/index.html" + location.search;
+
+    // The app reports whether it is on its home screen; once a tile is open the page heading
+    // is just a band of chrome above it, so it steps out of the way. Its deep link comes with,
+    // so this page's address bar names the tile on screen and a reload keeps it.
+    addEventListener("message", (event) => {
+      if (event.origin !== location.origin || event.source !== embed.contentWindow) return;
+      const state = event.data?.mltInspector;
+      if (!state) return;
+      document.body.classList.toggle("inspector-loaded", state.loaded === true);
+      if (typeof state.search === "string")
+        history.replaceState(null, "", location.pathname + state.search + location.hash);
+    });
+  })();
+</script>

@@ -1,9 +1,11 @@
 use crate::decoder::{
-    Geometry, GeometryType, GeometryValues, Id, Layer01, Property, RawFloats, RawFloatsEncoding,
-    RawFsstData, RawGeometry, RawId, RawIdValue, RawPlainData, RawPresence, RawProperty, RawScalar,
-    RawSharedDict, RawSharedDictEncoding, RawSharedDictItem, RawStrings, RawStringsEncoding,
-    StreamMeta,
+    GeoTypes, Geometry, GeometryType, GeometryValues, Id, Layer01, Property, RawFloats,
+    RawFloatsEncoding, RawFsstData, RawGeometry, RawId, RawIdValue, RawPlainData, RawPresence,
+    RawProperty, RawScalar, RawSharedDict, RawSharedDictEncoding, RawSharedDictItem, RawStrings,
+    RawStringsEncoding, StreamMeta,
 };
+#[cfg(feature = "unstable-v2")]
+use crate::decoder::{RawMValue, root02::ColumnValues};
 use crate::{Analyze, DecodeState, StatType};
 
 impl<'a, S: DecodeState> Analyze for Layer01<'a, S>
@@ -33,7 +35,11 @@ where
 
 impl Analyze for RawGeometry<'_> {
     fn for_each_stream(&self, cb: &mut dyn FnMut(StreamMeta)) {
-        self.meta.for_each_stream(cb);
+        match &self.types {
+            GeoTypes::Stream(types) => types.for_each_stream(cb),
+            #[cfg(feature = "unstable-v2")]
+            GeoTypes::Uniform { .. } => {}
+        }
         self.items.for_each_stream(cb);
     }
 }
@@ -47,7 +53,7 @@ impl Analyze for GeometryValues {
                     + self.part_offsets.collect_statistic(stat)
                     + self.ring_offsets.collect_statistic(stat)
                     + self.index_buffer.collect_statistic(stat)
-                    + self.triangles.collect_statistic(stat)
+                    + self.triangle_offsets.collect_statistic(stat)
                     + self.vertices.collect_statistic(stat)
             }
             StatType::DecodedMetaSize => 0,
@@ -81,9 +87,9 @@ impl Analyze for RawPresence<'_> {
     fn for_each_stream(&self, cb: &mut dyn FnMut(StreamMeta)) {
         match self {
             Self::AllPresent => {}
-            // Bitfield presence is headerless raw bytes, not a stream.
+            // v2 presence is headerless, not a stream, whichever coding holds it.
             #[cfg(feature = "unstable-v2")]
-            Self::Bitfield(_) => {}
+            Self::Bitfield(_) | Self::Decoded(_) => {}
             Self::Stream(s) => s.for_each_stream(cb),
         }
     }
@@ -202,6 +208,40 @@ impl Analyze for RawProperty<'_> {
             Self::F32(s) | Self::F64(s) => s.for_each_stream(cb),
             Self::Str(s) => s.for_each_stream(cb),
             Self::SharedDict(s) => s.for_each_stream(cb),
+        }
+    }
+}
+
+#[cfg(feature = "unstable-v2")]
+impl Analyze for RawMValue<'_> {
+    fn for_each_stream(&self, cb: &mut dyn FnMut(StreamMeta)) {
+        match self {
+            Self::Bool(s)
+            | Self::I8(s)
+            | Self::U8(s)
+            | Self::I32(s)
+            | Self::U32(s)
+            | Self::I64(s)
+            | Self::U64(s) => s.for_each_stream(cb),
+            Self::F32(s) | Self::F64(s) => s.for_each_stream(cb),
+            Self::Str(s) => s.for_each_stream(cb),
+        }
+    }
+}
+
+#[cfg(feature = "unstable-v2")]
+impl Analyze for ColumnValues<'_> {
+    fn for_each_stream(&self, cb: &mut dyn FnMut(StreamMeta)) {
+        match self {
+            Self::Bool(s)
+            | Self::I8(s)
+            | Self::U8(s)
+            | Self::I32(s)
+            | Self::U32(s)
+            | Self::I64(s)
+            | Self::U64(s) => s.for_each_stream(cb),
+            Self::F32(s) | Self::F64(s) => s.for_each_stream(cb),
+            Self::Str(s) => s.for_each_stream(cb),
         }
     }
 }
