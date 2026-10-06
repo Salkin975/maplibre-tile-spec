@@ -63,7 +63,14 @@ export class LazyPropertyVectors {
                 continue;
             }
             const columnName = column.name;
-            if (columnName === name || name.startsWith(`${columnName}:`) || name.startsWith(`${columnName}.`)) {
+            // An unnamed struct (sibling fields such as `class` and `subclass` the encoder groups under no
+            // name) has no prefix to match, so it is tried for every name.
+            if (
+                columnName === "" ||
+                columnName === name ||
+                name.startsWith(`${columnName}:`) ||
+                name.startsWith(`${columnName}.`)
+            ) {
                 this.#decode(column);
                 const resolved = this.#vectorsByName.get(name);
                 if (resolved) {
