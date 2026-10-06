@@ -24,3 +24,5 @@ export { unionSelectionVectors, intersectSelectionVectors } from "./vector/filte
 export { filterFeatureTable } from "./processing/filter/execution/tableFilter";
 export { isColumnarBucketSupported } from "./processing/filter/planning/bucketSupport";
 export { createFlatGpuVector } from "./vector/geometry/flatGpuVector";
+export { scanLayerBlocks } from "./mltDecoder";
+export type { LayerBlock } from "./mltDecoder";
