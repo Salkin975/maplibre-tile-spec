@@ -5,7 +5,7 @@ import { parse, join } from "node:path";
 import { VectorTile, type VectorTileFeature } from "@mapbox/vector-tile";
 import { PbfReader } from "pbf";
 
-import { type FeatureTable, type Feature, decodeTile } from ".";
+import { type FeatureTable, type Feature, decodeTile, scanLayerBlocks } from ".";
 import path from "node:path";
 import fs from "node:fs";
 
@@ -59,7 +59,7 @@ describe("FeatureTable", () => {
 });
 
 /**
- * `propertyColumns` projects away whole columns. A struct column with a shared dictionary
+ * `propertyColumnNames` projects away whole columns. A struct column with a shared dictionary
  * exposes its children as `${column.name}${child.name}` (`name` + `:de` -> `name:de`), so the
  * projection has to match against those child names — matching only the parent name used to
  * drop the entire column when a caller asked for a single child, yielding nothing at all.
@@ -67,19 +67,19 @@ describe("FeatureTable", () => {
  * The shared dictionary streams are decoded either way; what the projection saves is the
  * per-child offset streams and the vectors built from them.
  */
-describe("MLT Decoder - propertyColumns projection", () => {
+describe("MLT Decoder - propertyColumnNames projection", () => {
     const OMT_STRUCT_TILE = path.resolve(__dirname, "../../test/expected/tag0x01/omt/4_8_10.mlt");
     const LAYER = "water_name";
 
     function waterNameTable(options?: Parameters<typeof decodeTile>[3]) {
         const bytes = new Uint8Array(fs.readFileSync(OMT_STRUCT_TILE));
-        const table = decodeTile(bytes, undefined, true, options).find((t) => t.name === LAYER);
+        const table = decodeTile(bytes, undefined, true, options).find((featureTable) => featureTable.name === LAYER);
         assert.ok(table, `expected a "${LAYER}" layer in the fixture`);
         return table;
     }
 
     it("keeps a struct column when only one of its children is requested", () => {
-        const table = waterNameTable({ propertyColumns: new Set(["name:de"]) });
+        const table = waterNameTable({ propertyColumnNames: new Set(["name:de"]) });
         assert.deepEqual(
             table.propertyVectors.map((vector) => vector.name),
             ["name:de"],
@@ -88,7 +88,7 @@ describe("MLT Decoder - propertyColumns projection", () => {
     });
 
     it("drops the siblings that were not requested", () => {
-        const table = waterNameTable({ propertyColumns: new Set(["name:de"]) });
+        const table = waterNameTable({ propertyColumnNames: new Set(["name:de"]) });
 
         assert.equal(table.getPropertyVector("name:en"), undefined);
         assert.equal(table.getPropertyVector("name:fr"), undefined);
@@ -105,7 +105,7 @@ describe("MLT Decoder - propertyColumns projection", () => {
     });
 
     it("combines a struct child with a plain scalar column", () => {
-        const table = waterNameTable({ propertyColumns: new Set(["name:de", "class"]) });
+        const table = waterNameTable({ propertyColumnNames: new Set(["name:de", "class"]) });
 
         const names = table.propertyVectors.map((vector) => vector.name).sort();
         assert.deepEqual(names, ["class", "name:de"]);
@@ -129,6 +129,36 @@ describe("MLT Decoder - malformed input", () => {
             );
         }
     }, 15000);
+});
+
+describe("scanLayerBlocks", () => {
+    const OMT_TILE = path.resolve(__dirname, "../../test/expected/tag0x01/omt/4_8_10.mlt");
+
+    it("finds the same layers, in the same order, as decodeTile", () => {
+        const tile = new Uint8Array(fs.readFileSync(OMT_TILE));
+
+        assert.deepEqual(
+            scanLayerBlocks(tile).map((layerBlock) => layerBlock.name),
+            decodeTile(tile).map((featureTable) => featureTable.name),
+        );
+    });
+
+    it("slices each block so that decodeTile reads it as a tile with one layer", () => {
+        const tile = new Uint8Array(fs.readFileSync(OMT_TILE));
+
+        for (const layerBlock of scanLayerBlocks(tile)) {
+            const featureTables = decodeTile(layerBlock.bytes);
+            assert.equal(featureTables.length, 1);
+            assert.equal(featureTables[0].name, layerBlock.name);
+        }
+    });
+
+    it("rejects a truncated tile", () => {
+        const tile = new Uint8Array(fs.readFileSync(OMT_TILE));
+        const truncatedTile = tile.subarray(0, Math.floor(tile.length * 0.5));
+
+        assert.throws(() => scanLayerBlocks(truncatedTile), /Block overruns tile/);
+    });
 });
 
 function testTiles(mltSearchDir: string, mvtSearchDir: string) {
