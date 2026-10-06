@@ -39,7 +39,7 @@ export function normalizeComparable(value: unknown): Comparable | undefined {
 
 export type ValueComparisonOperator = Exclude<ColumnarComparisonOperator, "has" | "!has">;
 
-// Returns true if the operator is negated
+// Returns true if the operator is isNegated
 export function isNegatedOperator(operator: ValueComparisonOperator): boolean {
     return operator === "!=" || operator === "!in";
 }
@@ -82,27 +82,27 @@ function booleanKey(value: Comparable): number {
     return typeof value === "boolean" ? Number(value) : Number.NaN;
 }
 
-function createEqualityMatcher(operand: unknown, negated: boolean): ValueMatcher {
+function createEqualityMatcher(operand: unknown, isNegated: boolean): ValueMatcher {
     const matchValue = normalizeComparable(operand);
     // An operand without a comparable value equals nothing
-    if (matchValue === undefined) return negated ? MATCHES_ANYTHING : MATCHES_NOTHING;
+    if (matchValue === undefined) return isNegated ? MATCHES_ANYTHING : MATCHES_NOTHING;
 
     // Only numeric operands can match an integer value, so only they narrow
     if (typeof matchValue === "number") {
-        return negated ? (value) => narrow(value) !== matchValue : (value) => narrow(value) === matchValue;
+        return isNegated ? (value) => narrow(value) !== matchValue : (value) => narrow(value) === matchValue;
     }
-    return negated ? (value) => value !== matchValue : (value) => value === matchValue;
+    return isNegated ? (value) => value !== matchValue : (value) => value === matchValue;
 }
-function createMembershipMatcher(operands: readonly unknown[], negated: boolean): ValueMatcher {
+function createMembershipMatcher(operands: readonly unknown[], isNegated: boolean): ValueMatcher {
     // Hash the operands once so membership is a single lookup
     const matchValues = new Set<unknown>();
     for (const operand of operands) {
         const matchValue = normalizeComparable(operand);
         if (matchValue !== undefined) matchValues.add(matchValue);
     }
-    if (matchValues.size === 0) return negated ? MATCHES_ANYTHING : MATCHES_NOTHING;
+    if (matchValues.size === 0) return isNegated ? MATCHES_ANYTHING : MATCHES_NOTHING;
 
-    return negated ? (value) => !matchValues.has(narrow(value)) : (value) => matchValues.has(narrow(value));
+    return isNegated ? (value) => !matchValues.has(narrow(value)) : (value) => matchValues.has(narrow(value));
 }
 
 function createOrderingMatcher(operator: OrderingOperator, operand: unknown): ValueMatcher {

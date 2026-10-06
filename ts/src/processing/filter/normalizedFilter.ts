@@ -25,7 +25,7 @@ export interface NormalizedTypeCheck {
     // geometry-type checks are unnecessary because it is always a string
     target: Exclude<FilterTarget, { kind: "geometry-type" }>;
     typeName: string;
-    negated: boolean;
+    isNegated: boolean;
 }
 
 export type NormalizedFilter = NormalizedConstant | NormalizedLeaf | NormalizedCompound | NormalizedTypeCheck;

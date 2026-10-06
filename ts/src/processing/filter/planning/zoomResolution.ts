@@ -33,8 +33,8 @@ export function resolveZoomExpression(expression: unknown, zoom: number): unknow
         EXISTENCE_OPERATORS.has(operator) ||
         operator === "match"
     ) {
-        const resolvedArgs = expression.slice(1).map((child) => resolveZoomExpression(child, zoom));
-        const resolvedExpression = [operator, ...resolvedArgs] as ExpressionSpecification;
+        const resolvedArguments = expression.slice(1).map((child) => resolveZoomExpression(child, zoom));
+        const resolvedExpression = [operator, ...resolvedArguments] as ExpressionSpecification;
         return foldLiteralLeaf(resolvedExpression);
     }
 

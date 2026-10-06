@@ -28,7 +28,7 @@ export function getNormalizedFilter(
 ): NormalizedFilter | undefined {
     // Fast return for filters that need no normalization
     if (filter === undefined || filter === null) return { kind: "constant", value: true };
-    if (typeof filter == "boolean") return { kind: "constant", value: filter };
+    if (typeof filter === "boolean") return { kind: "constant", value: filter };
 
     if (typeof filter !== "object") return undefined;
 

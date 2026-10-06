@@ -4,10 +4,10 @@ export class FlatSelectionVector implements SelectionVector {
     private _limit: number;
 
     constructor(
-        private readonly _selectionVector: Uint32Array,
+        private readonly _selectedIndices: Uint32Array,
         limit?: number,
     ) {
-        this._limit = limit ?? this._selectionVector.length;
+        this._limit = limit ?? this._selectedIndices.length;
     }
 
     /** @inheritdoc */
@@ -16,7 +16,7 @@ export class FlatSelectionVector implements SelectionVector {
             throw new RangeError("Index out of bounds");
         }
 
-        return this._selectionVector[index];
+        return this._selectedIndices[index];
     }
 
     /** @inheritdoc */
@@ -25,7 +25,7 @@ export class FlatSelectionVector implements SelectionVector {
             throw new RangeError("Index out of bounds");
         }
 
-        this._selectionVector[index] = value;
+        this._selectedIndices[index] = value;
     }
 
     /** @inheritdoc */
@@ -38,15 +38,15 @@ export class FlatSelectionVector implements SelectionVector {
 
     /** @inheritdoc */
     selectionValues(): Uint32Array {
-        if (this._limit === this._selectionVector.length) {
-            return this._selectionVector;
+        if (this._limit === this._selectedIndices.length) {
+            return this._selectedIndices;
         }
-        return this._selectionVector.subarray(0, this._limit);
+        return this._selectedIndices.subarray(0, this._limit);
     }
 
     /** @inheritdoc */
     get capacity() {
-        return this._selectionVector.length;
+        return this._selectedIndices.length;
     }
 
     /** @inheritdoc */
