@@ -10,12 +10,12 @@ export function createSelectionVector(size: number): SelectionVector {
 
 /** A selection over every present (non-null) index in `[0, size)`, per `nullabilityBuffer`. */
 export function createNullableSelectionVector(size: number, nullabilityBuffer?: BitVector): SelectionVector {
-    const indices = new Uint32Array(size);
+    const selectedIndices = new Uint32Array(size);
     let writeIndex = 0;
     for (let index = 0; index < size; index++) {
-        if (!nullabilityBuffer || nullabilityBuffer.get(index)) indices[writeIndex++] = index;
+        if (!nullabilityBuffer || nullabilityBuffer.get(index)) selectedIndices[writeIndex++] = index;
     }
-    return new FlatSelectionVector(indices, writeIndex);
+    return new FlatSelectionVector(selectedIndices, writeIndex);
 }
 
 /** Narrows `selection` to the indices that are present in `nullabilityBuffer`, if given. */
@@ -26,13 +26,13 @@ export function updateNullableSelectionVector(
     if (!nullabilityBuffer) return selection;
 
     const limit = selection.limit;
-    const values = new Uint32Array(limit);
+    const selectedIndices = new Uint32Array(limit);
     let writeIndex = 0;
     for (let i = 0; i < limit; i++) {
         const index = selection.getIndex(i);
-        if (nullabilityBuffer.get(index)) values[writeIndex++] = index;
+        if (nullabilityBuffer.get(index)) selectedIndices[writeIndex++] = index;
     }
-    return new FlatSelectionVector(values, writeIndex);
+    return new FlatSelectionVector(selectedIndices, writeIndex);
 }
 
 /** Selects the indices in `[0, size)` for which `matches` is true, narrows `selection` in place if given. */
@@ -47,14 +47,14 @@ export function scanSelection(
     }
 
     if (!selection) {
-        const indices = new Uint32Array(size);
+        const selectedIndices = new Uint32Array(size);
         let writeIndex = 0;
         for (let index = 0; index < size; index++) {
-            if (matches(index)) indices[writeIndex++] = index;
+            if (matches(index)) selectedIndices[writeIndex++] = index;
         }
         if (writeIndex === 0) return ConstSelectionVector.empty(size);
         if (writeIndex === size) return ConstSelectionVector.full(size);
-        return new FlatSelectionVector(indices, writeIndex);
+        return new FlatSelectionVector(selectedIndices, writeIndex);
     }
 
     const limit = selection.limit;
@@ -67,66 +67,66 @@ export function scanSelection(
     return selection;
 }
 
-export function unionSelectionVectors(vectors: SelectionVector[], totalSize: number): SelectionVector {
+export function unionSelectionVectors(vectors: SelectionVector[], size: number): SelectionVector {
     if (vectors.length === 0) {
-        return ConstSelectionVector.empty(totalSize);
+        return ConstSelectionVector.empty(size);
     }
     if (vectors.length === 1) {
         return vectors[0];
     }
     // A vector that covers the whole range makes the union the whole range
-    if (vectors.some((vector) => vector.limit === totalSize)) {
-        return ConstSelectionVector.full(totalSize);
+    if (vectors.some((vector) => vector.limit === size)) {
+        return ConstSelectionVector.full(size);
     }
 
-    const selected = new Uint8Array(totalSize);
-    let selectedCount = 0;
+    const isSelected = new Uint8Array(size);
+    let numSelected = 0;
     for (const vector of vectors) {
         for (let i = 0; i < vector.limit; i++) {
             const index = vector.getIndex(i);
-            if (selected[index] === 0) {
-                selected[index] = 1;
-                selectedCount++;
+            if (isSelected[index] === 0) {
+                isSelected[index] = 1;
+                numSelected++;
             }
         }
     }
 
-    if (selectedCount === 0) {
-        return ConstSelectionVector.empty(totalSize);
+    if (numSelected === 0) {
+        return ConstSelectionVector.empty(size);
     }
-    if (selectedCount === totalSize) {
-        return ConstSelectionVector.full(totalSize);
+    if (numSelected === size) {
+        return ConstSelectionVector.full(size);
     }
 
-    const values = new Uint32Array(selectedCount);
+    const selectedIndices = new Uint32Array(numSelected);
     let writeIndex = 0;
-    for (let i = 0; i < totalSize; i++) {
-        if (selected[i] !== 0) values[writeIndex++] = i;
+    for (let i = 0; i < size; i++) {
+        if (isSelected[i] !== 0) selectedIndices[writeIndex++] = i;
     }
-    return new FlatSelectionVector(values);
+    return new FlatSelectionVector(selectedIndices);
 }
 
-export function invertSelectionVector(selectionVector: SelectionVector, totalSize: number): SelectionVector {
+export function invertSelectionVector(selectionVector: SelectionVector, size: number): SelectionVector {
     if (selectionVector.limit === 0) {
-        return ConstSelectionVector.full(totalSize);
+        return ConstSelectionVector.full(size);
     }
-    if (selectionVector.limit === totalSize) {
-        return ConstSelectionVector.empty(totalSize);
+    if (selectionVector.limit === size) {
+        return ConstSelectionVector.empty(size);
     }
 
-    const selected = new Uint8Array(totalSize);
+    const isSelected = new Uint8Array(size);
     for (let i = 0; i < selectionVector.limit; i++) {
-        selected[selectionVector.getIndex(i)] = 1;
+        isSelected[selectionVector.getIndex(i)] = 1;
     }
 
-    const values = new Uint32Array(totalSize - selectionVector.limit);
+    const selectedIndices = new Uint32Array(size - selectionVector.limit);
     let writeIndex = 0;
-    for (let i = 0; i < totalSize; i++) {
-        if (selected[i] === 0) {
-            values[writeIndex++] = i;
+    for (let i = 0; i < size; i++) {
+        if (isSelected[i] === 0) {
+            selectedIndices[writeIndex++] = i;
         }
     }
-    return new FlatSelectionVector(values, writeIndex);
+    return new FlatSelectionVector(selectedIndices, writeIndex);
 }
 
 export function intersectSelectionVectors(left: SelectionVector, right: SelectionVector): SelectionVector {
@@ -138,7 +138,7 @@ export function intersectSelectionVectors(left: SelectionVector, right: Selectio
     if (left instanceof ConstSelectionVector) return right;
     if (right instanceof ConstSelectionVector) return left;
 
-    const values = new Uint32Array(Math.min(left.limit, right.limit));
+    const selectedIndices = new Uint32Array(Math.min(left.limit, right.limit));
     let writeIndex = 0;
     let leftIndex = 0;
     let rightIndex = 0;
@@ -146,7 +146,7 @@ export function intersectSelectionVectors(left: SelectionVector, right: Selectio
         const leftValue = left.getIndex(leftIndex);
         const rightValue = right.getIndex(rightIndex);
         if (leftValue === rightValue) {
-            values[writeIndex++] = leftValue;
+            selectedIndices[writeIndex++] = leftValue;
             leftIndex++;
             rightIndex++;
         } else if (leftValue < rightValue) {
@@ -155,5 +155,5 @@ export function intersectSelectionVectors(left: SelectionVector, right: Selectio
             rightIndex++;
         }
     }
-    return new FlatSelectionVector(values, writeIndex);
+    return new FlatSelectionVector(selectedIndices, writeIndex);
 }

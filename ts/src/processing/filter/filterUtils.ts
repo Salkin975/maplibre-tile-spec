@@ -1,4 +1,5 @@
 import type { ExpressionSpecification } from "@maplibre/maplibre-gl-style-spec";
+import { toSafeMltNumber } from "../../decoding/numericSafety";
 
 // Types and Kinds of Operators supported in the Expressions
 export const COMPARISON_OPERATORS = new Set(["==", "!=", ">", ">=", "<", "<="]);
@@ -27,29 +28,19 @@ type OrderingOperator = ">" | ">=" | "<" | "<=";
 
 export type ValueMatcher = (value: Comparable) => boolean;
 
-const Max_SAFE_INTEGER = BigInt(Number.MAX_SAFE_INTEGER);
-const Min_SAFE_INTEGER = BigInt(Number.MIN_SAFE_INTEGER);
-
 const MATCHES_NOTHING: ValueMatcher = () => false;
 const MATCHES_ANYTHING: ValueMatcher = () => true;
 
-// Returns undefined if the value cannot be converted to a TypeScript number without losing precision
-export function toSafeMLTNumber(value: number | bigint): number | undefined {
-    if (typeof value === "number") return value;
-    if (value > Max_SAFE_INTEGER || value < Min_SAFE_INTEGER) return undefined;
-    return Number(value);
-}
-
 // Normalizes the value to a Comparable type for consistent processing
 export function normalizeComparable(value: unknown): Comparable | undefined {
-    if (typeof value === "bigint") return toSafeMLTNumber(value);
+    if (typeof value === "bigint") return toSafeMltNumber(value);
     if (typeof value === "number" || typeof value === "string" || typeof value === "boolean") return value;
     return undefined;
 }
 
 export type ValueComparisonOperator = Exclude<ColumnarComparisonOperator, "has" | "!has">;
 
-// Returns true if the operator is negated
+// Returns true if the operator is isNegated
 export function isNegatedOperator(operator: ValueComparisonOperator): boolean {
     return operator === "!=" || operator === "!in";
 }
@@ -77,13 +68,13 @@ export function matchesNull(operator: ValueComparisonOperator, value: readonly u
 
 /** Narrows integers to numbers, an integer that is not safe becomes `undefined` and never matches. */
 function narrow(value: Comparable): Comparable | undefined {
-    return typeof value === "bigint" ? toSafeMLTNumber(value) : value;
+    return typeof value === "bigint" ? toSafeMltNumber(value) : value;
 }
 
 /** Orders numbers and integers, other types yield NaN and fail every relational operator. */
 function numericKey(value: Comparable): number {
     if (typeof value === "number") return value;
-    if (typeof value === "bigint") return toSafeMLTNumber(value) ?? Number.NaN;
+    if (typeof value === "bigint") return toSafeMltNumber(value) ?? Number.NaN;
     return Number.NaN;
 }
 
@@ -92,27 +83,27 @@ function booleanKey(value: Comparable): number {
     return typeof value === "boolean" ? Number(value) : Number.NaN;
 }
 
-function createEqualityMatcher(operand: unknown, negated: boolean): ValueMatcher {
+function createEqualityMatcher(operand: unknown, isNegated: boolean): ValueMatcher {
     const matchValue = normalizeComparable(operand);
     // An operand without a comparable value equals nothing
-    if (matchValue === undefined) return negated ? MATCHES_ANYTHING : MATCHES_NOTHING;
+    if (matchValue === undefined) return isNegated ? MATCHES_ANYTHING : MATCHES_NOTHING;
 
     // Only numeric operands can match an integer value, so only they narrow
     if (typeof matchValue === "number") {
-        return negated ? (value) => narrow(value) !== matchValue : (value) => narrow(value) === matchValue;
+        return isNegated ? (value) => narrow(value) !== matchValue : (value) => narrow(value) === matchValue;
     }
-    return negated ? (value) => value !== matchValue : (value) => value === matchValue;
+    return isNegated ? (value) => value !== matchValue : (value) => value === matchValue;
 }
-function createMembershipMatcher(operands: readonly unknown[], negated: boolean): ValueMatcher {
+function createMembershipMatcher(operands: readonly unknown[], isNegated: boolean): ValueMatcher {
     // Hash the operands once so membership is a single lookup
     const matchValues = new Set<unknown>();
     for (const operand of operands) {
         const matchValue = normalizeComparable(operand);
         if (matchValue !== undefined) matchValues.add(matchValue);
     }
-    if (matchValues.size === 0) return negated ? MATCHES_ANYTHING : MATCHES_NOTHING;
+    if (matchValues.size === 0) return isNegated ? MATCHES_ANYTHING : MATCHES_NOTHING;
 
-    return negated ? (value) => !matchValues.has(narrow(value)) : (value) => matchValues.has(narrow(value));
+    return isNegated ? (value) => !matchValues.has(narrow(value)) : (value) => matchValues.has(narrow(value));
 }
 
 function createOrderingMatcher(operator: OrderingOperator, operand: unknown): ValueMatcher {

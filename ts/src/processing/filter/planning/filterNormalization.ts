@@ -63,7 +63,7 @@ function normalizeMatch(expression: ExpressionSpecification): NormalizedLeaf | u
     return leaf(fallbackValue ? "!in" : "in", target, fallbackValue ? falseValues : trueValues);
 }
 
-function normalizeTypeCheck(expression: readonly unknown[], negated: boolean): NormalizedTypeCheck | undefined {
+function normalizeTypeCheck(expression: readonly unknown[], isNegated: boolean): NormalizedTypeCheck | undefined {
     if (expression.length !== 3) return undefined;
     const probeExpression = expression[1];
     if (!Array.isArray(probeExpression) || probeExpression[0] !== "typeof" || probeExpression.length !== 2)
@@ -75,7 +75,7 @@ function normalizeTypeCheck(expression: readonly unknown[], negated: boolean): N
     const target = normalizeExpressionTarget(probeExpression[1]);
 
     if (!target || target.kind === "geometry-type") return undefined;
-    return { kind: "type-check", target, typeName, negated };
+    return { kind: "type-check", target, typeName, isNegated };
 }
 
 function normalizeCase(expression: readonly unknown[]): NormalizedFilter | undefined {
@@ -105,6 +105,28 @@ function normalizeCase(expression: readonly unknown[]): NormalizedFilter | undef
     return { kind: "compound", operator: "any", children: branches };
 }
 
+/** Geometry types are names, so they have no order. */
+function isOrderingOnGeometryType(target: FilterTarget, operator: string): boolean {
+    return target.kind === "geometry-type" && ORDERING_OPERATORS.has(operator);
+}
+
+function normalizeExpressionComparison(operator: string, expression: readonly unknown[]): NormalizedLeaf | undefined {
+    if (expression.length !== 3) return undefined;
+    const target = normalizeExpressionTarget(expression[1]);
+    if (!target || isOrderingOnGeometryType(target, operator)) return undefined;
+    const comparisonValues = normalizeComparisonValue(expression[2]);
+    if (!comparisonValues) return undefined;
+    return leaf(operator, target, comparisonValues);
+}
+
+function normalizeExpressionMembership(operator: string, expression: readonly unknown[]): NormalizedLeaf | undefined {
+    const target = normalizeExpressionTarget(expression[1]);
+    if (!target) return undefined;
+    const comparisonValues = normalizeLiteralMembershipValue(expression as ExpressionSpecification);
+    if (!comparisonValues) return undefined;
+    return leaf(operator, target, comparisonValues);
+}
+
 function normalizeExpressionNode(expression: readonly unknown[]): NormalizedFilter | undefined {
     const operator = expression[0] as string;
 
@@ -113,25 +135,10 @@ function normalizeExpressionNode(expression: readonly unknown[]): NormalizedFilt
         if (typeCheck) return typeCheck;
     }
 
-    if (COMPARISON_OPERATORS.has(operator)) {
-        if (expression.length !== 3) return undefined;
-        const target = normalizeExpressionTarget(expression[1]);
-        if (!target) return undefined;
-        if (target.kind === "geometry-type" && ORDERING_OPERATORS.has(operator)) return undefined;
-        const comparisonValues = normalizeComparisonValue(expression[2]);
-        if (!comparisonValues) return undefined;
-        return leaf(operator, target, comparisonValues);
-    }
+    if (COMPARISON_OPERATORS.has(operator)) return normalizeExpressionComparison(operator, expression);
+    if (operator === "in") return normalizeExpressionMembership(operator, expression);
 
-    if (operator === "in") {
-        const target = normalizeExpressionTarget(expression[1]);
-        if (!target) return undefined;
-        const comparisonValues = normalizeLiteralMembershipValue(expression as ExpressionSpecification);
-        if (!comparisonValues) return undefined;
-        return leaf(operator, target, comparisonValues);
-    }
-
-    if (operator == "has") {
+    if (operator === "has") {
         if (expression.length !== 2 || typeof expression[1] !== "string") return undefined;
         return leaf(operator, { kind: "property", name: expression[1] }, []);
     }
@@ -149,6 +156,38 @@ function normalizeExpressionNode(expression: readonly unknown[]): NormalizedFilt
     return undefined;
 }
 
+function normalizeLegacyComparison(operator: string, expression: readonly unknown[]): NormalizedFilter | undefined {
+    if (expression.length !== 3) return undefined;
+    const target = normalizeLegacyTarget(expression[1]);
+    if (!target || isOrderingOnGeometryType(target, operator)) return undefined;
+
+    if (expression[2] === null && target.kind === "property" && (operator === "==" || operator === "!=")) {
+        const presenceLeaf = leaf(operator === "==" ? "has" : "!has", target, []);
+        return {
+            kind: "compound",
+            operator: operator === "==" ? "all" : "any",
+            children: [presenceLeaf, leaf(operator, target, [null])],
+        };
+    }
+
+    return leaf(operator, target, [expression[2]]);
+}
+
+function normalizeLegacyMembership(operator: string, expression: readonly unknown[]): NormalizedLeaf | undefined {
+    const target = normalizeLegacyTarget(expression[1]);
+    if (!target) return undefined;
+    return leaf(operator, target, expression.slice(2));
+}
+
+function normalizeLegacyExistence(operator: string, expression: readonly unknown[]): NormalizedFilter | undefined {
+    if (expression.length !== 2) return undefined;
+    const target = normalizeLegacyTarget(expression[1]);
+    if (!target) return undefined;
+
+    if (target.kind === "geometry-type") return constant(operator === "has");
+    return leaf(operator, target, []);
+}
+
 function normalizeLegacyNode(expression: readonly unknown[]): NormalizedFilter | undefined {
     const operator = expression[0] as string;
 
@@ -160,39 +199,9 @@ function normalizeLegacyNode(expression: readonly unknown[]): NormalizedFilter |
         return { kind: "compound", operator, children };
     }
 
-    if (COMPARISON_OPERATORS.has(operator)) {
-        if (expression.length !== 3) return undefined;
-        const target = normalizeLegacyTarget(expression[1]);
-        if (!target) return undefined;
-        if (target.kind === "geometry-type" && ORDERING_OPERATORS.has(operator)) return undefined;
-
-        if (expression[2] === null && target.kind === "property" && (operator === "==" || operator === "!=")) {
-            const present = leaf(operator === "==" ? "has" : "!has", target, []);
-            return {
-                kind: "compound",
-                operator: operator === "==" ? "all" : "any",
-                children: [present, leaf(operator, target, [null])],
-            };
-        }
-
-        return leaf(operator, target, [expression[2]]);
-    }
-
-    if (MEMBERSHIP_OPERATORS.has(operator)) {
-        const target = normalizeLegacyTarget(expression[1]);
-        if (!target) return undefined;
-
-        return leaf(operator, target, expression.slice(2));
-    }
-
-    if (EXISTENCE_OPERATORS.has(operator)) {
-        if (expression.length !== 2) return undefined;
-        const target = normalizeLegacyTarget(expression[1]);
-        if (!target) return undefined;
-
-        if (target.kind === "geometry-type") return constant(operator === "has");
-        return leaf(operator, target, []);
-    }
+    if (COMPARISON_OPERATORS.has(operator)) return normalizeLegacyComparison(operator, expression);
+    if (MEMBERSHIP_OPERATORS.has(operator)) return normalizeLegacyMembership(operator, expression);
+    if (EXISTENCE_OPERATORS.has(operator)) return normalizeLegacyExistence(operator, expression);
 
     return undefined;
 }

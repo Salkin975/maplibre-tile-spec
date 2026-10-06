@@ -30,8 +30,8 @@ export function resolveVectorExecutor(
     values: readonly unknown[],
 ): ColumnarVectorExecutor {
     if (operator === "has" || operator === "!has") {
-        const present = operator === "has";
-        return (selection) => scanVector(vector, (index) => vector.has(index) === present, selection);
+        const shouldBePresent = operator === "has";
+        return (selection) => scanVector(vector, (index) => vector.has(index) === shouldBePresent, selection);
     }
 
     if (vector instanceof StringDictionaryVector || vector instanceof StringFsstDictionaryVector) {
@@ -46,8 +46,8 @@ export function resolveVectorExecutor(
         vector instanceof FloatFlatVector ||
         vector instanceof DoubleFlatVector
     ) {
-        const data = vector.rawData;
-        return resolveScanExecutor(vector, operator, values, (index) => data[index]);
+        const rawValues = vector.rawData;
+        return resolveScanExecutor(vector, operator, values, (index) => rawValues[index]);
     }
     return resolveScanExecutor(vector, operator, values);
 }
@@ -60,17 +60,17 @@ function resolveScanExecutor(
     vector: Vector,
     operator: ValueComparisonOperator,
     values: readonly unknown[],
-    read: (index: number) => unknown = (index) => vector.getValue(index),
+    readValue: (index: number) => unknown = (index) => vector.getValue(index),
 ): ColumnarVectorExecutor {
-    const match = createValueMatcher(operator, values);
-    const nullMatches = matchesNull(operator, values);
+    const matchesValue = createValueMatcher(operator, values);
+    const isNullMatch = matchesNull(operator, values);
     return (selection) =>
         scanVector(
             vector,
             (index) => {
-                if (!vector.has(index)) return nullMatches;
-                const value = normalizeComparable(read(index));
-                return value === undefined ? nullMatches : match(value);
+                if (!vector.has(index)) return isNullMatch;
+                const value = normalizeComparable(readValue(index));
+                return value === undefined ? isNullMatch : matchesValue(value);
             },
             selection,
         );
@@ -81,42 +81,39 @@ function resolveDictionaryExecutor(
     operator: ValueComparisonOperator,
     values: readonly unknown[],
 ): ColumnarVectorExecutor {
-    const offsets = vector.dictionaryOffsets;
-    const dictionarySize = offsets.length - 1;
-    const matchingCodes = new Uint8Array(dictionarySize);
+    const dictionaryOffsets = vector.dictionaryOffsets;
+    const numDictionaryEntries = dictionaryOffsets.length - 1;
+    const matchingCodes = new Uint8Array(numDictionaryEntries);
 
     if (isEqualityOperator(operator)) {
-        const encodedValues = encodeStringOperands(values);
-        if (encodedValues.length > 0) {
-            const dictionary = vector.getDictionaryBytes();
-            for (let code = 0; code < dictionarySize; code++) {
-                const start = offsets[code];
-                const end = offsets[code + 1];
-                for (const encodedValue of encodedValues) {
-                    if (bytesEqual(dictionary, start, end, encodedValue)) {
-                        matchingCodes[code] = 1;
-                        break;
-                    }
+        const encodedOperands = encodeStringOperands(values);
+        if (encodedOperands.length > 0) {
+            const dictionaryBytes = vector.getDictionaryBytes();
+            for (let code = 0; code < numDictionaryEntries; code++) {
+                const entryStart = dictionaryOffsets[code];
+                const entryEnd = dictionaryOffsets[code + 1];
+                if (matchesAnyOperand(dictionaryBytes, entryStart, entryEnd, encodedOperands)) {
+                    matchingCodes[code] = 1;
                 }
             }
         }
     } else {
-        const match = createValueMatcher(operator, values);
-        for (let code = 0; code < dictionarySize; code++) {
-            if (match(vector.getDictionaryValue(code))) matchingCodes[code] = 1;
+        const matchesValue = createValueMatcher(operator, values);
+        for (let code = 0; code < numDictionaryEntries; code++) {
+            if (matchesValue(vector.getDictionaryValue(code))) matchingCodes[code] = 1;
         }
     }
     const indices = vector.indices;
     // Negation and matching a row without a value are separate, they diverge for a null operand
-    const negated = isNegatedOperator(operator);
-    const nullMatches = matchesNull(operator, values);
+    const isNegated = isNegatedOperator(operator);
+    const isNullMatch = matchesNull(operator, values);
     return (selection) =>
         scanVector(
             vector,
             (index) => {
-                if (!vector.has(index)) return nullMatches;
-                const matches = matchingCodes[indices[index]] !== 0;
-                return negated ? !matches : matches;
+                if (!vector.has(index)) return isNullMatch;
+                const isMatch = matchingCodes[indices[index]] !== 0;
+                return isNegated ? !isMatch : isMatch;
             },
             selection,
         );
@@ -125,11 +122,11 @@ function resolveDictionaryExecutor(
 const textEncoder = new TextEncoder();
 
 function encodeStringOperands(values: readonly unknown[]): Uint8Array[] {
-    const encodedValues: Uint8Array[] = [];
+    const encodedOperands: Uint8Array[] = [];
     for (const value of values) {
-        if (typeof value === "string") encodedValues.push(textEncoder.encode(value));
+        if (typeof value === "string") encodedOperands.push(textEncoder.encode(value));
     }
-    return encodedValues;
+    return encodedOperands;
 }
 
 function resolveFlatStringExecutor(
@@ -141,36 +138,46 @@ function resolveFlatStringExecutor(
         return resolveScanExecutor(vector, operator, values);
     }
 
-    const encodedValues = encodeStringOperands(values);
-    const offsets = vector.offsets;
-    const data = vector.encodedValues;
+    const encodedOperands = encodeStringOperands(values);
+    const valueOffsets = vector.offsets;
+    const encodedValues = vector.encodedValues;
     // Negation and null matching are separate, as in the dictionary kernel
-    const negated = isNegatedOperator(operator);
-    const nullMatches = matchesNull(operator, values);
+    const isNegated = isNegatedOperator(operator);
+    const isNullMatch = matchesNull(operator, values);
     return (selection) =>
         scanVector(
             vector,
             (index) => {
-                if (!vector.has(index)) return nullMatches;
-                const start = offsets[index];
-                const end = offsets[index + 1];
-                let matches = false;
-                for (const encodedValue of encodedValues) {
-                    if (bytesEqual(data, start, end, encodedValue)) {
-                        matches = true;
-                        break;
-                    }
-                }
-                return negated ? !matches : matches;
+                if (!vector.has(index)) return isNullMatch;
+                const isMatch = matchesAnyOperand(
+                    encodedValues,
+                    valueOffsets[index],
+                    valueOffsets[index + 1],
+                    encodedOperands,
+                );
+                return isNegated ? !isMatch : isMatch;
             },
             selection,
         );
 }
 
-function bytesEqual(data: Uint8Array, start: number, end: number, value: Uint8Array): boolean {
-    if (end - start !== value.length) return false;
-    for (let i = 0; i < value.length; i++) {
-        if (data[start + i] !== value[i]) return false;
+/** Whether the UTF-8 bytes in `[start, end)` equal one of the encoded operands. */
+function matchesAnyOperand(
+    bytes: Uint8Array,
+    start: number,
+    end: number,
+    encodedOperands: readonly Uint8Array[],
+): boolean {
+    for (const encodedOperand of encodedOperands) {
+        if (bytesEqual(bytes, start, end, encodedOperand)) return true;
+    }
+    return false;
+}
+
+function bytesEqual(bytes: Uint8Array, start: number, end: number, expectedBytes: Uint8Array): boolean {
+    if (end - start !== expectedBytes.length) return false;
+    for (let i = 0; i < expectedBytes.length; i++) {
+        if (bytes[start + i] !== expectedBytes[i]) return false;
     }
     return true;
 }

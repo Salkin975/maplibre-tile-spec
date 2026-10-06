@@ -80,28 +80,28 @@ interface RowOptions {
     zoom?: number;
 }
 
-function oneRowTable(properties: Record<string, unknown>, opts: RowOptions = {}): FeatureTable {
+function oneRowTable(properties: Record<string, unknown>, options: RowOptions = {}): FeatureTable {
     const vectors: Vector[] = [];
     for (const [name, value] of Object.entries(properties)) {
         const vector = valueVector(name, value);
         if (vector) vectors.push(vector);
     }
-    const idVector = opts.id !== undefined ? new Int32FlatVector("id", new Int32Array([opts.id]), 1) : undefined;
-    const geometryType = opts.mvtType !== undefined ? MVT_TYPE[opts.mvtType] : GEOMETRY_TYPE.POINT;
+    const idVector = options.id !== undefined ? new Int32FlatVector("id", new Int32Array([options.id]), 1) : undefined;
+    const geometryType = options.mvtType !== undefined ? MVT_TYPE[options.mvtType] : GEOMETRY_TYPE.POINT;
     const geometry = createConstGeometryVector(1, geometryType, {}, undefined, new Int32Array(0));
     return new FeatureTable("test", geometry, idVector, vectors);
 }
 
-/** Builds a one-row table from `properties`/`opts`, runs `filter` at `opts.zoom`, and asserts the
+/** Builds a one-row table from `properties`/`options`, runs `filter` at `options.zoom`, and asserts the
  * filter is supported (never declined) before reporting whether the single row matched. */
 function matches(
     filter: FilterSpecification | undefined,
     properties: Record<string, unknown> = {},
-    opts: RowOptions = {},
+    options: RowOptions = {},
 ): boolean {
-    const zoom = opts.zoom ?? 0;
+    const zoom = options.zoom ?? 0;
     expect(isColumnarFilterSupportedAtZoom(filter, zoom)).toBe(true);
-    const table = oneRowTable(properties, opts);
+    const table = oneRowTable(properties, options);
     return selection(filterFeatureTable(table, filter, zoom)).includes(0);
 }
 
