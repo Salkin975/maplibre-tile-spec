@@ -290,3 +290,48 @@ function transformPropertyNames(properties: Record<string, any>) {
         }
     }
 }
+
+describe("MLT Decoder - releaseDecodedColumns", () => {
+    const OMT_TILE = path.resolve(__dirname, "../../test/expected/tag0x01/omt/4_8_10.mlt");
+
+    function waterNameTable() {
+        const bytes = new Uint8Array(fs.readFileSync(OMT_TILE));
+        const table = decodeTile(bytes).find((featureTable) => featureTable.name === "water_name");
+        assert.ok(table, `expected a "water_name" layer in the fixture`);
+        return table;
+    }
+
+    it("decodes every column again after the release, to the same values", () => {
+        const table = waterNameTable();
+        const before = table.getFeatures();
+
+        const geometryBefore = table.geometryVector;
+        const classBefore = table.getPropertyVector("class");
+        table.releaseDecodedColumns();
+
+        assert.notStrictEqual(table.geometryVector, geometryBefore, "geometry was not decoded again");
+        assert.notStrictEqual(table.getPropertyVector("class"), classBefore, "property column was not decoded again");
+        assert.deepEqual(table.getFeatures(), before);
+    });
+
+    it("keeps a vector obtained before the release usable", () => {
+        const table = waterNameTable();
+        const classVector = table.getPropertyVector("class");
+        const value = classVector?.getValue(0);
+
+        table.releaseDecodedColumns();
+
+        assert.equal(classVector?.getValue(0), value);
+    });
+
+    it("can be released repeatedly and before any column was decoded", () => {
+        const table = waterNameTable();
+        table.releaseDecodedColumns();
+        table.releaseDecodedColumns();
+
+        assert.equal(
+            table.getPropertyVector("class")?.getValue(0),
+            waterNameTable().getPropertyVector("class")?.getValue(0),
+        );
+    });
+});

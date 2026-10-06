@@ -48,6 +48,9 @@ export class LazyIdColumn {
 export default class FeatureTable {
     private propertyVectorsMap?: Map<string, Vector>;
     private propertyNames?: string[];
+    /** The undecoded columns, kept so that {@link releaseDecodedColumns} can restore them. */
+    private readonly lazyGeometryColumn?: LazyGeometryColumn;
+    private readonly lazyIdColumn?: LazyIdColumn;
 
     constructor(
         private readonly _name: string,
@@ -61,6 +64,21 @@ export default class FeatureTable {
         if (_name.length === 0) {
             throw new Error("Missing layer name");
         }
+        if (_geometryVector instanceof LazyGeometryColumn) this.lazyGeometryColumn = _geometryVector;
+        if (_idVector instanceof LazyIdColumn) this.lazyIdColumn = _idVector;
+    }
+
+    /**
+     * Frees the decoded id, geometry and property columns and keeps only what is needed to decode
+     * them again: the column positions in the tile buffer, which therefore stays referenced
+     */
+    releaseDecodedColumns(): void {
+        if (this.lazyGeometryColumn) this._geometryVector = this.lazyGeometryColumn;
+        if (this.lazyIdColumn) this._idVector = this.lazyIdColumn;
+        if (this._propertyVectors instanceof LazyPropertyVectors) {
+            this._propertyVectors.releaseDecoded();
+        }
+        this.propertyVectorsMap = undefined;
     }
 
     get name(): string {

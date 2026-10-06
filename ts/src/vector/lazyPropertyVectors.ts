@@ -103,6 +103,15 @@ export class LazyPropertyVectors {
         return collectedVectors;
     }
 
+    /** Drops every decoded column. The column positions stay, so the next access decodes again. */
+    releaseDecoded(): void {
+        for (const column of this.#columns) {
+            column.vectors = null;
+        }
+        this.#vectorsByName.clear();
+        this.#allVectors = null;
+    }
+
     #decode(column: LazyPropertyColumn): Vector[] {
         const offset = new IntWrapper(column.start);
         const decoded = decodePropertyColumn(
