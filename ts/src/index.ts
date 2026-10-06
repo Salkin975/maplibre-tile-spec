@@ -26,3 +26,5 @@ export { isColumnarBucketSupported } from "./processing/filter/planning/bucketSu
 export { createFlatGpuVector } from "./vector/geometry/flatGpuVector";
 export { scanLayerBlocks } from "./mltDecoder";
 export type { LayerBlock } from "./mltDecoder";
+export { toMvtValue } from "./decoding/mvtValue";
+export { createRowView } from "./vector/rowView";
