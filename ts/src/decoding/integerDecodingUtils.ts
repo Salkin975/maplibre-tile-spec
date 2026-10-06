@@ -221,14 +221,16 @@ function decodeVarintRemainder(l, buf, offset) {
     throw new Error("Expected varint not more than 10 bytes");
 }
 
+let sharedFastPforWorkspace: ReturnType<typeof createFastPforWireDecodeWorkspace> | undefined;
+
 export function decodeFastPfor(
     encodedBytes: Uint8Array,
     expectedValueCount: number,
     encodedByteLength: number,
     offset: IntWrapper,
 ): Uint32Array {
-    const workspace = createFastPforWireDecodeWorkspace(encodedByteLength >>> 2);
-    return decodeFastPforWithWorkspace(encodedBytes, expectedValueCount, encodedByteLength, offset, workspace);
+    sharedFastPforWorkspace ??= createFastPforWireDecodeWorkspace();
+    return decodeFastPforWithWorkspace(encodedBytes, expectedValueCount, encodedByteLength, offset, sharedFastPforWorkspace);
 }
 
 export function decodeFastPforWithWorkspace(
