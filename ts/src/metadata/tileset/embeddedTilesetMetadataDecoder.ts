@@ -1,5 +1,5 @@
 import type IntWrapper from "../../decoding/intWrapper";
-import { decodeVarintInt32 } from "../../decoding/integerDecodingUtils";
+import { readVarint } from "../../decoding/integerDecodingUtils";
 import type { Column, FeatureTableSchema, Field, TileSetMetadata } from "./tilesetMetadata";
 import { ColumnTypeCode, columnTypeHasChildren, columnTypeHasName, decodeColumnType } from "./typeMap";
 
@@ -13,7 +13,7 @@ const SUPPORTED_FIELD_TYPES = "10-29(scalars), 30(STRUCT), 31(MAP)";
  * Layout: [len: varint32][bytes: len]
  */
 function decodeString(src: Uint8Array, offset: IntWrapper): string {
-    const length = decodeVarintInt32(src, offset, 1)[0];
+    const length = readVarint(src, offset);
     if (length === 0) {
         return "";
     }
@@ -40,7 +40,7 @@ function columnToField(column: Column): Field {
  * Decodes a Field used as part of complex types (STRUCT children).
  */
 export function decodeField(src: Uint8Array, offset: IntWrapper): Field {
-    const typeCode = decodeVarintInt32(src, offset, 1)[0] >>> 0;
+    const typeCode = readVarint(src, offset);
 
     const base = typeCode >= ColumnTypeCode.SCALAR_BASE ? decodeColumnType(typeCode) : null;
     if (!base) {
@@ -52,7 +52,7 @@ export function decodeField(src: Uint8Array, offset: IntWrapper): Field {
 
     if (column.type === "complexType" && columnTypeHasChildren(typeCode)) {
         const complexCol = column.complexType;
-        const childCount = decodeVarintInt32(src, offset, 1)[0] >>> 0;
+        const childCount = readVarint(src, offset);
         complexCol.children = new Array(childCount);
         for (let i = 0; i < childCount; i++) {
             complexCol.children[i] = decodeField(src, offset);
@@ -66,7 +66,7 @@ export function decodeField(src: Uint8Array, offset: IntWrapper): Field {
  * The typeCode encodes the column type, nullable flag, and whether it has name/children.
  */
 function decodeColumn(src: Uint8Array, offset: IntWrapper): Column {
-    const typeCode = decodeVarintInt32(src, offset, 1)[0] >>> 0;
+    const typeCode = readVarint(src, offset);
     const base = decodeColumnType(typeCode);
 
     if (!base) {
@@ -87,7 +87,7 @@ function decodeColumn(src: Uint8Array, offset: IntWrapper): Column {
     const column: Column = { ...base, name };
 
     if (column.type === "complexType" && columnTypeHasChildren(typeCode)) {
-        const childCount = decodeVarintInt32(src, offset, 1)[0] >>> 0;
+        const childCount = readVarint(src, offset);
         const complexCol = column.complexType;
         complexCol.children = new Array(childCount);
         for (let i = 0; i < childCount; i++) {
@@ -114,9 +114,9 @@ export function decodeEmbeddedTileSetMetadata(bytes: Uint8Array, offset: IntWrap
     if (table.name.length === 0) {
         throw new Error("Missing layer name");
     }
-    const extent = decodeVarintInt32(bytes, offset, 1)[0] >>> 0;
+    const extent = readVarint(bytes, offset);
 
-    const columnCount = decodeVarintInt32(bytes, offset, 1)[0] >>> 0;
+    const columnCount = readVarint(bytes, offset);
     table.columns = new Array(columnCount);
     for (let j = 0; j < columnCount; j++) {
         table.columns[j] = decodeColumn(bytes, offset);
