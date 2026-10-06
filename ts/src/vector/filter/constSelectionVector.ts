@@ -1,17 +1,17 @@
 import type { SelectionVector } from "./selectionVector";
 
 export class ConstSelectionVector implements SelectionVector {
-    // Cached so that selectionValues() does not rebuild the array
-    private materialisedValues?: Uint32Array;
+    /** Built on the first selectionValues() call, so later calls do not rebuild it. */
+    private cachedSelectedIndices?: Uint32Array;
 
     private constructor(
-        private readonly fullSelection: boolean,
+        private readonly isFull: boolean,
         private readonly length: number,
     ) {}
 
     /** @inheritdoc */
     getIndex(index: number): number {
-        if (!this.fullSelection || index < 0 || index >= this.length) {
+        if (!this.isFull || index < 0 || index >= this.length) {
             throw new RangeError("Index out of bounds");
         }
         return index;
@@ -29,26 +29,23 @@ export class ConstSelectionVector implements SelectionVector {
 
     /** @inheritdoc */
     selectionValues(): Uint32Array {
-        if (this.materialisedValues) {
-            return this.materialisedValues;
-        }
+        this.cachedSelectedIndices ??= this.buildSelectedIndices();
+        return this.cachedSelectedIndices;
+    }
 
-        if (!this.fullSelection) {
-            this.materialisedValues = new Uint32Array(0);
-            return this.materialisedValues;
+    /** Every index in `[0, length)` when full, none when empty. */
+    private buildSelectedIndices(): Uint32Array {
+        const numSelected = this.isFull ? this.length : 0;
+        const selectedIndices = new Uint32Array(numSelected);
+        for (let i = 0; i < numSelected; i++) {
+            selectedIndices[i] = i;
         }
-
-        const values = new Uint32Array(this.length);
-        for (let i = 0; i < this.length; i++) {
-            values[i] = i;
-        }
-        this.materialisedValues = values;
-        return values;
+        return selectedIndices;
     }
 
     /** @inheritdoc */
     get limit(): number {
-        return this.fullSelection ? this.length : 0;
+        return this.isFull ? this.length : 0;
     }
 
     /** @inheritdoc */

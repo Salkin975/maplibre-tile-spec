@@ -4,14 +4,14 @@
 type FilterClassification = "expression" | "legacy" | "neutral";
 
 function classifyChildren(children: Array<any>): FilterClassification {
-    let sawLegacy = false;
+    let hasLegacyChild = false;
     for (const child of children) {
         const classification = classifyFilter(child);
         // A single expression child settles the whole tree
         if (classification === "expression") return "expression";
-        if (classification === "legacy") sawLegacy = true;
+        if (classification === "legacy") hasLegacyChild = true;
     }
-    return sawLegacy ? "legacy" : "neutral";
+    return hasLegacyChild ? "legacy" : "neutral";
 }
 
 function classifyFilter(filter: any): FilterClassification {

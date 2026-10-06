@@ -29,21 +29,21 @@ export function filterByGeometryType(
             : ConstSelectionVector.empty(collection.numGeometries);
     }
 
-    const selected = new Uint32Array(collection.numGeometries);
-    let selectedCount = 0;
+    const selectedIndices = new Uint32Array(collection.numGeometries);
+    let numSelected = 0;
     for (let i = 0; i < collection.numGeometries; i++) {
         if (matchesGeometryType(collection.geometryType(i), geometryType)) {
-            selected[selectedCount++] = i;
+            selectedIndices[numSelected++] = i;
         }
     }
 
-    if (selectedCount === 0) {
+    if (numSelected === 0) {
         return ConstSelectionVector.empty(collection.numGeometries);
     }
-    if (selectedCount === collection.numGeometries) {
+    if (numSelected === collection.numGeometries) {
         return ConstSelectionVector.full(collection.numGeometries);
     }
-    return new FlatSelectionVector(selected, selectedCount);
+    return new FlatSelectionVector(selectedIndices, numSelected);
 }
 
 export type Geometry = {

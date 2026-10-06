@@ -25,4 +25,14 @@ describe("FeatureTable", () => {
         expect(table.getPropertyVector("b")).toBe(b);
         expect(table.getPropertyVector("missing")).toBeUndefined();
     });
+
+    it("lists every property column name once, even when a name repeats", () => {
+        const table = new FeatureTable("layer", geometryVector, undefined, [
+            propertyVector("class"),
+            propertyVector("name"),
+            propertyVector("class"),
+        ]);
+
+        expect(table.getPropertyNames()).toEqual(["class", "name"]);
+    });
 });
