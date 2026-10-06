@@ -1,5 +1,8 @@
-export { default as decodeTile } from "./mltDecoder";
-export type { DecodeTileOptions } from "./mltDecoder";
+export { default as decodeTile, scanLayerBlocks } from "./mltDecoder";
+export type { DecodeTileOptions, LayerBlock } from "./mltDecoder";
+export { toSafeMltNumber, readSafeValue } from "./decoding/numericSafety";
+export { createRowView } from "./vector/rowView";
+export type { RowViewOptions } from "./vector/rowView";
 export { encodeTile } from "./encoding/mltEncoder";
 export { default as FeatureTable } from "./vector/featureTable";
 export { readVarint } from "./decoding/integerDecodingUtils";
@@ -23,4 +26,10 @@ export type {
     PropertyType,
     PropertyValue,
 } from "./encoding/mltEncoder";
-export * from "./processing/filterExports";
+export type { SelectionVector } from "./vector/filter/selectionVector";
+export { SINGLE_PART_GEOMETRY_TYPE } from "./vector/geometry/geometryType";
+export { unionSelectionVectors, intersectSelectionVectors } from "./vector/filter/selectionVectorUtils";
+export { filterFeatureTable } from "./processing/filter/execution/tableFilter";
+export { isColumnarFilterSupportedAtZoom, isColumnarBucketSupported } from "./processing/filter/planning/bucketSupport";
+export { encodePlainStrings, encodeDictionaryStrings } from "./encoding/stringEncoder";
+export { decodeString } from "./decoding/stringDecoder";

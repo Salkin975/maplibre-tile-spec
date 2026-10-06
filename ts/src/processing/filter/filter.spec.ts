@@ -156,30 +156,30 @@ describe("filterFeatureTable", () => {
     });
 
     test("gates columnar bucket creation on both the encoding and the filter", () => {
-        const supported = [">=", "rank", 2] as FilterSpecification;
-        const unsupported = ["within", {}] as unknown as FilterSpecification;
+        const supportedFilter = [">=", "rank", 2] as FilterSpecification;
+        const unsupportedFilter = ["within", {}] as unknown as FilterSpecification;
 
-        expect(isColumnarBucketSupported("mlt", supported, 0)).toBe(true);
-        expect(isColumnarBucketSupported("mvt", supported, 0)).toBe(false);
-        expect(isColumnarBucketSupported(undefined, supported, 0)).toBe(false);
-        expect(isColumnarBucketSupported("mlt", unsupported, 0)).toBe(false);
+        expect(isColumnarBucketSupported("mlt", supportedFilter, 0)).toBe(true);
+        expect(isColumnarBucketSupported("mvt", supportedFilter, 0)).toBe(false);
+        expect(isColumnarBucketSupported(undefined, supportedFilter, 0)).toBe(false);
+        expect(isColumnarBucketSupported("mlt", unsupportedFilter, 0)).toBe(false);
     });
 
     test("announces a filter-caused fallback once, naming the layer and the offending node", () => {
         const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
         try {
             // Distinct array identities: the report is deduplicated per filter object.
-            const supported = [">=", "rank", 2] as FilterSpecification;
-            const unsupported = ["all", [">=", "rank", 2], ["within", {}]] as unknown as FilterSpecification;
+            const supportedFilter = [">=", "rank", 2] as FilterSpecification;
+            const unsupportedFilter = ["all", [">=", "rank", 2], ["within", {}]] as unknown as FilterSpecification;
 
-            expect(isColumnarBucketSupported("mlt", supported, 0, "roads")).toBe(true);
+            expect(isColumnarBucketSupported("mlt", supportedFilter, 0, "roads")).toBe(true);
             expect(warn).not.toHaveBeenCalled();
 
             // A non-MLT tile is not a filter problem, so it stays quiet even though it declines.
-            expect(isColumnarBucketSupported("mvt", unsupported, 0, "roads")).toBe(false);
+            expect(isColumnarBucketSupported("mvt", unsupportedFilter, 0, "roads")).toBe(false);
             expect(warn).not.toHaveBeenCalled();
 
-            expect(isColumnarBucketSupported("mlt", unsupported, 0, "roads")).toBe(false);
+            expect(isColumnarBucketSupported("mlt", unsupportedFilter, 0, "roads")).toBe(false);
             expect(warn).toHaveBeenCalledTimes(1);
             const message = warn.mock.calls[0][0] as string;
             expect(message).toContain('layer "roads"');
@@ -188,7 +188,7 @@ describe("filterFeatureTable", () => {
             expect(message).not.toContain('">=","rank"');
 
             // Re-parsing another tile with the same filter must not repeat the warning.
-            expect(isColumnarBucketSupported("mlt", unsupported, 1, "roads")).toBe(false);
+            expect(isColumnarBucketSupported("mlt", unsupportedFilter, 1, "roads")).toBe(false);
             expect(warn).toHaveBeenCalledTimes(1);
         } finally {
             warn.mockRestore();
@@ -288,18 +288,15 @@ describe("filterFeatureTable", () => {
         expect(on(["match", ["get", "name"], "beta", false, true])).toEqual([0, 2]);
 
         // A non-boolean fallback, a non-boolean output, or an unsupported input is not representable.
-        const unsupported = (filter: unknown) => isColumnarFilterSupportedAtZoom(filter as FilterSpecification, 0);
-        expect(unsupported(["match", ["get", "name"], "alpha", true, "nope"])).toBe(false);
-        expect(unsupported(["match", ["to-string", ["get", "name"]], "alpha", true, false])).toBe(false);
+        expect(isSupported(["match", ["get", "name"], "alpha", true, "nope"])).toBe(false);
+        expect(isSupported(["match", ["to-string", ["get", "name"]], "alpha", true, false])).toBe(false);
     });
 
     test("rejects malformed compound children", () => {
-        const unsupported = (filter: unknown) => isColumnarFilterSupportedAtZoom(filter as FilterSpecification, 0);
-
-        expect(unsupported(["all", 42])).toBe(false);
-        expect(unsupported(["all", ["within", {}]])).toBe(false);
+        expect(isSupported(["all", 42])).toBe(false);
+        expect(isSupported(["all", ["within", {}]])).toBe(false);
         // An undefined child normalizes to constant-true rather than failing the whole filter.
-        expect(unsupported(["all", undefined])).toBe(true);
+        expect(isSupported(["all", undefined])).toBe(true);
     });
 
     test("preserves first-match-wins when lowering a case expression", () => {
@@ -316,10 +313,9 @@ describe("filterFeatureTable", () => {
         expect(selection(filterFeatureTable(table, zoomCase as FilterSpecification, 14))).toEqual([0, 1, 2]);
         expect(selection(filterFeatureTable(table, zoomCase as FilterSpecification, 13))).toEqual([]);
 
-        const unsupported = (filter: unknown) => isColumnarFilterSupportedAtZoom(filter as FilterSpecification, 0);
         // Missing fallback (odd length), and a branch output that is not a filter.
-        expect(unsupported(["case", ["==", ["get", "rank"], 2], true])).toBe(false);
-        expect(unsupported(["case", ["==", ["get", "rank"], 2], "yes", false])).toBe(false);
+        expect(isSupported(["case", ["==", ["get", "rank"], 2], true])).toBe(false);
+        expect(isSupported(["case", ["==", ["get", "rank"], 2], "yes", false])).toBe(false);
     });
 
     test("resolves typeof against a column's representation and its nulls", () => {
@@ -345,11 +341,10 @@ describe("filterFeatureTable", () => {
             selection(filterFeatureTable(big, ["==", ["typeof", ["get", "pop"]], "number"] as FilterSpecification, 0)),
         ).toEqual([0, 1]);
 
-        const unsupported = (filter: unknown) => isColumnarFilterSupportedAtZoom(filter as FilterSpecification, 0);
         // Only the ["typeof", …] == name orientation is recognised; the rest fall back.
-        expect(unsupported(["==", "number", ["typeof", ["get", "y"]]])).toBe(false);
-        expect(unsupported(["==", ["typeof", ["geometry-type"]], "string"])).toBe(false);
-        expect(unsupported([">", ["typeof", ["get", "y"]], "number"])).toBe(false);
+        expect(isSupported(["==", "number", ["typeof", ["get", "y"]]])).toBe(false);
+        expect(isSupported(["==", ["typeof", ["geometry-type"]], "string"])).toBe(false);
+        expect(isSupported([">", ["typeof", ["get", "y"]], "number"])).toBe(false);
     });
 
     test("folds legacy $type existence tests instead of testing them against a column", () => {
@@ -367,14 +362,12 @@ describe("filterFeatureTable", () => {
     });
 
     test("declines the object-lookup forms of get and has", () => {
-        const unsupported = (filter: unknown) => isColumnarFilterSupportedAtZoom(filter as FilterSpecification, 0);
-
         // Three-argument `has` and `get` read the key out of a supplied object rather than out of
         // the feature, so neither names a column.
-        expect(unsupported(["has", "name", ["literal", { name: 1 }]])).toBe(false);
-        expect(unsupported(["==", ["get", "name", ["literal", { name: 1 }]], "alpha"])).toBe(false);
+        expect(isSupported(["has", "name", ["literal", { name: 1 }]])).toBe(false);
+        expect(isSupported(["==", ["get", "name", ["literal", { name: 1 }]], "alpha"])).toBe(false);
         // A computed key is not resolvable ahead of the scan either.
-        expect(unsupported(["has", ["get", "key"]])).toBe(false);
+        expect(isSupported(["has", ["get", "key"]])).toBe(false);
     });
 
     test("folds a zoom-only leaf for every operator shape it supports", () => {
@@ -404,6 +397,11 @@ describe("filterFeatureTable", () => {
         expect(() => createValueMatcher("!has", [])).toThrowError("Unsupported operator: !has");
     });
 });
+
+/** Whether the filter normalizes for the columnar path at zoom 0. */
+function isSupported(filter: unknown): boolean {
+    return isColumnarFilterSupportedAtZoom(filter as FilterSpecification, 0);
+}
 
 function featureTable(properties: Vector[], idVector?: Int32FlatVector | Int64FlatVector): FeatureTable {
     const numFeatures = properties[0]?.size ?? idVector?.size ?? 0;

@@ -18,8 +18,7 @@ export class StringDictionaryVector extends VariableSizeVector<Uint8Array, strin
     }
 
     protected getValueFromBuffer(index: number): string {
-        const offset = this.indexBuffer[index];
-        return this.getDictionaryValue(offset);
+        return this.getDictionaryValue(this.indexBuffer[index]);
     }
 
     get indices(): Uint32Array {
@@ -30,12 +29,12 @@ export class StringDictionaryVector extends VariableSizeVector<Uint8Array, strin
         return this.offsetBuffer;
     }
 
-    getDictionaryValue(index: number): string {
+    getDictionaryValue(code: number): string {
         this.decodedValues ??= new Array(this.offsetBuffer.length - 1);
-        let value = this.decodedValues[index];
+        let value = this.decodedValues[code];
         if (value === undefined) {
-            value = decodeString(this.dataBuffer, this.offsetBuffer[index], this.offsetBuffer[index + 1]);
-            this.decodedValues[index] = value;
+            value = decodeString(this.dataBuffer, this.offsetBuffer[code], this.offsetBuffer[code + 1]);
+            this.decodedValues[code] = value;
         }
         return value;
     }

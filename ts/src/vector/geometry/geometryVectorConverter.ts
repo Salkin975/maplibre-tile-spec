@@ -287,14 +287,14 @@ export function convertGeometryAtIndex(geometryVector: IndexedGeometrySource, ta
     const rootStart = geometryOffsets?.[targetIndex] ?? targetIndex;
     const rootEnd = geometryOffsets?.[targetIndex + 1] ?? targetIndex + 1;
 
-    const readVertices = (start: number, end: number, close: boolean): Point[] => {
-        const count = end - start;
-        const vertices = new Array<Point>(close ? count + 1 : count);
-        for (let i = 0; i < count; i++) {
+    const readVertices = (start: number, end: number, isRing: boolean): Point[] => {
+        const numVertices = end - start;
+        const vertices = new Array<Point>(isRing ? numVertices + 1 : numVertices);
+        for (let i = 0; i < numVertices; i++) {
             const [x, y] = geometryVector.getVertex(start + i);
             vertices[i] = new Point(x, y);
         }
-        if (close) vertices[count] = new Point(vertices[0].x, vertices[0].y);
+        if (isRing) vertices[numVertices] = new Point(vertices[0].x, vertices[0].y);
         return vertices;
     };
 

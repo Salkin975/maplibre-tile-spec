@@ -6,7 +6,7 @@ import type Vector from "./vector";
 const NO_VECTORS: Vector[] = [];
 
 /** Property column whose payload has not been decoded yet. */
-export interface PendingPropertyColumn {
+export interface LazyPropertyColumn {
     /** Top-level column name from the tile metadata. */
     readonly name: string;
     readonly metadata: Column;
@@ -20,22 +20,22 @@ export interface PendingPropertyColumn {
 /**
  * Holds property columns in encoded form and decodes each one on first access.
  * The tile buffer must not be reused or transferred while a feature table is alive,
- * call `forceAll()` before transferring the results out of a worker.
+ * call `decodeAll()` before transferring the results out of a worker.
  */
 export class LazyPropertyVectors {
     readonly #tile: Uint8Array;
-    readonly #columns: PendingPropertyColumn[];
+    readonly #columns: LazyPropertyColumn[];
     readonly #numFeatures: number;
-    /** `DecodeTileOptions.propertyColumns`, applied when a column is decoded. */
+    /** `DecodeTileOptions.propertyColumnNames`, applied when a column is decoded. */
     readonly #propertyColumnNames?: ReadonlySet<string>;
 
     /** Resolved vectors by name, `null` is a cached miss. */
-    readonly #byName = new Map<string, Vector | null>();
+    readonly #vectorsByName = new Map<string, Vector | null>();
     #allVectors: Vector[] | null = null;
 
     constructor(
         tile: Uint8Array,
-        columns: PendingPropertyColumn[],
+        columns: LazyPropertyColumn[],
         numFeatures: number,
         propertyColumnNames?: ReadonlySet<string>,
     ) {
@@ -50,7 +50,7 @@ export class LazyPropertyVectors {
      * Struct children (`name:en`, `name:de`) resolve through their parent column.
      */
     get(name: string): Vector | undefined {
-        const cached = this.#byName.get(name);
+        const cached = this.#vectorsByName.get(name);
         if (cached !== undefined) {
             return cached ?? undefined;
         }
@@ -65,38 +65,38 @@ export class LazyPropertyVectors {
             const columnName = column.name;
             if (columnName === name || name.startsWith(`${columnName}:`) || name.startsWith(`${columnName}.`)) {
                 this.#decode(column);
-                const resolved = this.#byName.get(name);
+                const resolved = this.#vectorsByName.get(name);
                 if (resolved) {
                     return resolved;
                 }
             }
         }
 
-        this.#byName.set(name, null);
+        this.#vectorsByName.set(name, null);
         return undefined;
     }
 
     /** Decodes all remaining columns, e.g. before transferring across a worker boundary. */
-    forceAll(): Vector[] {
+    decodeAll(): Vector[] {
         if (this.#allVectors) {
             return this.#allVectors;
         }
 
-        const all: Vector[] = [];
+        const collectedVectors: Vector[] = [];
         const columns = this.#columns;
         for (let i = 0; i < columns.length; i++) {
             const column = columns[i];
             const vectors = column.vectors ?? this.#decode(column);
-            for (let v = 0; v < vectors.length; v++) {
-                all.push(vectors[v]);
+            for (let vectorIndex = 0; vectorIndex < vectors.length; vectorIndex++) {
+                collectedVectors.push(vectors[vectorIndex]);
             }
         }
 
-        this.#allVectors = all;
-        return all;
+        this.#allVectors = collectedVectors;
+        return collectedVectors;
     }
 
-    #decode(column: PendingPropertyColumn): Vector[] {
+    #decode(column: LazyPropertyColumn): Vector[] {
         const offset = new IntWrapper(column.start);
         const decoded = decodePropertyColumn(
             this.#tile,
@@ -122,8 +122,8 @@ export class LazyPropertyVectors {
             const vector = vectors[i];
             const name = (vector as { name?: string }).name ?? column.name;
             // Overwrite cached misses, but never a vector that already claimed the name.
-            if (!this.#byName.get(name)) {
-                this.#byName.set(name, vector);
+            if (!this.#vectorsByName.get(name)) {
+                this.#vectorsByName.set(name, vector);
             }
         }
 

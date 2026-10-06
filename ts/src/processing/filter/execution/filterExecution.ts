@@ -10,7 +10,7 @@ import {
 } from "../../../vector/filter/selectionVectorUtils";
 import { SINGLE_PART_GEOMETRY_TYPE } from "../../../vector/geometry/geometryType";
 import type Vector from "../../../vector/vector";
-import { matchesNull } from "../filterUtils";
+import { isNegatedOperator, matchesNull, type ValueComparisonOperator } from "../filterUtils";
 import {
     type FilterTarget,
     type NormalizedFilter,
@@ -28,9 +28,14 @@ const GEOMETRY_TYPE_BY_NAME: Record<string, SINGLE_PART_GEOMETRY_TYPE> = {
     MultiPolygon: SINGLE_PART_GEOMETRY_TYPE.POLYGON,
 };
 
-/** Narrows `resolved` to the incoming selection, or passes it through when unselected. */
-function restrict(selection: SelectionVector | undefined, resolved: SelectionVector): SelectionVector {
-    return selection ? intersectSelectionVectors(selection, resolved) : resolved;
+/** Selects every feature when `isMatch` is true, none otherwise. */
+function constantSelection(isMatch: boolean, numFeatures: number): SelectionVector {
+    return isMatch ? ConstSelectionVector.full(numFeatures) : ConstSelectionVector.empty(numFeatures);
+}
+
+/** Narrows `resolvedSelection` to the incoming selection, or passes it through when unselected. */
+function restrict(selection: SelectionVector | undefined, resolvedSelection: SelectionVector): SelectionVector {
+    return selection ? intersectSelectionVectors(selection, resolvedSelection) : resolvedSelection;
 }
 
 function executeGeometryTypeLeaf(
@@ -38,27 +43,28 @@ function executeGeometryTypeLeaf(
     leaf: NormalizedLeaf,
     selection: SelectionVector | undefined,
 ): SelectionVector {
+    // Existence operators never target the geometry type, normalization folds them to constants
+    const isNegated = isNegatedOperator(leaf.operator as ValueComparisonOperator);
     const geometryVector = table.geometryVector;
     if (!geometryVector) {
         // No geometry column, so nothing matches a positive geometry-type predicate
-        const empty = ConstSelectionVector.empty(table.numFeatures);
-        const inverted = leaf.operator === "!=" || leaf.operator === "!in";
-        return restrict(selection, inverted ? ConstSelectionVector.full(table.numFeatures) : empty);
+        return restrict(selection, constantSelection(isNegated, table.numFeatures));
     }
 
     // Maps the style geometry names to the vector geometry types
     const geometryTypes = (leaf.values as string[])
-        .map((name) => GEOMETRY_TYPE_BY_NAME[name])
-        .filter((type): type is SINGLE_PART_GEOMETRY_TYPE => type !== undefined);
+        .map((geometryTypeName) => GEOMETRY_TYPE_BY_NAME[geometryTypeName])
+        .filter((geometryType): geometryType is SINGLE_PART_GEOMETRY_TYPE => geometryType !== undefined);
 
-    const matches = unionSelectionVectors(
-        geometryTypes.map((type) => geometryVector.filter(type)),
+    const matchingSelection = unionSelectionVectors(
+        geometryTypes.map((geometryType) => geometryVector.filter(geometryType)),
         table.numFeatures,
     );
 
-    const invert = leaf.operator === "!=" || leaf.operator === "!in";
-    const resolved = invert ? invertSelectionVector(matches, table.numFeatures) : matches;
-    return restrict(selection, resolved);
+    const resolvedSelection = isNegated
+        ? invertSelectionVector(matchingSelection, table.numFeatures)
+        : matchingSelection;
+    return restrict(selection, resolvedSelection);
 }
 
 function resolveLeafVector(
@@ -71,14 +77,13 @@ function resolveLeafVector(
 
 function executeMissingVectorLeaf(
     leaf: NormalizedLeaf,
-    numFeaturs: number,
+    numFeatures: number,
     selection: SelectionVector | undefined,
 ): SelectionVector {
-    const matchesEverything =
+    const isFullMatch =
         leaf.operator === "has" ? false : leaf.operator === "!has" ? true : matchesNull(leaf.operator, leaf.values);
 
-    const resolved = matchesEverything ? ConstSelectionVector.full(numFeaturs) : ConstSelectionVector.empty(numFeaturs);
-    return restrict(selection, resolved);
+    return restrict(selection, constantSelection(isFullMatch, numFeatures));
 }
 
 function executeLeaf(
@@ -94,10 +99,10 @@ function executeLeaf(
     return resolveVectorExecutor(vector, leaf.operator, leaf.values)(selection);
 }
 
-function typeNameOf(value: unknown) {
+function typeNameOf(value: unknown): string {
     if (value === null || value === undefined) return "null";
-    const name = typeof value;
-    return name === "bigint" ? "number" : name;
+    const typeName = typeof value;
+    return typeName === "bigint" ? "number" : typeName;
 }
 
 function executeTypeCheck(
@@ -107,14 +112,14 @@ function executeTypeCheck(
 ): SelectionVector {
     const vector = resolveLeafVector(table, node.target);
 
-    const matches = vector
+    const matchingSelection = vector
         ? scanSelection(table.numFeatures, (index) => typeNameOf(vector.getValue(index)) === node.typeName)
-        : node.typeName === "null"
-          ? ConstSelectionVector.full(table.numFeatures)
-          : ConstSelectionVector.empty(table.numFeatures);
+        : constantSelection(node.typeName === "null", table.numFeatures);
 
-    const resolved = node.negated ? invertSelectionVector(matches, table.numFeatures) : matches;
-    return restrict(selection, resolved);
+    const resolvedSelection = node.isNegated
+        ? invertSelectionVector(matchingSelection, table.numFeatures)
+        : matchingSelection;
+    return restrict(selection, resolvedSelection);
 }
 
 function executeAll(
@@ -122,12 +127,12 @@ function executeAll(
     children: NormalizedFilter[],
     selection: SelectionVector | undefined,
 ): SelectionVector {
-    let current = selection;
+    let currentSelection = selection;
     for (const child of children) {
-        current = executeNode(table, child, current);
-        if (current.limit === 0) break;
+        currentSelection = executeNode(table, child, currentSelection);
+        if (currentSelection.limit === 0) break;
     }
-    return current ?? ConstSelectionVector.full(table.numFeatures);
+    return currentSelection ?? ConstSelectionVector.full(table.numFeatures);
 }
 
 function cloneSelection(selection: SelectionVector | undefined): SelectionVector | undefined {
@@ -152,9 +157,9 @@ function executeNone(
     children: NormalizedFilter[],
     selection: SelectionVector | undefined,
 ): SelectionVector {
-    const matches = executeAny(table, children, selection);
-    const inverted = invertSelectionVector(matches, table.numFeatures);
-    return restrict(selection, inverted);
+    const matchingSelection = executeAny(table, children, selection);
+    const invertedSelection = invertSelectionVector(matchingSelection, table.numFeatures);
+    return restrict(selection, invertedSelection);
 }
 
 /** Evaluates a normalized filter on the table, restricted to `selection` if given. */
@@ -164,10 +169,7 @@ export function executeNode(
     selection: SelectionVector | undefined,
 ): SelectionVector {
     if (node.kind === "constant") {
-        const resolved = node.value
-            ? ConstSelectionVector.full(table.numFeatures)
-            : ConstSelectionVector.empty(table.numFeatures);
-        return restrict(selection, resolved);
+        return restrict(selection, constantSelection(node.value, table.numFeatures));
     }
     if (node.kind === "leaf") {
         return executeLeaf(table, node, selection);

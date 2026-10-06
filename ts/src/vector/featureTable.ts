@@ -13,6 +13,7 @@ import { decodeIdColumn } from "../decoding/idColumnDecoder";
 import type { Column } from "../metadata/tileset/tilesetMetadata";
 import type { StreamMetadata } from "../metadata/tile/streamMetadataDecoder";
 import type BitVector from "./flat/bitVector";
+import type GeometryScaling from "../decoding/geometryScaling";
 
 export interface Feature {
     id: number | bigint | undefined;
@@ -21,18 +22,18 @@ export interface Feature {
 }
 
 /** Geometry column whose payload has not been decoded yet. */
-export class PendingGeometryColumn {
+export class LazyGeometryColumn {
     constructor(
         readonly tile: Uint8Array,
         readonly start: number,
         readonly numStreams: number,
         readonly numFeatures: number,
-        readonly scaling?: { extent: number; min: number; max: number; scale?: number },
+        readonly scaling?: GeometryScaling,
     ) {}
 }
 
 /** ID column whose DATA stream has not been decoded yet, the PRESENT stream already is. */
-export class PendingIdColumn {
+export class LazyIdColumn {
     constructor(
         readonly tile: Uint8Array,
         readonly start: number,
@@ -46,11 +47,12 @@ export class PendingIdColumn {
 
 export default class FeatureTable {
     private propertyVectorsMap?: Map<string, Vector>;
+    private propertyNames?: string[];
 
     constructor(
         private readonly _name: string,
-        private _geometryVector: GeometryVector | GpuVector | PendingGeometryColumn | null,
-        private _idVector?: IdVector | PendingIdColumn,
+        private _geometryVector: GeometryVector | GpuVector | LazyGeometryColumn | null,
+        private _idVector?: IdVector | LazyIdColumn,
         private readonly _propertyVectors?: Vector[] | LazyPropertyVectors,
         private readonly _extent = 4096,
         /** Feature count, so that it does not require decoding the geometry. */
@@ -67,16 +69,16 @@ export default class FeatureTable {
 
     /** Decodes the ID data stream on first access. */
     get idVector(): IdVector | undefined {
-        if (this._idVector instanceof PendingIdColumn) {
-            const pending = this._idVector;
+        if (this._idVector instanceof LazyIdColumn) {
+            const lazyIdColumn = this._idVector;
             this._idVector = decodeIdColumn(
-                pending.tile,
-                pending.columnMetadata,
-                new IntWrapper(pending.start),
-                pending.columnName,
-                pending.idDataStreamMetadata,
-                pending.sizeOrNullabilityBuffer,
-                pending.idWithinMaxSafeInteger,
+                lazyIdColumn.tile,
+                lazyIdColumn.columnMetadata,
+                new IntWrapper(lazyIdColumn.start),
+                lazyIdColumn.columnName,
+                lazyIdColumn.idDataStreamMetadata,
+                lazyIdColumn.sizeOrNullabilityBuffer,
+                lazyIdColumn.idWithinMaxSafeInteger,
             );
         }
         return this._idVector;
@@ -84,14 +86,14 @@ export default class FeatureTable {
 
     /** Decodes the geometry on first access, null if decoded with `includeGeometry: false`. */
     get geometryVector(): GeometryVector | GpuVector | null {
-        if (this._geometryVector instanceof PendingGeometryColumn) {
-            const pending = this._geometryVector;
+        if (this._geometryVector instanceof LazyGeometryColumn) {
+            const lazyGeometryColumn = this._geometryVector;
             this._geometryVector = decodeGeometryColumn(
-                pending.tile,
-                pending.numStreams,
-                new IntWrapper(pending.start),
-                pending.numFeatures,
-                pending.scaling,
+                lazyGeometryColumn.tile,
+                lazyGeometryColumn.numStreams,
+                new IntWrapper(lazyGeometryColumn.start),
+                lazyGeometryColumn.numFeatures,
+                lazyGeometryColumn.scaling,
             );
         }
         return this._geometryVector;
@@ -103,7 +105,7 @@ export default class FeatureTable {
             return [];
         }
         if (this._propertyVectors instanceof LazyPropertyVectors) {
-            return this._propertyVectors.forceAll();
+            return this._propertyVectors.decodeAll();
         }
         return this._propertyVectors;
     }
@@ -121,11 +123,21 @@ export default class FeatureTable {
         return this.propertyVectorsMap.get(name);
     }
 
+    /**
+     * Returns the name of every property column once. Listing the names decodes every remaining
+     * column, and the decoder does not guarantee unique column names, so the list is deduplicated
+     * and kept.
+     */
+    getPropertyNames(): string[] {
+        this.propertyNames ??= [...new Set(this.propertyVectors.map((propertyVector) => propertyVector.name))];
+        return this.propertyNames;
+    }
+
     get numFeatures(): number {
         if (this._numFeatures !== undefined) {
             return this._numFeatures;
         }
-        return this._geometryVector && !(this._geometryVector instanceof PendingGeometryColumn)
+        return this._geometryVector && !(this._geometryVector instanceof LazyGeometryColumn)
             ? this._geometryVector.numGeometries
             : 0;
     }
