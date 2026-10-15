@@ -17,6 +17,8 @@ import {
     decodeUnsignedRleFloat64,
     decodeZigZagDeltaInt64,
     decodeDeltaRleInt32,
+    decodeUnsignedDeltaRleInt32,
+    decodeUnsignedZigZagDeltaInt32,
     decodeDeltaRleInt64,
     decodeUnsignedConstRleInt64,
     decodeZigZagConstRleInt64,
@@ -326,6 +328,36 @@ describe("IntegerDecodingUtils", () => {
                 const encoded = encodeDeltaRleInt32(data);
                 const decoded = decodeDeltaRleInt32(encoded.data, encoded.runs, encoded.numValues);
                 expect(Array.from(decoded)).toEqual([1, 2, 3, 5, 6, 7]);
+            });
+
+            it("should decode empty unsigned delta RLE Int32", () => {
+                const encoded = encodeDeltaRleInt32(new Int32Array([]));
+                const decoded = decodeUnsignedDeltaRleInt32(encoded.data, encoded.runs, encoded.numValues);
+                expect(Array.from(decoded)).toEqual([]);
+            });
+
+            it("should decode unsigned delta RLE Int32", () => {
+                const encoded = encodeDeltaRleInt32(new Int32Array([1, 2, 3, 5, 6, 7]));
+                const decoded = decodeUnsignedDeltaRleInt32(encoded.data, encoded.runs, encoded.numValues);
+                expect(decoded).toBeInstanceOf(Uint32Array);
+                expect(Array.from(decoded)).toEqual([1, 2, 3, 5, 6, 7]);
+            });
+
+            it("should decode unsigned delta RLE Int32 with decreasing values and values above 2^31", () => {
+                const values = [4000000000, 3999999990, 3999999980, 3999999980, 3999999980, 10];
+                const encoded = encodeDeltaRleInt32(new Int32Array(new Uint32Array(values).buffer));
+                const decoded = decodeUnsignedDeltaRleInt32(encoded.data, encoded.runs, encoded.numValues);
+                expect(Array.from(decoded)).toEqual(values);
+            });
+
+            it("should match RLE expansion followed by unsigned zigzag delta decoding", () => {
+                const values = new Int32Array([0, 0, 0, 3, 6, 9, 9, 9, 8, 7, 100, 100]);
+                const encoded = encodeDeltaRleInt32(values);
+                const fused = decodeUnsignedDeltaRleInt32(encoded.data, encoded.runs, encoded.numValues);
+                const twoPass = decodeUnsignedZigZagDeltaInt32(
+                    decodeUnsignedRleInt32(encoded.data, encoded.runs, encoded.numValues),
+                );
+                expect(Array.from(fused)).toEqual(Array.from(twoPass));
             });
 
             it("should decode empty delta RLE Int64", () => {

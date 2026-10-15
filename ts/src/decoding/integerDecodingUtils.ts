@@ -595,18 +595,20 @@ function clamp(n: number, min: number, max: number): number {
 /* Transform data to allow util access ------------------------------------------------------------------------ */
 
 export function decodeZigZagDeltaOfDeltaInt32(data: Uint32Array): Uint32Array {
-    const decodedData = new Int32Array(data.length + 1);
+    const decodedData = new Uint32Array(data.length + 1);
     decodedData[0] = 0;
-    decodedData[1] = decodeZigZagInt32Value(data[0]);
-    let deltaSum = decodedData[1];
+    /* deltaSum must stay a signed number, so it is kept out of the unsigned array */
+    let deltaSum = decodeZigZagInt32Value(data[0]);
+    decodedData[1] = deltaSum;
     for (let i = 2; i !== decodedData.length; ++i) {
         const zigZagValue = data[i - 1];
         const delta = decodeZigZagInt32Value(zigZagValue);
         deltaSum += delta;
+        /* The store wraps modulo 2^32, same bits as with an Int32Array */
         decodedData[i] = decodedData[i - 1] + deltaSum;
     }
 
-    return new Uint32Array(decodedData);
+    return decodedData;
 }
 
 export function decodeZigZagRleDeltaInt32(data: Uint32Array, numRuns: number, numTotalValues: number): Int32Array {
@@ -689,6 +691,28 @@ export function decodeDeltaRleInt64(data: BigUint64Array, numRuns: number, numVa
 
         for (let j = 0; j < runLength; j++) {
             previousValue += delta;
+            result[outPos++] = previousValue;
+        }
+    }
+
+    return result;
+}
+
+/**
+ * Unsigned variant of decodeDeltaRleInt32, equal to decodeUnsignedRleInt32 followed by
+ * decodeUnsignedZigZagDeltaInt32 but in a single pass.
+ */
+export function decodeUnsignedDeltaRleInt32(data: Uint32Array, numRuns: number, numValues: number): Uint32Array {
+    const result = new Uint32Array(numValues);
+    let outPos = 0;
+    let previousValue = 0;
+
+    for (let i = 0; i < numRuns; i++) {
+        const runLength = data[i];
+        const delta = decodeZigZagInt32Value(data[i + numRuns]);
+
+        for (let j = 0; j < runLength; j++) {
+            previousValue = (previousValue + delta) >>> 0;
             result[outPos++] = previousValue;
         }
     }

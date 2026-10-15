@@ -11,6 +11,8 @@ import FeatureTable from "../../vector/featureTable";
 import { GEOMETRY_TYPE } from "../../vector/geometry/geometryType";
 import { Int32FlatVector } from "../../vector/flat/int32FlatVector";
 import { Int64FlatVector } from "../../vector/flat/int64FlatVector";
+import { FloatFlatVector } from "../../vector/flat/floatFlatVector";
+import { DoubleFlatVector } from "../../vector/flat/doubleFlatVector";
 import { createConstGeometryVector } from "../../vector/geometry/constGeometryVector";
 import { StringFlatVector } from "../../vector/flat/stringFlatVector";
 import type { StringDictionaryVector } from "../../vector/dictionary/stringDictionaryVector";
@@ -395,6 +397,67 @@ describe("filterFeatureTable", () => {
         // filterKernels.ts and in zoomFolding.ts, so this is unreachable via filterFeatureTable.
         expect(() => createValueMatcher("has", [])).toThrowError("Unsupported operator: has");
         expect(() => createValueMatcher("!has", [])).toThrowError("Unsupported operator: !has");
+    });
+
+    describe("comparison of a number column with a number", () => {
+        const run = (vector: Vector, operator: string, operand: number) =>
+            selection(
+                filterFeatureTable(featureTable([vector]), [operator, ["get", vector.name], operand] as FilterSpecification, 0),
+            );
+
+        test("compares an Int32 column with every operator", () => {
+            const rank = new Int32FlatVector("rank", new Int32Array([1, 2, 3, 4]), 4);
+            expect(run(rank, "==", 2)).toEqual([1]);
+            expect(run(rank, "!=", 2)).toEqual([0, 2, 3]);
+            expect(run(rank, ">", 2)).toEqual([2, 3]);
+            expect(run(rank, ">=", 2)).toEqual([1, 2, 3]);
+            expect(run(rank, "<", 3)).toEqual([0, 1]);
+            expect(run(rank, "<=", 3)).toEqual([0, 1, 2]);
+            expect(run(rank, "==", 10)).toEqual([]);
+        });
+
+        test("treats rows without a value as a match only for !=", () => {
+            // y = [5, null, 7]: a nullability buffer marks rows 0 and 2 present.
+            const y = new Int32FlatVector("y", new Int32Array([5, 0, 7]), new BitVector(new Uint8Array([0b00000101]), 3));
+            expect(run(y, "==", 5)).toEqual([0]);
+            expect(run(y, "==", 0)).toEqual([]);
+            expect(run(y, "!=", 5)).toEqual([1, 2]);
+            expect(run(y, ">", 5)).toEqual([2]);
+            expect(run(y, ">=", 5)).toEqual([0, 2]);
+            expect(run(y, "<", 7)).toEqual([0]);
+            expect(run(y, "<=", 7)).toEqual([0, 2]);
+        });
+
+        test("compares an unsigned Int32 column above 2^31", () => {
+            const big = new Int32FlatVector("big", new Uint32Array([1, 3000000000, 4000000000]), 3);
+            expect(run(big, ">", 2000000000)).toEqual([1, 2]);
+            expect(run(big, "==", 3000000000)).toEqual([1]);
+        });
+
+        test("compares a Double column and never matches NaN with an ordering operator", () => {
+            const d = new DoubleFlatVector("d", new Float64Array([1.5, Number.NaN, 3.5]), 3);
+            expect(run(d, "==", 1.5)).toEqual([0]);
+            expect(run(d, "!=", 1.5)).toEqual([1, 2]);
+            expect(run(d, ">", 1)).toEqual([0, 2]);
+            expect(run(d, "<=", 3.5)).toEqual([0, 2]);
+        });
+
+        test("compares a Float column on its single precision values", () => {
+            const f = new FloatFlatVector("f", new Float32Array([0.5, 1.5, 0.1]), 3);
+            expect(run(f, "==", 1.5)).toEqual([1]);
+            expect(run(f, ">=", 1.5)).toEqual([1]);
+            // 0.1 is not representable in single precision, so it does not equal the double 0.1
+            expect(run(f, "==", 0.1)).toEqual([]);
+        });
+
+        test("keeps the generic path for membership and non-number operands", () => {
+            const rank = new Int32FlatVector("rank", new Int32Array([1, 2, 3]), 3);
+            const table = featureTable([rank]);
+            const on = (filter: unknown) => selection(filterFeatureTable(table, filter as FilterSpecification, 0));
+            expect(on(["in", ["get", "rank"], ["literal", [1, 3]]])).toEqual([0, 2]);
+            expect(on(["==", ["get", "rank"], "2"])).toEqual([]);
+            expect(on(["!=", ["get", "rank"], "2"])).toEqual([0, 1, 2]);
+        });
     });
 });
 
