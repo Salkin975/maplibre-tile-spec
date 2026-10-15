@@ -42,6 +42,14 @@ export function resolveVectorExecutor(
     }
     if (
         vector instanceof Int32FlatVector ||
+        vector instanceof FloatFlatVector ||
+        vector instanceof DoubleFlatVector
+    ) {
+        const numberExecutor = resolveNumberExecutor(vector, vector.rawData, operator, values);
+        if (numberExecutor) return numberExecutor;
+    }
+    if (
+        vector instanceof Int32FlatVector ||
         vector instanceof Int64FlatVector ||
         vector instanceof FloatFlatVector ||
         vector instanceof DoubleFlatVector
@@ -50,6 +58,46 @@ export function resolveVectorExecutor(
         return resolveScanExecutor(vector, operator, values, (index) => rawValues[index]);
     }
     return resolveScanExecutor(vector, operator, values);
+}
+
+/**
+ * Fast path for a comparison of a number column with a number operand, it compares the raw values
+ * directly. Same result as the generic matcher.
+ */
+function resolveNumberExecutor(
+    vector: Vector,
+    rawValues: Int32Array | Uint32Array | Float32Array | Float64Array,
+    operator: ValueComparisonOperator,
+    values: readonly unknown[],
+): ColumnarVectorExecutor | undefined {
+    const operand = values[0];
+    if (values.length !== 1 || typeof operand !== "number") return undefined;
+
+    const isNullMatch = matchesNull(operator, values);
+    let matches: (index: number) => boolean;
+    switch (operator) {
+        case "==":
+            matches = (index) => (vector.has(index) ? rawValues[index] === operand : isNullMatch);
+            break;
+        case "!=":
+            matches = (index) => (vector.has(index) ? rawValues[index] !== operand : isNullMatch);
+            break;
+        case ">":
+            matches = (index) => (vector.has(index) ? rawValues[index] > operand : isNullMatch);
+            break;
+        case ">=":
+            matches = (index) => (vector.has(index) ? rawValues[index] >= operand : isNullMatch);
+            break;
+        case "<":
+            matches = (index) => (vector.has(index) ? rawValues[index] < operand : isNullMatch);
+            break;
+        case "<=":
+            matches = (index) => (vector.has(index) ? rawValues[index] <= operand : isNullMatch);
+            break;
+        default:
+            return undefined;
+    }
+    return (selection) => scanVector(vector, matches, selection);
 }
 
 function isEqualityOperator(operator: ValueComparisonOperator): boolean {

@@ -9,6 +9,7 @@ import {
     decodeUnsignedComponentwiseDeltaVec2,
     decodeUnsignedComponentwiseDeltaVec2Scaled,
     decodeUnsignedConstRleInt32,
+    decodeUnsignedDeltaRleInt32,
     decodeUnsignedConstRleInt64,
     decodeUnsignedRleInt32,
     decodeUnsignedRleInt64,
@@ -31,7 +32,6 @@ import {
     decodeZigZagInt32Value,
     decodeZigZagInt64Value,
     fastInverseDelta,
-    inverseDelta,
     decodeRleDeltaInt32,
     decodeZigZagDeltaOfDeltaInt32,
     decodeZigZagRleDeltaInt32,
@@ -288,7 +288,8 @@ function decodeSignedInt32(
             break;
         case LogicalLevelTechnique.MORTON:
             fastInverseDelta(values);
-            decodedValues = new Int32Array(values);
+            /* `values` is a freshly decoded array, so reinterpret it instead of copying */
+            decodedValues = new Int32Array(values.buffer, values.byteOffset, values.length);
             break;
         case LogicalLevelTechnique.COMPONENTWISE_DELTA:
             if (scalingData && !nullabilityBuffer) {
@@ -322,8 +323,7 @@ function decodeUnsignedInt32(
         case LogicalLevelTechnique.DELTA:
             if (streamMetadata.logicalLevelTechnique2 === LogicalLevelTechnique.RLE) {
                 const rleMetadata = streamMetadata as RleEncodedStreamMetadata;
-                const deltaValues = decodeUnsignedRleInt32(values, rleMetadata.runs, rleMetadata.numRleValues);
-                decodedValues = decodeUnsignedZigZagDeltaInt32(deltaValues);
+                decodedValues = decodeUnsignedDeltaRleInt32(values, rleMetadata.runs, rleMetadata.numRleValues);
             } else {
                 decodedValues = decodeUnsignedZigZagDeltaInt32(values);
             }
@@ -488,12 +488,13 @@ function decodeLengthToOffsetBuffer(values: Uint32Array, streamMetadata: StreamM
         streamMetadata.logicalLevelTechnique1 === LogicalLevelTechnique.NONE &&
         streamMetadata.logicalLevelTechnique2 === LogicalLevelTechnique.NONE
     ) {
-        //TODO: use fastInverseDelta again and check what are the performance problems in zoom 14
-        //fastInverseDelta(values);
-        inverseDelta(values);
+        /* Prefix sum straight into the offsets array, which has a leading 0 */
         const offsets = new Uint32Array(streamMetadata.numValues + 1);
-        offsets[0] = 0;
-        offsets.set(values, 1);
+        let previousValue = 0;
+        for (let i = 0; i < streamMetadata.numValues; i++) {
+            previousValue = (previousValue + values[i]) >>> 0;
+            offsets[i + 1] = previousValue;
+        }
         return offsets;
     }
 
@@ -504,7 +505,7 @@ function decodeLengthToOffsetBuffer(values: Uint32Array, streamMetadata: StreamM
         const rleMetadata = streamMetadata as RleEncodedStreamMetadata;
         const decodedValues = decodeZigZagRleDeltaInt32(values, rleMetadata.runs, rleMetadata.numRleValues);
         fastInverseDelta(decodedValues);
-        return new Uint32Array(decodedValues);
+        return new Uint32Array(decodedValues.buffer, decodedValues.byteOffset, decodedValues.length);
     }
 
     throw new Error("Only delta encoding is supported for transforming length to offset streams yet.");
