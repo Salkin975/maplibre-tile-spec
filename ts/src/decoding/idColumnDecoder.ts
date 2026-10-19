@@ -15,6 +15,7 @@ import {
     decodeUnsignedConstInt32Stream,
     decodeUnsignedConstInt64Stream,
     decodeUnsignedInt64AsFloat64Stream,
+    decodeSafeUnsignedInt64AsFloat64Stream,
     decodeUnsignedInt32Stream,
     decodeUnsignedInt64Stream,
     decodeSequenceInt32Stream,
@@ -71,10 +72,11 @@ export function decodeIdColumn(
 
     switch (vectorType) {
         case VectorType.FLAT: {
-            if (idWithinMaxSafeInteger) {
-                const ids = decodeUnsignedInt64AsFloat64Stream(tile, offset, idDataStreamMetadata, nullabilityBuffer);
-                return new DoubleFlatVector(columnName, ids, sizeOrNullabilityBuffer);
-            }
+            const safeIds = idWithinMaxSafeInteger
+                ? decodeUnsignedInt64AsFloat64Stream(tile, offset, idDataStreamMetadata, nullabilityBuffer)
+                : decodeSafeUnsignedInt64AsFloat64Stream(tile, offset, idDataStreamMetadata, nullabilityBuffer);
+            if (safeIds) return new DoubleFlatVector(columnName, safeIds, sizeOrNullabilityBuffer);
+
             const ids = decodeUnsignedInt64Stream(tile, offset, idDataStreamMetadata, nullabilityBuffer);
             return new Int64FlatVector(columnName, ids, sizeOrNullabilityBuffer);
         }

@@ -223,7 +223,9 @@ function parseIdColumn(
  *
  * @param tile The tile data to decode (will be decompressed if gzip-compressed)
  * @param geometryScaling Optional geometry scaling parameters
- * @param idWithinMaxSafeInteger If true, limits ID values to JavaScript safe integer range (53 bits)
+ * @param idWithinMaxSafeInteger If true, limits ID values to JavaScript safe integer range (53 bits).
+ *     If false, the IDs of a column are numbers when every one of them is a safe integer, and
+ *     `bigint`s otherwise.
  */
 export default function decodeTile(
     tile: Uint8Array,
