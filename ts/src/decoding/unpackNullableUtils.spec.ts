@@ -47,6 +47,20 @@ describe("unpackNullableUtils", () => {
 
             expect(result).toEqual(new Int32Array([0, 20, 30]));
         });
+
+        it("should place values across empty, full and partial bytes of presentBits", () => {
+            // Positions 0-7 null, 8-15 present, 16-19 alternate starting with present
+            const presentBits = new BitVector(new Uint8Array([0b00000000, 0b11111111, 0b0101]), 20);
+            const expected = new Float64Array(20).fill(-1);
+            let value = 1;
+            for (let i = 0; i < 20; i++) {
+                if (presentBits.get(i)) expected[i] = value++;
+            }
+            const packed = packNullable(expected, presentBits);
+
+            expect(unpackNullable(packed, presentBits, -1)).toEqual(expected);
+            expect(unpackNullable(packed, presentBits, 0)).toEqual(expected.map((v) => (v === -1 ? 0 : v)));
+        });
     });
 
     describe("unpackNullableBoolean", () => {
