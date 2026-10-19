@@ -1,4 +1,6 @@
 import { scanSelection } from "../../../vector/filter/selectionVectorUtils";
+import { ConstSelectionVector } from "../../../vector/filter/constSelectionVector";
+import { FlatSelectionVector } from "../../../vector/filter/flatSelectionVector";
 import { StringDictionaryVector } from "../../../vector/dictionary/stringDictionaryVector";
 import { DoubleFlatVector } from "../../../vector/flat/doubleFlatVector";
 import { FloatFlatVector } from "../../../vector/flat/floatFlatVector";
@@ -151,20 +153,68 @@ function resolveDictionaryExecutor(
             if (matchesValue(vector.getDictionaryValue(code))) matchingCodes[code] = 1;
         }
     }
-    const indices = vector.indices;
     // Negation and matching a row without a value are separate, they diverge for a null operand
-    const isNegated = isNegatedOperator(operator);
+    if (isNegatedOperator(operator)) {
+        for (let code = 0; code < numDictionaryEntries; code++) matchingCodes[code] ^= 1;
+    }
     const isNullMatch = matchesNull(operator, values);
-    return (selection) =>
-        scanVector(
-            vector,
-            (index) => {
-                if (!vector.has(index)) return isNullMatch;
-                const isMatch = matchingCodes[indices[index]] !== 0;
-                return isNegated ? !isMatch : isMatch;
-            },
-            selection,
-        );
+    const indices = vector.indices;
+    const presentBits = vector.nullability?.getBuffer();
+    return (selection) => scanDictionaryCodes(vector.size, indices, matchingCodes, presentBits, isNullMatch, selection);
+}
+
+/**
+ * Selects the rows whose dictionary code is marked in `matchingCodes`, and the rows without a value
+ * if `isNullMatch`. A flat `selection` is narrowed in place.
+ *
+ * Most style filters compare a dictionary-encoded string column, so this is the loop they spend
+ * their time in. It reads codes, present bits and selected indices straight from their arrays
+ * instead of calling a per-row matcher.
+ */
+function scanDictionaryCodes(
+    size: number,
+    indices: Uint32Array,
+    matchingCodes: Uint8Array,
+    presentBits: Uint8Array | undefined,
+    isNullMatch: boolean,
+    selection?: SelectionVector,
+): SelectionVector {
+    if (selection instanceof FlatSelectionVector) {
+        const selectedIndices = selection.selectionValues();
+        const limit = selection.limit;
+        let writeIndex = 0;
+        for (let i = 0; i < limit; i++) {
+            const index = selectedIndices[i];
+            if (dictionaryRowMatches(index, indices, matchingCodes, presentBits, isNullMatch)) {
+                selectedIndices[writeIndex++] = index;
+            }
+        }
+        selection.setLimit(writeIndex);
+        return selection;
+    }
+    if (selection && selection.limit === 0) return selection;
+
+    const selectedIndices = new Uint32Array(size);
+    let writeIndex = 0;
+    for (let index = 0; index < size; index++) {
+        if (dictionaryRowMatches(index, indices, matchingCodes, presentBits, isNullMatch)) {
+            selectedIndices[writeIndex++] = index;
+        }
+    }
+    if (writeIndex === 0) return ConstSelectionVector.empty(size);
+    if (writeIndex === size) return ConstSelectionVector.full(size);
+    return new FlatSelectionVector(selectedIndices, writeIndex);
+}
+
+function dictionaryRowMatches(
+    index: number,
+    indices: Uint32Array,
+    matchingCodes: Uint8Array,
+    presentBits: Uint8Array | undefined,
+    isNullMatch: boolean,
+): boolean {
+    if (presentBits !== undefined && ((presentBits[index >> 3] >> (index & 7)) & 1) === 0) return isNullMatch;
+    return matchingCodes[indices[index]] !== 0;
 }
 
 const textEncoder = new TextEncoder();

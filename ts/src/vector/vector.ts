@@ -26,6 +26,11 @@ export default abstract class Vector<T extends ArrayBufferView = ArrayBufferView
         return this.nullabilityBuffer?.get(index) || !this.nullabilityBuffer;
     }
 
+    /** Which rows have a value, one bit per row; null when every row has one. */
+    get nullability(): BitVector | null {
+        return this.nullabilityBuffer;
+    }
+
     get name(): string {
         return this._name;
     }
