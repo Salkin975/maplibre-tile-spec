@@ -268,6 +268,21 @@ describe("filterFeatureTable", () => {
         expect(on(dictionary, ["!=", "name", "alpha"])).toEqual([1, 2]);
     });
 
+    test("narrows a selection by a nullable dictionary column past the first byte of present bits", () => {
+        const kind = ["a", "b", "a", "a", "b", "a", "a", "b", "a", "a", "b"];
+        const name = ["x", null, "y", "x", "x", null, "y", "x", null, "y", "x"];
+        const table = featureTable([dictionaryStringVector("kind", kind), dictionaryStringVector("name", name)]);
+        const on = (filter: unknown) => selection(filterFeatureTable(table, filter as FilterSpecification, 0));
+
+        // The first leaf selects the "a" rows, the second narrows that selection in place.
+        expect(on(["all", ["==", "kind", "a"], ["==", "name", "x"]])).toEqual([0, 3]);
+        expect(on(["all", ["==", "kind", "a"], ["!=", "name", "x"]])).toEqual([2, 5, 6, 8, 9]);
+        expect(on(["all", ["==", "kind", "a"], ["in", "name", "y", "z"]])).toEqual([2, 6, 9]);
+        expect(on(["all", ["==", "kind", "a"], ["!in", "name", "y"]])).toEqual([0, 3, 5, 8]);
+        // Without a prior selection, the whole column is scanned.
+        expect(on(["!=", "name", "x"])).toEqual([1, 2, 5, 6, 8, 9]);
+    });
+
     test("compares bigint operands and refuses unsafe ones", () => {
         const unsafe = BigInt(Number.MAX_SAFE_INTEGER) + 1n;
         const table = featureTable([new Int64FlatVector("population", new BigInt64Array([999n, 1000n, 1001n]), 3)]);
