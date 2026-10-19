@@ -39,14 +39,21 @@ export function unpackNullable<T extends TypedArrayInstance>(
     }
 
     const size = presentBits.size();
-    // Create new array of same type with full size
+    // Create new array of same type with full size, null positions keep the default
     const constructor = dataStream.constructor as TypedArrayConstructor;
     const result = new constructor(size) as T;
+    if (defaultValue) result.fill(defaultValue as never);
 
+    // A byte of present bits covers 8 positions, a zero byte has no value to copy
+    const bits = presentBits.getBuffer();
     let counter = 0;
-    for (let i = 0; i < size; i++) {
-        // If position has a value, take from data stream; otherwise use default
-        result[i] = presentBits.get(i) ? dataStream[counter++] : defaultValue;
+    for (let start = 0; start < size; start += 8) {
+        const byte = bits[start >> 3];
+        if (byte === 0) continue;
+        const end = Math.min(start + 8, size);
+        for (let i = start; i < end; i++) {
+            if ((byte >> (i - start)) & 1) result[i] = dataStream[counter++];
+        }
     }
 
     return result;
