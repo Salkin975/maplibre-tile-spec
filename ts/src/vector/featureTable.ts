@@ -41,7 +41,6 @@ export class LazyIdColumn {
         readonly columnName: string,
         readonly idDataStreamMetadata: StreamMetadata,
         readonly sizeOrNullabilityBuffer: number | BitVector,
-        readonly idWithinMaxSafeInteger: boolean,
     ) {}
 }
 
@@ -96,7 +95,6 @@ export default class FeatureTable {
                 lazyIdColumn.columnName,
                 lazyIdColumn.idDataStreamMetadata,
                 lazyIdColumn.sizeOrNullabilityBuffer,
-                lazyIdColumn.idWithinMaxSafeInteger,
             );
         }
         return this._idVector;

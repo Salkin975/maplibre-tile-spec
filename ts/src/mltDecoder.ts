@@ -183,7 +183,6 @@ function parseIdColumn(
     tile: Uint8Array,
     offset: IntWrapper,
     columnMetadata: Column,
-    idWithinMaxSafeInteger: boolean,
 ): { lazyIdColumn: LazyIdColumn; numFeatures: number } {
     let nullabilityBuffer: BitVector | null = null;
     // Check column metadata nullable flag, not numStreams (ID columns don't have stream count)
@@ -213,7 +212,6 @@ function parseIdColumn(
         columnMetadata.name,
         idDataStreamMetadata,
         nullabilityBuffer ?? numFeatures,
-        idWithinMaxSafeInteger,
     );
     return { lazyIdColumn, numFeatures };
 }
@@ -227,13 +225,8 @@ function parseIdColumn(
  *
  * @param tile The tile data to decode (will be decompressed if gzip-compressed)
  * @param geometryScaling Optional geometry scaling parameters
- * @param idWithinMaxSafeInteger If true, limits ID values to JavaScript safe integer range (53 bits)
  */
-export default function decodeTile(
-    tile: Uint8Array,
-    geometryScaling?: GeometryScaling,
-    idWithinMaxSafeInteger = true,
-): FeatureTable[] {
+export default function decodeTile(tile: Uint8Array, geometryScaling?: GeometryScaling): FeatureTable[] {
     const offset = new IntWrapper(0);
     const featureTables: FeatureTable[] = [];
 
@@ -262,7 +255,7 @@ export default function decodeTile(
 
         for (const columnMetadata of featureTableMetadata.columns) {
             if (isLogicalIdColumn(columnMetadata)) {
-                ({ lazyIdColumn, numFeatures } = parseIdColumn(tile, offset, columnMetadata, idWithinMaxSafeInteger));
+                ({ lazyIdColumn, numFeatures } = parseIdColumn(tile, offset, columnMetadata));
             } else if (isGeometryColumn(columnMetadata)) {
                 const numStreams = readVarint(tile, offset);
                 const columnStart = offset.get();

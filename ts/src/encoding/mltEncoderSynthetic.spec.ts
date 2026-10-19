@@ -50,8 +50,8 @@ describe("encodeTile - synthetic fixtures round trip", () => {
 
 /** Reads a reference tile, re-encodes what it decodes to, and decodes that back to GeoJSON. */
 async function reEncode(mltFile: string): Promise<GeoJSON.FeatureCollection> {
-    const reference = decodeTile(new Uint8Array(await readFile(mltFile)), undefined, false);
-    return featureTablesToFeatureCollection(decodeTile(encodeTile(toLayers(reference)), undefined, false));
+    const reference = decodeTile(new Uint8Array(await readFile(mltFile)));
+    return featureTablesToFeatureCollection(decodeTile(encodeTile(toLayers(reference))));
 }
 
 /** Turns decoded feature tables back into the layer shape the encoder takes. */

@@ -6,7 +6,7 @@ import { GEOMETRY_TYPE } from "../vector/geometry/geometryType";
 /** Encodes one layer, decodes it again, and returns the features in a comparable plain shape. */
 function roundTrip(features: Feature[], options: EncodeOptions = {}, extent = 4096) {
     const tile = encodeTile([{ name: "layer", features, extent }], options);
-    const tables = decodeTile(tile, undefined, false);
+    const tables = decodeTile(tile);
 
     expect(tables).toHaveLength(1);
     expect(tables[0].name).toBe("layer");
@@ -369,13 +369,13 @@ describe("encodeTile - tiles and layers", () => {
             { name: "first", features: [{ geometry: point }] },
             { name: "second", features: [{ geometry: point }] },
         ]);
-        const tables = decodeTile(tile, undefined, false);
+        const tables = decodeTile(tile);
 
         expect(tables.map((table) => table.name)).toEqual(["first", "second"]);
     });
 
     it("uses the default extent when none is given", () => {
         const tile = encodeTile([{ name: "layer", features: [{ geometry: { type: "Point", coordinates: [0, 0] } }] }]);
-        expect(decodeTile(tile, undefined, false)[0].extent).toBe(4096);
+        expect(decodeTile(tile)[0].extent).toBe(4096);
     });
 });

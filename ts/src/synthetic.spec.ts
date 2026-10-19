@@ -34,6 +34,6 @@ describe("MLT Decoder - Synthetic tests", () => {
 
 async function decodeMLT(mltFilePath: string) {
     const mltBuffer = await readFile(mltFilePath);
-    const featureTables = decodeTile(mltBuffer, undefined, false);
+    const featureTables = decodeTile(mltBuffer);
     return featureTablesToFeatureCollection(featureTables) as unknown as Record<string, unknown>;
 }

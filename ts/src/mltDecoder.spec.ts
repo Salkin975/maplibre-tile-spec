@@ -69,7 +69,7 @@ describe("MLT Decoder - malformed input", () => {
         for (const fraction of [0.1, 0.4, 0.7, 0.95]) {
             const truncated = full.subarray(0, Math.floor(full.length * fraction));
             assert.throws(
-                () => decodeTile(truncated, undefined, true),
+                () => decodeTile(truncated),
                 /Block overruns tile/,
                 `expected a throw for a tile truncated to ${fraction * 100}%`,
             );
@@ -122,7 +122,7 @@ function testTiles(mltSearchDir: string, mvtSearchDir: string) {
             const buf = new PbfReader(encodedMvt);
             const decodedMvt = new VectorTile(buf);
 
-            const decodedMlt = decodeTile(encodedMlt, undefined, true);
+            const decodedMlt = decodeTile(encodedMlt);
             comparePlainGeometryEncodedTile(decodedMlt, decodedMvt);
         });
     }
@@ -150,7 +150,7 @@ function comparePlainGeometryEncodedTile(mlt: FeatureTable[], mvt: VectorTile) {
             const mvtFeature = layer.feature(j);
             const mltFeature = mltFeatures[j];
 
-            compareId(mltFeature, mvtFeature, true);
+            compareId(mltFeature, mvtFeature);
 
             const mltGeometry = mltFeature.geometry?.coordinates;
             const mvtGeometry = mvtFeature.loadGeometry();
@@ -172,7 +172,7 @@ function comparePlainGeometryEncodedTile(mlt: FeatureTable[], mvt: VectorTile) {
     }
 }
 
-function compareId(mltFeature: Feature, mvtFeature: VectorTileFeature, idWithinMaxSafeInteger: boolean) {
+function compareId(mltFeature: Feature, mvtFeature: VectorTileFeature) {
     if (!mvtFeature.id) {
         /* Java MVT library in the MVT converter decodes zero for undefined ids */
         /* The Rust encoder writes no id column when the MVT has none, which decodes to undefined */
@@ -180,8 +180,7 @@ function compareId(mltFeature: Feature, mvtFeature: VectorTileFeature, idWithinM
     } else {
         const mltFeatureId = mltFeature.id;
         /* For const and sequence vectors the decoder can return bigint compared to the vector-tile-js library */
-        const actualId =
-            idWithinMaxSafeInteger && typeof mltFeatureId !== "bigint" ? mltFeatureId : Number(mltFeatureId);
+        const actualId = typeof mltFeatureId === "bigint" ? Number(mltFeatureId) : mltFeatureId;
         /*
          * The id check can fail for two known reasons:
          * - The java-vector-tile library used in the Java converter returns negative integers for the

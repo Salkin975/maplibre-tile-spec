@@ -199,6 +199,42 @@ export function decodeUnsignedInt64AsFloat64Stream(
     return nullabilityBuffer ? unpackNullable(values, nullabilityBuffer, 0) : values;
 }
 
+/**
+ * Decodes an unsigned 64-bit stream into numbers if every value is a safe integer. Otherwise it
+ * returns undefined and leaves `offset` where it was, so the stream can be decoded as `bigint`s.
+ *
+ * Only varint streams are decoded this way. A varint above 2^53 - 1 reads as a number of at least
+ * 2^53, and so does a delta sum that leaves the safe range, so checking the read values and the
+ * decoded values tells whether any value lost precision.
+ */
+export function decodeSafeUnsignedInt64AsFloat64Stream(
+    data: Uint8Array,
+    offset: IntWrapper,
+    streamMetadata: StreamMetadata,
+    nullabilityBuffer?: BitVector,
+): Float64Array | undefined {
+    if (streamMetadata.physicalLevelTechnique !== PhysicalLevelTechnique.VARINT) return undefined;
+
+    const start = offset.get();
+    const encodedValues = decodeVarintFloat64(data, offset, streamMetadata.numValues);
+    if (areSafeUnsignedIntegers(encodedValues)) {
+        const values = decodeFloat64Values(encodedValues, streamMetadata, false);
+        if (areSafeUnsignedIntegers(values)) {
+            return nullabilityBuffer ? unpackNullable(values, nullabilityBuffer, 0) : values;
+        }
+    }
+    offset.set(start);
+    return undefined;
+}
+
+function areSafeUnsignedIntegers(values: Float64Array): boolean {
+    for (let i = 0; i < values.length; i++) {
+        const value = values[i];
+        if (!(value >= 0 && value <= Number.MAX_SAFE_INTEGER)) return false;
+    }
+    return true;
+}
+
 function decodeInt64AsFloat64(
     data: Uint8Array,
     offset: IntWrapper,
