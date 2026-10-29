@@ -10,12 +10,6 @@ export interface RowViewOptions {
 /**
  * Presents one row of a feature table's property columns as a plain object whose values are read
  * from the columns on access.
- *
- * A read goes to the one column that holds the name, so a row with thirty properties of which a
- * caller reads two costs two column reads.
- *
- * A property whose value is `null` or missing reads as absent: `in` is false for it and it is not
- * enumerated, which is how style expressions treat a missing value.
  */
 export function createRowView(
     featureTable: FeatureTable,

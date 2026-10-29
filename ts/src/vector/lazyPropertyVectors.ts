@@ -17,11 +17,7 @@ export interface LazyPropertyColumn {
     vectors: Vector[] | null;
 }
 
-/**
- * Holds property columns in encoded form and decodes each one on first access.
- * The tile buffer must not be reused or transferred while a feature table is alive,
- * call `decodeAll()` before transferring the results out of a worker.
- */
+/** Decodes each property column on first access, call `decodeAll()` before reusing or transferring the tile buffer. */
 export class LazyPropertyVectors {
     readonly #tile: Uint8Array;
     readonly #columns: LazyPropertyColumn[];
@@ -37,10 +33,7 @@ export class LazyPropertyVectors {
         this.#numFeatures = numFeatures;
     }
 
-    /**
-     * Returns the vector for `name`, decoding its column on first access.
-     * Struct children (`name:en`, `name:de`) resolve through their parent column.
-     */
+    /** Returns the vector for `name`, decoding its column on first access, struct children via their parent. */
     get(name: string): Vector | undefined {
         const cached = this.#vectorsByName.get(name);
         if (cached !== undefined) {
@@ -55,8 +48,7 @@ export class LazyPropertyVectors {
                 continue;
             }
             const columnName = column.name;
-            // An unnamed struct (sibling fields such as `class` and `subclass` the encoder groups under no
-            // name) has no prefix to match, so it is tried for every name.
+            // An unnamed struct has no prefix to match, so it is tried for every name.
             if (
                 columnName === "" ||
                 columnName === name ||

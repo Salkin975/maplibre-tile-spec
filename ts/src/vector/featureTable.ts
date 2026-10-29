@@ -68,10 +68,7 @@ export default class FeatureTable {
         if (_idVector instanceof LazyIdColumn) this.lazyIdColumn = _idVector;
     }
 
-    /**
-     * Frees the decoded id, geometry and property columns and keeps only what is needed to decode
-     * them again: the column positions in the tile buffer, which therefore stays referenced
-     */
+    /** Frees the decoded columns, the tile buffer stays referenced to decode them again. */
     releaseDecodedColumns(): void {
         if (this.lazyGeometryColumn) this._geometryVector = this.lazyGeometryColumn;
         if (this.lazyIdColumn) this._idVector = this.lazyIdColumn;
@@ -141,11 +138,7 @@ export default class FeatureTable {
         return this.propertyVectorsMap.get(name);
     }
 
-    /**
-     * Returns the name of every property column once. Listing the names decodes every remaining
-     * column, and the decoder does not guarantee unique column names, so the list is deduplicated
-     * and kept.
-     */
+    /** Returns each property column name once (names may repeat), decoding all remaining columns. */
     getPropertyNames(): string[] {
         this.propertyNames ??= [...new Set(this.propertyVectors.map((propertyVector) => propertyVector.name))];
         return this.propertyNames;

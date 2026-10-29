@@ -20,12 +20,7 @@ import type { FilterSpecification } from "@maplibre/maplibre-gl-style-spec";
 import type { SelectionVector } from "../../vector/filter/selectionVector";
 import type Vector from "../../vector/vector";
 
-/**
- * Round-trip test-vector builders: real `encode*` → real `decodeString`, matching the pattern in
- * `ts/src/decoding/stringDecoder.spec.ts`, instead of the create*Vector shortcuts (which skip the
- * binary format entirely). `numStreams` mirrors what each encoder actually emits: a corpus
- * containing a null gains a PRESENT stream, one without it does not.
- */
+/** Round-trip builders: real `encode*` → `decodeString`, so each vector has the decoder's real shape. */
 function flatStringVector(name: string, values: string[]): StringFlatVector {
     return decodeString(name, encodePlainStrings(values), new IntWrapper(0), 2) as StringFlatVector;
 }
@@ -36,11 +31,8 @@ function dictionaryStringVector(name: string, values: (string | null)[]): String
 }
 
 /**
- * A plain string stream carrying nulls decodes to a *sparse* `StringDictionaryVector`, not a
- * `StringFlatVector` (see `decodePlainStringVector` in `stringDecoder.ts`), because the length
- * stream holds no entry for a null row. A nullable `StringFlatVector` is still a valid shape — it
- * needs a length entry per row, including zero-length ones for nulls — so it is built directly
- * here, the one thing the round-trip builders above cannot express.
+ * A plain string stream with nulls decodes to a sparse `StringDictionaryVector`, so a nullable
+ * `StringFlatVector` is built directly.
  */
 function nullableFlatStringVector(name: string, values: (string | null)[]): StringFlatVector {
     const encoder = new TextEncoder();
@@ -78,15 +70,14 @@ describe("filterFeatureTable", () => {
     });
 
     test("rejects comparisons and membership tests against a dynamic (non-literal) value", () => {
-        // Comparing two properties to each other: the right-hand side must fall back rather than
-        // be silently matched against its own ["get", "b"] tokens.
+        // Comparing two properties: the right-hand side must not be matched as literal tokens.
         expect(isColumnarFilterSupportedAtZoom(["==", ["get", "a"], ["get", "b"]] as FilterSpecification, 0)).toBe(
             false,
         );
         expect(isColumnarFilterSupportedAtZoom([">", ["get", "a"], ["get", "b"]] as FilterSpecification, 0)).toBe(
             false,
         );
-        // A dynamic (property-derived) haystack for `in`/`!in`, as opposed to a literal list.
+        // A property-derived haystack for `in`/`!in`.
         expect(isColumnarFilterSupportedAtZoom(["in", ["get", "x"], ["get", "y"]] as FilterSpecification, 0)).toBe(
             false,
         );
@@ -105,10 +96,7 @@ describe("filterFeatureTable", () => {
         expect(on(["==", ["get", "rank"], ["literal", 2]])).toEqual([1]);
         expect(on(["in", ["get", "rank"], ["literal", [2, 3]]])).toEqual([1, 2]);
 
-        // The same wrappers against a bare string key are mixed syntax: a string first argument
-        // plus an array second argument classifies as an expression, where "rank" is a literal
-        // string rather than a property reference. Declining hands it to the row-based path, which
-        // is the only thing that reproduces that reading.
+        // Mixed syntax reads "rank" as a string literal, only the row-based path reproduces that.
         expect(
             isColumnarFilterSupportedAtZoom(["==", "rank", ["literal", 2]] as unknown as FilterSpecification, 0),
         ).toBe(false);
@@ -170,14 +158,14 @@ describe("filterFeatureTable", () => {
     test("announces a filter-caused fallback once, naming the layer and the offending node", () => {
         const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
         try {
-            // Distinct array identities: the report is deduplicated per filter object.
+            // Distinct arrays, the report is deduplicated per filter object.
             const supportedFilter = [">=", "rank", 2] as FilterSpecification;
             const unsupportedFilter = ["all", [">=", "rank", 2], ["within", {}]] as unknown as FilterSpecification;
 
             expect(isColumnarBucketSupported("mlt", supportedFilter, 0, "roads")).toBe(true);
             expect(warn).not.toHaveBeenCalled();
 
-            // A non-MLT tile is not a filter problem, so it stays quiet even though it declines.
+            // A non-MLT tile declines without a warning.
             expect(isColumnarBucketSupported("mvt", unsupportedFilter, 0, "roads")).toBe(false);
             expect(warn).not.toHaveBeenCalled();
 
@@ -185,11 +173,11 @@ describe("filterFeatureTable", () => {
             expect(warn).toHaveBeenCalledTimes(1);
             const message = warn.mock.calls[0][0] as string;
             expect(message).toContain('layer "roads"');
-            // The compound is walked so the message names the operator that actually declined.
+            // The message names the operator that declined.
             expect(message).toContain('["within",{}]');
             expect(message).not.toContain('">=","rank"');
 
-            // Re-parsing another tile with the same filter must not repeat the warning.
+            // The same filter warns only once.
             expect(isColumnarBucketSupported("mlt", unsupportedFilter, 1, "roads")).toBe(false);
             expect(warn).toHaveBeenCalledTimes(1);
         } finally {
@@ -203,7 +191,7 @@ describe("filterFeatureTable", () => {
         expect(isColumnarFilterSupportedAtZoom(undefined, 0)).toBe(true);
         expect(selection(filterFeatureTable(table, undefined, 0))).toEqual([0, 1, 2]);
         expect(selection(filterFeatureTable(table, null, 0))).toEqual([0, 1, 2]);
-        // A malformed primitive filter can be neither a WeakMap key nor normalized.
+        // A primitive filter can be neither a WeakMap key nor normalized.
         expect(isColumnarFilterSupportedAtZoom(42 as unknown as FilterSpecification, 0)).toBe(false);
     });
 
@@ -231,25 +219,22 @@ describe("filterFeatureTable", () => {
         const on = (table: FeatureTable, filter: unknown) =>
             selection(filterFeatureTable(table, filter as FilterSpecification, 0));
 
-        // Ordering takes the decoding scan for flat strings and the dictionary-evaluation path for
-        // codes, so both encodings are exercised across the four ordering operators.
+        // Flat strings take the decoding scan, dictionary codes the dictionary path.
         expect(on(flat, [">", "name", "beta"])).toEqual([2]);
         expect(on(dictionary, [">", "name", "beta"])).toEqual([2]);
         expect(on(flat, ["<=", "name", "beta"])).toEqual([0, 1]);
         expect(on(dictionary, ["<", "name", "beta"])).toEqual([0]);
         expect(on(flat, [">=", "name", "gamma"])).toEqual([2]);
 
-        // Negated membership resolves through the byte-comparison equality path. `!in` exists only
-        // in legacy syntax, so its values are the plain variadic tail.
+        // `!in` exists only in legacy syntax, its values are the variadic tail.
         expect(on(flat, ["!in", "name", "alpha"])).toEqual([1, 2]);
         expect(on(dictionary, ["!in", "name", "alpha"])).toEqual([1, 2]);
 
-        // An operand of a different type is never ordered relative to a string.
+        // A non-string operand is never ordered against a string.
         expect(on(flat, [">", "name", 5])).toEqual([]);
-        // An equality operand no string can equal leaves the whole dictionary unmatched.
+        // An operand no string can equal leaves every code unmatched.
         expect(on(dictionary, ["==", "name", 5])).toEqual([]);
-        // An operand no entry can equal: every code stays unmatched, and the negation of that is
-        // every row rather than none.
+        // No entry equals the operand, so its negation selects every row.
         expect(on(dictionary, ["==", "name", "x"])).toEqual([]);
         expect(on(dictionary, ["!=", "name", "x"])).toEqual([0, 1, 2]);
     });
@@ -263,7 +248,7 @@ describe("filterFeatureTable", () => {
 
         expect(on(flat, ["==", "name", "alpha"])).toEqual([0]);
         expect(on(dictionary, ["==", "name", "alpha"])).toEqual([0]);
-        // A null value is "not alpha", matching the null semantics of the row-based path.
+        // A null value is "not alpha", as on the row-based path.
         expect(on(flat, ["!=", "name", "alpha"])).toEqual([1, 2]);
         expect(on(dictionary, ["!=", "name", "alpha"])).toEqual([1, 2]);
     });
@@ -274,7 +259,7 @@ describe("filterFeatureTable", () => {
         const table = featureTable([dictionaryStringVector("kind", kind), dictionaryStringVector("name", name)]);
         const on = (filter: unknown) => selection(filterFeatureTable(table, filter as FilterSpecification, 0));
 
-        // The first leaf selects the "a" rows, the second narrows that selection in place.
+        // The first leaf selects the "a" rows, the second narrows that selection.
         expect(on(["all", ["==", "kind", "a"], ["==", "name", "x"]])).toEqual([0, 3]);
         expect(on(["all", ["==", "kind", "a"], ["!=", "name", "x"]])).toEqual([2, 5, 6, 8, 9]);
         expect(on(["all", ["==", "kind", "a"], ["in", "name", "y", "z"]])).toEqual([2, 6, 9]);
@@ -290,7 +275,7 @@ describe("filterFeatureTable", () => {
 
         expect(on(["==", "population", 1000n])).toEqual([1]);
         expect(on([">", "population", 1000n])).toEqual([2]);
-        // Outside the safe-integer range there is no comparison that does not lose precision.
+        // Outside the safe-integer range every comparison loses precision.
         expect(on([">", "population", unsafe])).toEqual([]);
         expect(on(["==", "population", unsafe])).toEqual([]);
     });
@@ -312,7 +297,7 @@ describe("filterFeatureTable", () => {
     test("rejects malformed compound children", () => {
         expect(isSupported(["all", 42])).toBe(false);
         expect(isSupported(["all", ["within", {}]])).toBe(false);
-        // An undefined child normalizes to constant-true rather than failing the whole filter.
+        // An undefined child normalizes to true.
         expect(isSupported(["all", undefined])).toBe(true);
     });
 
@@ -320,17 +305,16 @@ describe("filterFeatureTable", () => {
         const table = featureTable([new Int32FlatVector("rank", new Int32Array([1, 2, 3]), 3)]);
         const on = (filter: unknown) => selection(filterFeatureTable(table, filter as FilterSpecification, 0));
 
-        // Every expectation here was taken from style-spec's own featureFilter on the same inputs.
-        // rank 2 matches the first test, whose output is false, so the later test that would also
-        // match never runs. A flat union of the branches would wrongly return [1, 2].
+        // Expectations from style-spec's featureFilter. rank 2 stops at the first matching test,
+        // a flat union of the branches would give [1, 2].
         expect(on(["case", ["==", ["get", "rank"], 2], false, [">=", ["get", "rank"], 2], true, false])).toEqual([2]);
 
-        // A case is still a compound, so zoom folding reaches its tests.
+        // Zoom folding reaches the tests of a case.
         const zoomCase = ["case", [">=", ["zoom"], 14], true, false];
         expect(selection(filterFeatureTable(table, zoomCase as FilterSpecification, 14))).toEqual([0, 1, 2]);
         expect(selection(filterFeatureTable(table, zoomCase as FilterSpecification, 13))).toEqual([]);
 
-        // Missing fallback (odd length), and a branch output that is not a filter.
+        // Missing fallback, and a branch output that is not a filter.
         expect(isSupported(["case", ["==", ["get", "rank"], 2], true])).toBe(false);
         expect(isSupported(["case", ["==", ["get", "rank"], 2], "yes", false])).toBe(false);
     });
@@ -341,14 +325,13 @@ describe("filterFeatureTable", () => {
         const table = featureTable([y]);
         const on = (filter: unknown) => selection(filterFeatureTable(table, filter as FilterSpecification, 0));
 
-        // Upstream typeof reports the type of the evaluated *value*, so a null row is "null"
-        // rather than "number". Values pinned against featureFilter on equivalent rows.
+        // typeof reports the value's type, so a null row is "null" (checked against featureFilter).
         expect(on(["==", ["typeof", ["get", "y"]], "number"])).toEqual([0, 2]);
         expect(on(["==", ["typeof", ["get", "y"]], "null"])).toEqual([1]);
         expect(on(["!=", ["typeof", ["get", "y"]], "number"])).toEqual([1]);
         expect(on(["==", ["typeof", ["get", "y"]], "string"])).toEqual([]);
 
-        // A column absent from the tile is all-null, which is an answer rather than a decline.
+        // A missing column is all-null, an answer rather than a decline.
         expect(on(["==", ["typeof", ["get", "absent"]], "null"])).toEqual([0, 1, 2]);
         expect(on(["==", ["typeof", ["get", "absent"]], "number"])).toEqual([]);
 
@@ -358,7 +341,7 @@ describe("filterFeatureTable", () => {
             selection(filterFeatureTable(big, ["==", ["typeof", ["get", "pop"]], "number"] as FilterSpecification, 0)),
         ).toEqual([0, 1]);
 
-        // Only the ["typeof", …] == name orientation is recognised; the rest fall back.
+        // Only ["typeof", …] == name is recognised.
         expect(isSupported(["==", "number", ["typeof", ["get", "y"]]])).toBe(false);
         expect(isSupported(["==", ["typeof", ["geometry-type"]], "string"])).toBe(false);
         expect(isSupported([">", ["typeof", ["get", "y"]], "number"])).toBe(false);
@@ -368,22 +351,20 @@ describe("filterFeatureTable", () => {
         const table = featureTable([new Int32FlatVector("rank", new Int32Array([1, 2, 3]), 3)]);
         const on = (filter: unknown) => selection(filterFeatureTable(table, filter as FilterSpecification, 0));
 
-        // Every feature has a geometry type, so there is no presence to test: `convertHasOp` in
-        // the style spec folds these to `true` and `["!", true]` respectively.
+        // Every feature has a geometry type, the style spec folds these to `true` and `["!", true]`.
         expect(on(["has", "$type"])).toEqual([0, 1, 2]);
         expect(on(["!has", "$type"])).toEqual([]);
 
-        // `$id` keeps testing the id column, which this table does not carry.
+        // `$id` tests the id column, which this table lacks.
         expect(on(["has", "$id"])).toEqual([]);
         expect(on(["!has", "$id"])).toEqual([0, 1, 2]);
     });
 
     test("declines the object-lookup forms of get and has", () => {
-        // Three-argument `has` and `get` read the key out of a supplied object rather than out of
-        // the feature, so neither names a column.
+        // Three-argument `has`/`get` read from a supplied object, not from a column.
         expect(isSupported(["has", "name", ["literal", { name: 1 }]])).toBe(false);
         expect(isSupported(["==", ["get", "name", ["literal", { name: 1 }]], "alpha"])).toBe(false);
-        // A computed key is not resolvable ahead of the scan either.
+        // A computed key cannot be resolved before the scan.
         expect(isSupported(["has", ["get", "key"]])).toBe(false);
     });
 
@@ -392,7 +373,7 @@ describe("filterFeatureTable", () => {
         const on = (filter: unknown, zoom: number) =>
             selection(filterFeatureTable(table, filter as FilterSpecification, zoom));
 
-        // has/!has on a resolved literal settles without ever consulting the table.
+        // has/!has on a literal settles without the table.
         expect(on(["has", ["zoom"]], 0)).toEqual([0, 1, 2]);
         expect(on(["!has", ["zoom"]], 0)).toEqual([]);
 
@@ -401,15 +382,14 @@ describe("filterFeatureTable", () => {
         expect(on(inZooms, 14)).toEqual([0, 1, 2]);
         expect(on(inZooms, 13)).toEqual([]);
 
-        // A zoom-targeted match is left unfolded, and a literal match input is not a valid target.
+        // A zoom-targeted match stays unfolded, a literal match input is not a valid target.
         expect(
             isColumnarFilterSupportedAtZoom(["match", ["zoom"], 14, true, false] as unknown as FilterSpecification, 14),
         ).toBe(false);
     });
 
     test("refuses to build a matcher for operators that do not compare values", () => {
-        // Defensive guard only: `has`/`!has` are resolved before any matcher is built, both in
-        // filterKernels.ts and in zoomFolding.ts, so this is unreachable via filterFeatureTable.
+        // Unreachable via filterFeatureTable, `has`/`!has` are resolved before any matcher is built.
         expect(() => createValueMatcher("has", [])).toThrowError("Unsupported operator: has");
         expect(() => createValueMatcher("!has", [])).toThrowError("Unsupported operator: !has");
     });

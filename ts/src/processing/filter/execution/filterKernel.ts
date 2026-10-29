@@ -166,10 +166,6 @@ function resolveDictionaryExecutor(
 /**
  * Selects the rows whose dictionary code is marked in `matchingCodes`, and the rows without a value
  * if `isNullMatch`. A flat `selection` is narrowed in place.
- *
- * Most style filters compare a dictionary-encoded string column, so this is the loop they spend
- * their time in. It reads codes, present bits and selected indices straight from their arrays
- * instead of calling a per-row matcher.
  */
 function scanDictionaryCodes(
     size: number,

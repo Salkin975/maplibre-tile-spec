@@ -17,11 +17,7 @@ const LONG_ID_COLUMN: Column = {
     scalarType: { longID: true },
 };
 
-/**
- * `idWithinMaxSafeInteger: false` for a 64-bit id column is the one path mltDecoder.spec.ts never
- * exercises (every fixture there decodes with the default `true`), so it's covered directly here
- * instead - each case pins one VectorType branch of decodeIdColumn's 64-bit switch.
- */
+/** Covers `idWithinMaxSafeInteger: false`, one case per 64-bit VectorType branch of decodeIdColumn. */
 describe("decodeIdColumn - 64-bit ids, idWithinMaxSafeInteger: false", () => {
     it("decodes a FLAT stream of safe integers as DoubleFlatVector", () => {
         const metadata = createStreamMetadata(LogicalLevelTechnique.NONE, LogicalLevelTechnique.NONE, 2);

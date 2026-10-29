@@ -200,12 +200,8 @@ export function decodeUnsignedInt64AsFloat64Stream(
 }
 
 /**
- * Decodes an unsigned 64-bit stream into numbers if every value is a safe integer. Otherwise it
- * returns undefined and leaves `offset` where it was, so the stream can be decoded as `bigint`s.
- *
- * Only varint streams are decoded this way. A varint above 2^53 - 1 reads as a number of at least
- * 2^53, and so does a delta sum that leaves the safe range, so checking the read values and the
- * decoded values tells whether any value lost precision.
+ * Decodes an unsigned 64-bit varint stream into numbers if every value is a safe integer,
+ * otherwise returns undefined and leaves `offset` unchanged for a `bigint` decode.
  */
 export function decodeSafeUnsignedInt64AsFloat64Stream(
     data: Uint8Array,

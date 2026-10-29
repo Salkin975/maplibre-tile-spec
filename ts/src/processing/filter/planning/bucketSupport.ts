@@ -24,7 +24,6 @@ const reportedFilters = new WeakSet<object>();
 
 const COMPOUND_WALK_OPERATORS = new Set(["all", "any", "none", "!"]);
 
-/** Walks into compounds to find the specific child that fails to normalize, rather than blaming the whole tree. */
 function findOffendingNode(expression: unknown): unknown {
     if (!Array.isArray(expression) || expression.length === 0) return expression;
     if (COMPOUND_WALK_OPERATORS.has(expression[0])) {
@@ -40,7 +39,6 @@ function reportFilters(filter: unknown, layerId?: string) {
     if (typeof filter !== "object" || filter === null) return;
     if (reportedFilters.has(filter)) return;
     reportedFilters.add(filter);
-    // Terse and deduplicated per filter, like the runtime diagnostics of the style-spec
     const layerPrefix = layerId === undefined ? "" : `layer "${layerId}": `;
     const offending = JSON.stringify(findOffendingNode(filter));
     console.warn(`${layerPrefix}filter is not supported: ${offending}`);
