@@ -19,6 +19,7 @@ import type { FilterSpecification } from "@maplibre/maplibre-gl-style-spec";
  * 2. MLT stores null and missing alike, so for `has`/`!has` and legacy `== null`/`!= null`
  *    upstream's two answers collapse into one.
  * 3. APIs without an MLT equivalent (`getGlobalStateRefs`, `convertFilter` output, warning text) are skipped.
+ * Cases that only mirror a kept one or repeat a `filter.spec.ts` case are not ported.
  */
 
 function selection(value: SelectionVector | undefined): number[] {
@@ -90,10 +91,6 @@ describe("expression syntax", () => {
         declines([">=", ["number", ["get", "x"]], ["zoom"]] as unknown as FilterSpecification);
     });
 
-    test("comparing two properties declines (both sides wrapped in a type assertion)", () => {
-        declines(["==", ["string", ["get", "x"]], ["string", ["get", "y"]]] as unknown as FilterSpecification);
-    });
-
     test("collator comparison declines (target wrapped, plus an unsupported 4th argument)", () => {
         declines([
             "==",
@@ -103,55 +100,10 @@ describe("expression syntax", () => {
         ] as unknown as FilterSpecification);
     });
 
-    test("any/all over literal booleans", () => {
-        expect(matches(["all"])).toBe(true);
-        expect(matches(["all", true])).toBe(true);
-        expect(matches(["all", true, false])).toBe(false);
-        expect(matches(["all", true, true])).toBe(true);
-        expect(matches(["any"])).toBe(false);
-        expect(matches(["any", true])).toBe(true);
-        expect(matches(["any", true, false])).toBe(true);
-        expect(matches(["any", false, false])).toBe(false);
-    });
-
-    test("a bare `literal` filter declines (not a recognized filter operator)", () => {
-        declines(["literal", true] as unknown as FilterSpecification);
-        declines(["literal", false] as unknown as FilterSpecification);
-    });
-
-    test("match", () => {
-        const filter = ["match", ["get", "x"], ["a", "b", "c"], true, false] as FilterSpecification;
-        expect(matches(filter, { x: "a" })).toBe(true);
-        expect(matches(filter, { x: "c" })).toBe(true);
-        expect(matches(filter, { x: "d" })).toBe(false);
-    });
-
     test("type error cases decline instead of throwing (MLT's normalizeExpression never throws)", () => {
         declines(["==", ["number", ["get", "x"]], ["string", ["get", "y"]]] as unknown as FilterSpecification);
         declines(["number", ["get", "x"]] as unknown as FilterSpecification);
         declines(["boolean", ["get", "x"]] as unknown as FilterSpecification);
-    });
-
-    test("within declines", () => {
-        declines([
-            "within",
-            {
-                type: "Polygon",
-                coordinates: [
-                    [
-                        [0, 0],
-                        [5, 0],
-                        [5, 5],
-                        [0, 5],
-                        [0, 0],
-                    ],
-                ],
-            },
-        ] as unknown as FilterSpecification);
-    });
-
-    test("global-state declines", () => {
-        declines(["==", ["global-state", "x"], ["get", "x"]] as unknown as FilterSpecification);
     });
 });
 
@@ -162,10 +114,6 @@ describe("legacy filter detection (isExpressionFilter — MLT's copy is a verbat
         expect(isExpressionFilter(["in", "color", "red", "blue"])).toBeFalsy();
         expect(isExpressionFilter(["in", "value", 42])).toBeFalsy();
         expect(isExpressionFilter(["in", "value", true])).toBeFalsy();
-    });
-
-    test("ambiguous value", () => {
-        expect(isExpressionFilter(["in", "color", "red"])).toBeFalsy();
     });
 
     test("definitely expressions", () => {
@@ -193,11 +141,6 @@ describe("legacy filter semantics (ported without convertFilter — see README.m
 });
 
 describe("legacy filter tests", () => {
-    test("degenerate", () => {
-        expect(matches(undefined)).toBe(true);
-        expect(matches(null)).toBe(true);
-    });
-
     test("==, string", () => {
         const filter = ["==", "foo", "bar"] as FilterSpecification;
         expect(matches(filter, { foo: "bar" })).toBe(true);
@@ -236,14 +179,7 @@ describe("legacy filter tests", () => {
         expect(matches(filter, {}, { id: 1234 })).toBe(true);
         // A property named "id" is not the feature id, $id reads the unset id vector.
         expect(matches(filter, { id: 1234 })).toBe(false);
-        // Upstream's third case (a *string* `id: '1234'`) has no MLT equivalent: an id vector is
-        // always numeric, so a string id can't be represented at all.
-    });
-
-    test("!=, string", () => {
-        const filter = ["!=", "foo", "bar"] as FilterSpecification;
-        expect(matches(filter, { foo: "bar" })).toBe(false);
-        expect(matches(filter, { foo: "baz" })).toBe(true);
+        // Upstream's string id is not ported, MLT ids are always numeric.
     });
 
     test("!=, number", () => {
@@ -286,19 +222,6 @@ describe("legacy filter tests", () => {
         expect(matches(filter, {})).toBe(false);
     });
 
-    test("<, string", () => {
-        const filter = ["<", "foo", "0"] as FilterSpecification;
-        expect(matches(filter, { foo: -1 })).toBe(false);
-        expect(matches(filter, { foo: 0 })).toBe(false);
-        expect(matches(filter, { foo: 1 })).toBe(false);
-        expect(matches(filter, { foo: "1" })).toBe(false);
-        expect(matches(filter, { foo: "0" })).toBe(false);
-        expect(matches(filter, { foo: "-1" })).toBe(true);
-        expect(matches(filter, { foo: true })).toBe(false);
-        expect(matches(filter, { foo: false })).toBe(false);
-        expect(matches(filter, {})).toBe(false);
-    });
-
     test("<=, number", () => {
         const filter = ["<=", "foo", 0] as FilterSpecification;
         expect(matches(filter, { foo: 1 })).toBe(false);
@@ -320,58 +243,6 @@ describe("legacy filter tests", () => {
         expect(matches(filter, { foo: "1" })).toBe(false);
         expect(matches(filter, { foo: "0" })).toBe(true);
         expect(matches(filter, { foo: "-1" })).toBe(true);
-        expect(matches(filter, { foo: true })).toBe(false);
-        expect(matches(filter, { foo: false })).toBe(false);
-        expect(matches(filter, {})).toBe(false);
-    });
-
-    test(">, number", () => {
-        const filter = [">", "foo", 0] as FilterSpecification;
-        expect(matches(filter, { foo: 1 })).toBe(true);
-        expect(matches(filter, { foo: 0 })).toBe(false);
-        expect(matches(filter, { foo: -1 })).toBe(false);
-        expect(matches(filter, { foo: "1" })).toBe(false);
-        expect(matches(filter, { foo: "0" })).toBe(false);
-        expect(matches(filter, { foo: "-1" })).toBe(false);
-        expect(matches(filter, { foo: true })).toBe(false);
-        expect(matches(filter, { foo: false })).toBe(false);
-        expect(matches(filter, {})).toBe(false);
-    });
-
-    test(">, string", () => {
-        const filter = [">", "foo", "0"] as FilterSpecification;
-        expect(matches(filter, { foo: -1 })).toBe(false);
-        expect(matches(filter, { foo: 0 })).toBe(false);
-        expect(matches(filter, { foo: 1 })).toBe(false);
-        expect(matches(filter, { foo: "1" })).toBe(true);
-        expect(matches(filter, { foo: "0" })).toBe(false);
-        expect(matches(filter, { foo: "-1" })).toBe(false);
-        expect(matches(filter, { foo: true })).toBe(false);
-        expect(matches(filter, { foo: false })).toBe(false);
-        expect(matches(filter, {})).toBe(false);
-    });
-
-    test(">=, number", () => {
-        const filter = [">=", "foo", 0] as FilterSpecification;
-        expect(matches(filter, { foo: 1 })).toBe(true);
-        expect(matches(filter, { foo: 0 })).toBe(true);
-        expect(matches(filter, { foo: -1 })).toBe(false);
-        expect(matches(filter, { foo: "1" })).toBe(false);
-        expect(matches(filter, { foo: "0" })).toBe(false);
-        expect(matches(filter, { foo: "-1" })).toBe(false);
-        expect(matches(filter, { foo: true })).toBe(false);
-        expect(matches(filter, { foo: false })).toBe(false);
-        expect(matches(filter, {})).toBe(false);
-    });
-
-    test(">=, string", () => {
-        const filter = [">=", "foo", "0"] as FilterSpecification;
-        expect(matches(filter, { foo: -1 })).toBe(false);
-        expect(matches(filter, { foo: 0 })).toBe(false);
-        expect(matches(filter, { foo: 1 })).toBe(false);
-        expect(matches(filter, { foo: "1" })).toBe(true);
-        expect(matches(filter, { foo: "0" })).toBe(true);
-        expect(matches(filter, { foo: "-1" })).toBe(false);
         expect(matches(filter, { foo: true })).toBe(false);
         expect(matches(filter, { foo: false })).toBe(false);
         expect(matches(filter, {})).toBe(false);
@@ -410,23 +281,6 @@ describe("legacy filter tests", () => {
         expect(matches(filter, { foo: null })).toBe(true);
     });
 
-    test("in, multiple", () => {
-        const filter = ["in", "foo", 0, 1] as FilterSpecification;
-        expect(matches(filter, { foo: 0 })).toBe(true);
-        expect(matches(filter, { foo: 1 })).toBe(true);
-        expect(matches(filter, { foo: 3 })).toBe(false);
-    });
-
-    test("in, large_multiple", () => {
-        const values = Array.from({ length: 2000 }).map(Number.call, Number) as number[];
-        values.reverse();
-        const filter = ["in", "foo"].concat(values) as unknown as FilterSpecification;
-        expect(matches(filter, { foo: 0 })).toBe(true);
-        expect(matches(filter, { foo: 1 })).toBe(true);
-        expect(matches(filter, { foo: 1999 })).toBe(true);
-        expect(matches(filter, { foo: 2000 })).toBe(false);
-    });
-
     test("in, large_multiple, heterogeneous", () => {
         const values: unknown[] = Array.from({ length: 2000 }).map(Number.call, Number);
         values.push("a");
@@ -457,13 +311,6 @@ describe("legacy filter tests", () => {
         expect(matches(filter, { foo: 1 })).toBe(true);
     });
 
-    test("!in, string", () => {
-        const filter = ["!in", "foo", "0"] as FilterSpecification;
-        expect(matches(filter, { foo: 0 })).toBe(true);
-        expect(matches(filter, { foo: "0" })).toBe(false);
-        expect(matches(filter, {})).toBe(true); // null, undefined, missing all collapse to this
-    });
-
     test("!in, number", () => {
         const filter = ["!in", "foo", 0] as FilterSpecification;
         expect(matches(filter, { foo: 0 })).toBe(false);
@@ -476,29 +323,6 @@ describe("legacy filter tests", () => {
         expect(matches(filter, { foo: 0 })).toBe(true);
         expect(matches(filter, { foo: "0" })).toBe(true);
         expect(matches(filter, { foo: null })).toBe(false);
-    });
-
-    test("!in, multiple", () => {
-        const filter = ["!in", "foo", 0, 1] as FilterSpecification;
-        expect(matches(filter, { foo: 0 })).toBe(false);
-        expect(matches(filter, { foo: 1 })).toBe(false);
-        expect(matches(filter, { foo: 3 })).toBe(true);
-    });
-
-    test("!in, large_multiple", () => {
-        const values = Array.from({ length: 2000 }).map(Number.call, Number) as number[];
-        const filter = ["!in", "foo"].concat(values) as unknown as FilterSpecification;
-        expect(matches(filter, { foo: 0 })).toBe(false);
-        expect(matches(filter, { foo: 1 })).toBe(false);
-        expect(matches(filter, { foo: 1999 })).toBe(false);
-        expect(matches(filter, { foo: 2000 })).toBe(true);
-    });
-
-    test("!in, $type", () => {
-        const filter = ["!in", "$type", "LineString", "Polygon"] as FilterSpecification;
-        expect(matches(filter, {}, { mvtType: 1 })).toBe(true);
-        expect(matches(filter, {}, { mvtType: 2 })).toBe(false);
-        expect(matches(filter, {}, { mvtType: 3 })).toBe(false);
     });
 
     test("any", () => {
@@ -543,31 +367,11 @@ describe("legacy filter tests", () => {
         // Mirrors "has" above.
         expect(matches(filter, {})).toBe(true); // upstream: null -> false, missing/undefined -> true
     });
-
-    test("pure legacy filter using `has` still matches the right features", () => {
-        const filter = [
-            "all",
-            ["==", "$type", "LineString"],
-            ["all", ["==", "class", "rail"], ["has", "service"]],
-        ] as FilterSpecification;
-        expect(matches(filter, { class: "rail", service: "yard" }, { mvtType: 2 })).toBe(true);
-        expect(matches(filter, { class: "rail" }, { mvtType: 2 })).toBe(false);
-        expect(matches(filter, { class: "road", service: "yard" }, { mvtType: 2 })).toBe(false);
-    });
 });
 
 describe("global-state in filter", () => {
     test("basic global-state equality filter declines", () => {
         declines(["==", ["get", "id"], ["global-state", "activeId"]] as unknown as FilterSpecification);
-    });
-
-    test("global-state in a case filter expression declines", () => {
-        declines([
-            "case",
-            ["==", ["get", "id"], ["global-state", "activeId"]],
-            true,
-            ["any", ["==", ["get", "role"], "start"], ["==", ["get", "role"], "end"]],
-        ] as unknown as FilterSpecification);
     });
 
     test("isExpressionFilter recognizes filters mixing $type with expression operators", () => {
@@ -601,13 +405,5 @@ describe("global-state in filter", () => {
             ["case", ["==", ["get", "id"], ["global-state", "activeTrackId"]], true, false],
         ] as unknown as FilterSpecification;
         expect(isExpressionFilter(filter)).toBe(false);
-    });
-
-    test('a mixed "$type" != filter declines', () => {
-        declines([
-            "all",
-            ["!=", "$type", "LineString"],
-            ["==", ["global-state", "active"], true],
-        ] as unknown as FilterSpecification);
     });
 });
