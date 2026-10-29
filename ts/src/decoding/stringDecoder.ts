@@ -187,6 +187,11 @@ export function decodeSharedDictionary(
 
     let dictionaryStreamDecoded = false;
     while (!dictionaryStreamDecoded) {
+        if (offset.get() >= data.length) {
+            throw new Error(
+                `No dictionary stream found for shared-dictionary column "${column.name}" before end of buffer`,
+            );
+        }
         const streamMetadata = decodeStreamMetadata(data, offset);
         switch (streamMetadata.physicalStreamType) {
             case PhysicalStreamType.LENGTH:
