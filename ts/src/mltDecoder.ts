@@ -5,7 +5,7 @@ import { decodeStreamMetadata } from "./metadata/tile/streamMetadataDecoder";
 import BitVector from "./vector/flat/bitVector";
 import { MapMask } from "./metadata/tile/mapMask";
 import type GeometryScaling from "./decoding/geometryScaling";
-import { decodeBooleanRle } from "./decoding/decodingUtils";
+import { decodeBooleanRle, decodeString } from "./decoding/decodingUtils";
 import { decodeEmbeddedTileSetMetadata } from "./metadata/tileset/embeddedTilesetMetadataDecoder";
 import { hasStreamCount, isGeometryColumn, isLogicalIdColumn } from "./metadata/tileset/typeMap";
 import { PhysicalStreamType } from "./metadata/tile/physicalStreamType";
@@ -139,8 +139,6 @@ export interface LayerBlock {
     bytes: Uint8Array;
 }
 
-const textDecoder = new TextDecoder();
-
 /**
  * Locates the layer blocks of a tile and reads each layer name, without decoding any column.
  *
@@ -157,7 +155,7 @@ export function scanLayerBlocks(tile: Uint8Array): LayerBlock[] {
         if (isFeatureTableTag(tag)) {
             const nameByteLength = readVarint(tile, offset);
             const nameStart = offset.get();
-            const name = textDecoder.decode(tile.subarray(nameStart, nameStart + nameByteLength));
+            const name = decodeString(tile, nameStart, nameStart + nameByteLength);
             layerBlocks.push({ name, bytes: tile.subarray(prefixStart, blockEnd) });
         }
         offset.set(blockEnd);
