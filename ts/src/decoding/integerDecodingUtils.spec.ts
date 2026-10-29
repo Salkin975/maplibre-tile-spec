@@ -4,6 +4,7 @@ import {
     decodeFastPfor,
     decodeFastPforWithWorkspace,
     decodeVarintInt32,
+    readVarint,
     decodeVarintInt64,
     decodeVarintFloat64,
     decodeZigZagInt32,
@@ -35,6 +36,7 @@ import {
 import IntWrapper from "./intWrapper";
 import {
     encodeVarintInt32,
+    encodeVarintInt32Value,
     encodeVarintInt64,
     encodeDeltaInt32,
     encodeDeltaRleInt32,
@@ -417,5 +419,115 @@ describe("IntegerDecodingUtils", () => {
             /invalid encodedByteLength=3/,
         );
         expect(offset.get()).toBe(0);
+    });
+});
+
+/** Test numbers taken from https://github.com/mapbox/pbf/blob/main/test/pbf.test.js */
+describe("readVarint", () => {
+    const testNumbers = [
+        1, 0, 0, 4, 14, 23, 40, 86, 127, 141, 113, 925, 258, 1105, 1291, 6872, 12545, 16256, 65521, 126522, 133028,
+        444205, 846327, 1883372, 2080768, 266338304, 34091302912, 17179869184, 3716678, 674158, 15203102, 27135056,
+        42501689, 110263473, 6449928, 65474499, 943840723, 1552431153, 407193337, 2193544970, 8167778088, 5502125480,
+        14014009728, 56371207648, 9459068416, 410595966336, 673736830976, 502662539776, 2654996269056, 5508583663616,
+        6862782705664, 34717688324096, 1074895093760, 95806297440256, 130518477701120, 197679237955584, 301300890730496,
+        1310140661760000, 2883205519638528, 2690669862715392, 3319292539961344,
+    ];
+
+    /** LEB128 writer for whole numbers up to 2^64; negatives are written as 10-byte two's complement, like pbf. */
+    function writeVarints(values: number[]): Uint8Array {
+        const bytes: number[] = [];
+        for (const value of values) {
+            let v = BigInt(value);
+            if (v < 0n) v += 1n << 64n;
+            while (v >= 0x80n) {
+                bytes.push(Number(v & 0x7fn) | 0x80);
+                v >>= 7n;
+            }
+            bytes.push(Number(v));
+        }
+        return Uint8Array.from(bytes);
+    }
+
+    it("reads and writes varints, unsigned and signed", () => {
+        const values: number[] = [];
+        for (const n of testNumbers) {
+            values.push(n);
+            if (n) values.push(-n);
+        }
+        const buf = writeVarints(values);
+        expect(buf.length).toBe(839);
+
+        const offset = new IntWrapper(0);
+        let i = 0;
+        while (offset.get() < buf.length) {
+            expect(readVarint(buf, offset)).toBe(testNumbers[i]);
+            if (testNumbers[i]) expect(readVarint(buf, offset, true)).toBe(-testNumbers[i]);
+            i++;
+        }
+    });
+
+    it("reads signed values", () => {
+        expect(
+            readVarint(
+                Uint8Array.from([0xc8, 0xe8, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01]),
+                new IntWrapper(0),
+                true,
+            ),
+        ).toBe(-3000);
+        expect(
+            readVarint(
+                Uint8Array.from([0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01]),
+                new IntWrapper(0),
+                true,
+            ),
+        ).toBe(-1);
+        expect(readVarint(Uint8Array.from([0xc8, 0x01]), new IntWrapper(0), true)).toBe(200);
+    });
+
+    it("handles really big numbers", () => {
+        const bigNum1 = 2 ** 60;
+        const bigNum2 = 2 ** 63;
+        const buf = writeVarints([bigNum1, bigNum2]);
+        const offset = new IntWrapper(0);
+        expect(readVarint(buf, offset)).toBe(bigNum1);
+        expect(readVarint(buf, offset)).toBe(bigNum2);
+        expect(offset.get()).toBe(buf.length);
+    });
+
+    it("throws on a varint longer than 10 bytes", () => {
+        const buf = new Uint8Array(12).fill(0xff);
+        expect(() => readVarint(buf, new IntWrapper(0))).toThrow();
+    });
+
+    // Header reads replaced allocating decodeVarintInt32 calls, so pin the two to each other.
+    const BOUNDARY_VALUES = [
+        0, 1, 0x7f, 0x80, 0x81, 0x3fff, 0x4000, 0x1fffff, 0x200000, 0x0fffffff, 0x10000000, 0x7fffffff, 0x80000000,
+        0xfffffffe, 0xffffffff,
+    ];
+
+    it.each(BOUNDARY_VALUES)("agrees with decodeVarintInt32 at %i", (value) => {
+        const buffer = new Uint8Array(5);
+        const writeOffset = new IntWrapper(0);
+        encodeVarintInt32Value(value, buffer, writeOffset);
+        const encoded = buffer.slice(0, writeOffset.get());
+
+        const fastOffset = new IntWrapper(0);
+        const referenceOffset = new IntWrapper(0);
+        expect(readVarint(encoded, fastOffset)).toBe(value);
+        expect(decodeVarintInt32(encoded, referenceOffset, 1)[0]).toBe(value);
+        expect(fastOffset.get()).toBe(referenceOffset.get());
+        expect(fastOffset.get()).toBe(encoded.length);
+    });
+
+    it("reads a run of values sequentially, leaving the offset where the batch decoder does", () => {
+        const values = Uint32Array.from([0, 0x7f, 0x80, 300, 0x10000000, 0xffffffff, 42]);
+        const buffer = encodeVarintInt32(values);
+        const offset = new IntWrapper(0);
+        const read = Array.from(values, () => readVarint(buffer, offset));
+
+        const referenceOffset = new IntWrapper(0);
+        expect(read).toEqual([...decodeVarintInt32(buffer, referenceOffset, values.length)]);
+        expect(offset.get()).toBe(referenceOffset.get());
+        expect(offset.get()).toBe(buffer.length);
     });
 });
