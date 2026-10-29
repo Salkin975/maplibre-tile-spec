@@ -20,12 +20,6 @@ describe("ConstSelectionVector", () => {
         expect(Array.from(ConstSelectionVector.empty(4).selectionValues())).toEqual([]);
     });
 
-    /**
-     * The whole point of this class is representing "all"/"nothing" without an index array, so
-     * materialising `[0..length)` is the one thing it should not redo. Per the
-     * `SelectionVector.selectionValues()` contract the result is a shared view, which is what
-     * lets it be cached.
-     */
     it("materialises its index range only once", () => {
         const full = ConstSelectionVector.full(1000);
         expect(full.selectionValues()).toBe(full.selectionValues());

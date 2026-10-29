@@ -114,12 +114,7 @@ function isFeatureTableTag(tag: number): boolean {
     return tag === 1 || tag === 2;
 }
 
-/**
- * Reads one block's length varint and tag, and checks that the block ends inside the tile.
- *
- * `decodeTile` and `scanLayerBlocks` both read this prefix and then diverge: the first decodes the
- * block's metadata and column headers, the second reads only the layer name.
- */
+/** Reads a block's length varint and tag, and checks that the block ends inside the tile. */
 function readBlockPrefix(tile: Uint8Array, offset: IntWrapper): BlockPrefix {
     const prefixStart = offset.get();
     const blockLength = readVarint(tile, offset);
@@ -139,13 +134,7 @@ export interface LayerBlock {
     bytes: Uint8Array;
 }
 
-/**
- * Locates the layer blocks of a tile and reads each layer name, without decoding any column.
- *
- * Only the length varint, the tag and the name are read per block. `decodeTile` reads the same
- * name but then always decodes the full column list after it, so listing the layers of a tile is
- * proportional to the number of layers here, and to the number of columns there.
- */
+/** Locates the layer blocks of a tile and reads their names, without decoding any column. */
 export function scanLayerBlocks(tile: Uint8Array): LayerBlock[] {
     const layerBlocks: LayerBlock[] = [];
     const offset = new IntWrapper(0);
@@ -173,10 +162,7 @@ function snapshotGeometryScaling(geometryScaling: GeometryScaling | undefined): 
     return { extent, min, max, scale };
 }
 
-/**
- * Decodes the ID column's PRESENT stream to resolve the feature count, and records where the DATA
- * stream lies without decoding it.
- */
+/** Decodes the ID PRESENT stream for the feature count, the DATA stream is only located. */
 function parseIdColumn(
     tile: Uint8Array,
     offset: IntWrapper,
