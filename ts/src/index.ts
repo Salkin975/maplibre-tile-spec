@@ -23,3 +23,4 @@ export { SINGLE_PART_GEOMETRY_TYPE } from "./vector/geometry/geometryType";
 export { unionSelectionVectors, intersectSelectionVectors } from "./vector/filter/selectionVectorUtils";
 export { filterFeatureTable } from "./processing/filter/execution/tableFilter";
 export { isColumnarBucketSupported } from "./processing/filter/planning/bucketSupport";
+export { createFlatGpuVector } from "./vector/geometry/flatGpuVector";

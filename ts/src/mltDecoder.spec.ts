@@ -58,6 +58,25 @@ describe("FeatureTable", () => {
     });
 });
 
+describe("MLT Decoder - malformed input", () => {
+    const OMT_TILE = path.resolve(__dirname, "../../test/expected/0x01/omt/4_8_10.mlt");
+
+    // truncation is caught by decodeTile's own block-length check before any stream is
+    // read, so this covers that guard.
+    it("rejects a truncated tile rather than decoding garbage", () => {
+        const full = new Uint8Array(fs.readFileSync(OMT_TILE));
+
+        for (const fraction of [0.1, 0.4, 0.7, 0.95]) {
+            const truncated = full.subarray(0, Math.floor(full.length * fraction));
+            assert.throws(
+                () => decodeTile(truncated, undefined, true),
+                /Block overruns tile/,
+                `expected a throw for a tile truncated to ${fraction * 100}%`,
+            );
+        }
+    }, 15000);
+});
+
 function testTiles(mltSearchDir: string, mvtSearchDir: string) {
     const mltFileNames = readdirSync(mltSearchDir)
         .filter((file) => parse(file).ext === ".mlt")

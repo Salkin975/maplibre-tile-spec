@@ -608,3 +608,14 @@ describe("decodeSharedDictionary", () => {
         });
     });
 });
+
+describe("decodeSharedDictionary - malformed input", () => {
+    it("throws instead of scanning forever when no dictionary stream is present", () => {
+        const column = createColumnMetadataForStruct("name", [{ name: ":de" }]);
+        const terminatorFree = new Uint8Array(8); // two zero-length PRESENT streams
+
+        expect(() => decodeSharedDictionary(terminatorFree, new IntWrapper(0), column)).toThrow(
+            /No dictionary stream found for shared-dictionary column "name"/,
+        );
+    }, 10000);
+});
