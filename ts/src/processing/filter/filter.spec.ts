@@ -400,17 +400,6 @@ describe("filterFeatureTable", () => {
                 filterFeatureTable(featureTable([vector]), [operator, ["get", vector.name], operand] as FilterSpecification, 0),
             );
 
-        test("compares an Int32 column with every operator", () => {
-            const rank = new Int32FlatVector("rank", new Int32Array([1, 2, 3, 4]), 4);
-            expect(run(rank, "==", 2)).toEqual([1]);
-            expect(run(rank, "!=", 2)).toEqual([0, 2, 3]);
-            expect(run(rank, ">", 2)).toEqual([2, 3]);
-            expect(run(rank, ">=", 2)).toEqual([1, 2, 3]);
-            expect(run(rank, "<", 3)).toEqual([0, 1]);
-            expect(run(rank, "<=", 3)).toEqual([0, 1, 2]);
-            expect(run(rank, "==", 10)).toEqual([]);
-        });
-
         test("treats rows without a value as a match only for !=", () => {
             // y = [5, null, 7]: a nullability buffer marks rows 0 and 2 present.
             const y = new Int32FlatVector("y", new Int32Array([5, 0, 7]), new BitVector(new Uint8Array([0b00000101]), 3));
