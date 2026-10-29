@@ -22,11 +22,7 @@ function lazyColumn(name: string, start: number): LazyPropertyColumn {
     return { name, metadata: scalarColumn(name), numStreams: 1, start, vectors: null };
 }
 
-/**
- * `get()`'s cold path - decode one column on demand and cache the result - is never hit by
- * mltDecoder.spec.ts: every existing caller reads `propertyVectors` (decodeAll) first, which warms
- * the whole cache before `get()` ever runs. These test it directly against a real encoded column.
- */
+/** Tests the cold path of `get()`, which mltDecoder.spec.ts never hits since it decodes all columns first. */
 describe("LazyPropertyVectors", () => {
     it("decodes a column lazily on first get() and reuses the cached vector on the next call", () => {
         const encoded = encodeInt32NoneColumn(new Int32Array([1, 2, 3]));
@@ -60,10 +56,7 @@ describe("LazyPropertyVectors", () => {
     });
 
     it("tries an anonymous struct (no name of its own) for a bare sibling field like `class`", () => {
-        // The MLT encoder groups unrelated sibling scalar fields into a struct with no name of its
-        // own, unlike a namespaced struct (`name:en`) whose parent keeps a real name to prefix-match.
-        // Without the `columnName === ""` fallback, "class" never starts with the empty column's
-        // ":"/"." prefix and the struct is never decoded.
+        // The encoder groups sibling fields into an unnamed struct, only the `columnName === ""` fallback finds it.
         const { lengthStream, dataStream } = encodeSharedDictionary(["motorway", "trunk"]);
         const classField = encodeStructField([0, 1], [true, true]);
         const subclassField = encodeStructField([1, 0], [true, true]);

@@ -14,43 +14,18 @@ import type Vector from "../../vector/vector";
 import type { FilterSpecification } from "@maplibre/maplibre-gl-style-spec";
 
 /**
- * Ports `@maplibre/maplibre-gl-style-spec`'s `feature_filter/feature_filter.test.ts` (the row-based
- * "MVT filtering" oracle — tests `featureFilter(...).filter(globalProps, feature)` against
- * materialized `{properties, id, type}` objects) onto this columnar engine's `filterFeatureTable`.
- * Original at `node_modules/@maplibre/maplibre-gl-style-spec/src/feature_filter/feature_filter.test.ts`.
- *
- * Three kinds of adjustment were necessary, since MLT's data model differs from a row-based JSON
- * feature's:
- *
- * 1. **Genuinely unsupported expressions.** Anything outside the ~18 operators
- *    `README.md`("What runs columnar") lists — `within`, `global-state`, a target wrapped in a type
- *    assertion (`["number", ["get", "x"]]`), a bare `["literal", …]` filter, etc. — declines rather
- *    than evaluating. These are ported as {@link declines} assertions instead of behavioral ones.
- *
- * 2. **No representable "present but null".** Per `README.md` ("Null semantics"), MLT stores a
- *    missing property exactly like a null one — there is no third state. So an explicit JSON
- *    `foo: null` and a genuinely absent `foo` (`properties: {}` / `foo: undefined`) are
- *    *indistinguishable* here ({@link valueVector} maps both to "no column"), where upstream's
- *    row-based model tells them apart. This only changes behavior for `has`/`!has` and legacy
- *    `== null`/`!= null` (the one place `filterNormalization.ts` special-cases null with a
- *    `has`-guard) — those four tests carry a comment recording both of upstream's values next to the
- *    single collapsed one MLT actually produces. Every other operator (`in`/`!in` on `null`,
- *    ordering operators, …) already treats null and absent identically upstream too, so no
- *    divergence exists there.
- *
- * 3. **APIs with no MLT equivalent.** `getGlobalStateRefs()`, `convertFilter`'s converted-AST shape,
- *    and the upstream diagnostic `console.warn` text are style-spec/JS-runtime concepts this
- *    columnar engine doesn't have (it declines instead of converting, and reports its own,
- *    differently-worded warning via `planning/bucketSupport.ts`). Skipped, noted inline.
+ * Port of style-spec's `feature_filter.test.ts` onto `filterFeatureTable`, with three differences:
+ * 1. Unsupported expressions (`within`, `global-state`, type assertions, ...) are checked to decline.
+ * 2. MLT stores null and missing alike, so for `has`/`!has` and legacy `== null`/`!= null`
+ *    upstream's two answers collapse into one.
+ * 3. APIs without an MLT equivalent (`getGlobalStateRefs`, `convertFilter` output, warning text) are skipped.
  */
 
 function selection(value: SelectionVector | undefined): number[] {
     return value ? Array.from(value.selectionValues()) : [];
 }
 
-/**
- * One property value → one column. `null`/`undefined` both become "no column" — see point 2 above.
- */
+/** One property value → one column, `null` and `undefined` become no column (point 2). */
 function valueVector(name: string, value: unknown): Vector | undefined {
     if (value === null || value === undefined) return undefined;
     if (typeof value === "number") {
@@ -92,8 +67,7 @@ function oneRowTable(properties: Record<string, unknown>, options: RowOptions = 
     return new FeatureTable("test", geometry, idVector, vectors);
 }
 
-/** Builds a one-row table from `properties`/`options`, runs `filter` at `options.zoom`, and asserts the
- * filter is supported (never declined) before reporting whether the single row matched. */
+/** Runs `filter` on a one-row table, asserts it is supported and returns whether the row matched. */
 function matches(
     filter: FilterSpecification | undefined,
     properties: Record<string, unknown> = {},
@@ -105,7 +79,7 @@ function matches(
     return selection(filterFeatureTable(table, filter, zoom)).includes(0);
 }
 
-/** Asserts `filter` is declined — not representable columnarly — rather than evaluated. */
+/** Asserts `filter` is declined rather than evaluated. */
 function declines(filter: FilterSpecification | undefined, zoom = 0): void {
     expect(isColumnarFilterSupportedAtZoom(filter, zoom)).toBe(false);
     expect(filterFeatureTable(oneRowTable({}), filter, zoom)).toBeUndefined();
@@ -181,8 +155,7 @@ describe("expression syntax", () => {
     });
 });
 
-// `getGlobalStateRefs()` is a JS-runtime API on upstream's compiled filter with no MLT equivalent —
-// not ported.
+// `getGlobalStateRefs()` has no MLT equivalent, not ported.
 
 describe("legacy filter detection (isExpressionFilter — MLT's copy is a verbatim port of upstream's)", () => {
     test("definitely legacy filters", () => {
@@ -206,8 +179,7 @@ describe("legacy filter detection (isExpressionFilter — MLT's copy is a verbat
 
 describe("legacy filter semantics (ported without convertFilter — see README.md 'Known gaps')", () => {
     test("mimics the upstream legacy type-mismatch semantics", () => {
-        // Upstream ports this through convertFilter first; MLT lowers legacy syntax directly
-        // (normalizeLegacyNode), so the original, unconverted filter is run straight against MLT.
+        // MLT lowers legacy syntax directly, so the unconverted filter is run.
         const filter = ["any", ["all", [">", "y", 0], [">", "y", 0]], [">", "x", 0]] as FilterSpecification;
         expect(matches(filter, { x: 0, y: 1 })).toBe(true);
         expect(matches(filter, { x: 1, y: 0 })).toBe(true);
@@ -217,9 +189,7 @@ describe("legacy filter semantics (ported without convertFilter — see README.m
         expect(matches(filter, { x: null, y: null })).toBe(false);
     });
 
-    // "flattens nested, single child all expressions" and "removes duplicates when outputting match
-    // expressions" assert the *shape* of convertFilter's converted AST, which MLT never produces —
-    // nothing to port for those two.
+    // The two convertFilter AST-shape tests have no MLT equivalent.
 });
 
 describe("legacy filter tests", () => {
@@ -251,9 +221,7 @@ describe("legacy filter tests", () => {
         expect(matches(filter, { foo: "0" })).toBe(false);
         expect(matches(filter, { foo: true })).toBe(false);
         expect(matches(filter, { foo: false })).toBe(false);
-        // Upstream distinguishes explicit `foo: null` (present, matches — legacy "== null" is
-        // rewritten as `all[has(foo), foo == null]`) from a missing `foo` (`does not match`, `has`
-        // fails). MLT can't tell them apart (see file header, point 2) — both collapse to one answer.
+        // Upstream: explicit null matches, missing does not. MLT collapses both (point 2).
         expect(matches(filter, {})).toBe(false); // upstream: null -> true, missing/undefined -> false
     });
 
@@ -266,8 +234,7 @@ describe("legacy filter tests", () => {
     test("==, $id", () => {
         const filter = ["==", "$id", 1234] as FilterSpecification;
         expect(matches(filter, {}, { id: 1234 })).toBe(true);
-        // A property literally named "id" is not the feature id: $id resolves to the id vector,
-        // which is unset here, so this takes the "column missing" path rather than comparing values.
+        // A property named "id" is not the feature id, $id reads the unset id vector.
         expect(matches(filter, { id: 1234 })).toBe(false);
         // Upstream's third case (a *string* `id: '1234'`) has no MLT equivalent: an id vector is
         // always numeric, so a string id can't be represented at all.
@@ -296,8 +263,7 @@ describe("legacy filter tests", () => {
         expect(matches(filter, { foo: "0" })).toBe(true);
         expect(matches(filter, { foo: true })).toBe(true);
         expect(matches(filter, { foo: false })).toBe(true);
-        // Mirrors "== , null" above: upstream's explicit null fails "!= null" while a missing
-        // property passes it; MLT collapses both to one answer.
+        // Upstream: explicit null fails, missing passes. MLT collapses both.
         expect(matches(filter, {})).toBe(true); // upstream: null -> false, missing/undefined -> true
     });
 
@@ -435,8 +401,7 @@ describe("legacy filter tests", () => {
     });
 
     test("in, null", () => {
-        // No has-guard applies to legacy `in` (only `==`/`!=` get one), so unlike "== , null" above
-        // there is no divergence here: null and missing already agree with upstream.
+        // Legacy `in` has no has-guard, so null and missing agree with upstream.
         const filter = ["in", "foo", null] as unknown as FilterSpecification;
         expect(matches(filter, { foo: 0 })).toBe(false);
         expect(matches(filter, { foo: "0" })).toBe(false);
@@ -564,9 +529,7 @@ describe("legacy filter tests", () => {
         expect(matches(filter, { foo: "0" })).toBe(true);
         expect(matches(filter, { foo: true })).toBe(true);
         expect(matches(filter, { foo: false })).toBe(true);
-        // MLT's validity bit answers exactly the "has" question by construction (README.md, "Null
-        // semantics"), so a null row can never be "has" — upstream's explicit-null (true) and
-        // missing/undefined (false) cases both collapse to false here.
+        // A null row is never "has": upstream's explicit null (true) collapses to false.
         expect(matches(filter, {})).toBe(false); // upstream: null -> true, missing/undefined -> false
     });
 
@@ -608,8 +571,7 @@ describe("global-state in filter", () => {
     });
 
     test("isExpressionFilter recognizes filters mixing $type with expression operators", () => {
-        // Classification-only: the exact pattern from upstream issue #1544 — an ["==", "$type", …]
-        // node that superficially looks legacy, sitting next to an expression-only `case`.
+        // Upstream issue #1544: a legacy-looking ["==", "$type", …] next to an expression-only `case`.
         const filter = [
             "all",
             ["==", "$type", "Point"],
@@ -624,10 +586,7 @@ describe("global-state in filter", () => {
     });
 
     test("a mixed filter with an ordering operator on $type declines", () => {
-        // Upstream additionally asserts a specific console.warn text from its own legacy-conversion
-        // diagnostics; MLT reports declines through planning/bucketSupport.ts with different wording
-        // (see filter.spec.ts's "returns undefined for unsupported expressions"), so only the
-        // decline itself is checked here.
+        // Upstream also checks its warning text, MLT words it differently, so only the decline is checked.
         declines([
             "all",
             [">", "$type", "Point"],
