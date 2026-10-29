@@ -12,7 +12,10 @@ export default class BitVector {
     }
 
     get(index: number): boolean {
-        return ((this.values[index >> 3] >> (index & 7)) & 1) === 1;
+        const byteIndex = index >> 3;
+        const bitOffset = index & 7;
+        const bitMask = 1 << bitOffset;
+        return (this.values[byteIndex] & bitMask) !== 0;
     }
 
     set(index: number, value: boolean): void {
@@ -23,7 +26,9 @@ export default class BitVector {
     }
 
     getInt(index: number): number {
-        return (this.values[index >> 3] >> (index & 7)) & 1;
+        const byteIndex = index >> 3;
+        const bitOffset = index & 7;
+        return (this.values[byteIndex] >> bitOffset) & 1;
     }
 
     size(): number {
