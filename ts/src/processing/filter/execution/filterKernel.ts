@@ -215,11 +215,18 @@ function dictionaryRowMatches(
 
 const textEncoder = new TextEncoder();
 
+// Keyed by the operand array of the cached normalized filter, so the operands are encoded once per style filter
+const encodedOperandCache = new WeakMap<readonly unknown[], Uint8Array[]>();
+
 function encodeStringOperands(values: readonly unknown[]): Uint8Array[] {
-    const encodedOperands: Uint8Array[] = [];
+    let encodedOperands = encodedOperandCache.get(values);
+    if (encodedOperands) return encodedOperands;
+
+    encodedOperands = [];
     for (const value of values) {
         if (typeof value === "string") encodedOperands.push(textEncoder.encode(value));
     }
+    encodedOperandCache.set(values, encodedOperands);
     return encodedOperands;
 }
 
