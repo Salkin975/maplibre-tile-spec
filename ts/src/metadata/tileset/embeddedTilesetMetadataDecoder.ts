@@ -4,6 +4,9 @@ import { decodeString as decodeUtf8 } from "../../decoding/decodingUtils";
 import type { Column, FeatureTableSchema, Field, TileSetMetadata } from "./tilesetMetadata";
 import { ColumnTypeCode, columnTypeHasChildren, columnTypeHasName, decodeColumnType } from "./typeMap";
 
+// TextDecoder is slow per call in Chromium for short strings; restore once that is fixed.
+// const textDecoder = new TextDecoder();
+
 const SUPPORTED_COLUMN_TYPES = "0-3(ID), 4(GEOMETRY), 10-29(scalars), 30(STRUCT), 31(MAP)";
 const SUPPORTED_FIELD_TYPES = "10-29(scalars), 30(STRUCT), 31(MAP)";
 
@@ -18,6 +21,7 @@ function decodeString(src: Uint8Array, offset: IntWrapper): string {
     }
     const start = offset.get();
     offset.add(length);
+    // return textDecoder.decode(src.subarray(start, start + length));
     return decodeUtf8(src, start, start + length);
 }
 

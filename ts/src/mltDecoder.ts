@@ -130,6 +130,9 @@ export interface LayerBlock {
     bytes: Uint8Array;
 }
 
+// TextDecoder is slow per call in Chromium for short strings; restore once that is fixed.
+// const textDecoder = new TextDecoder();
+
 /** Locates the layer blocks of a tile and reads their names, without decoding any column. */
 export function scanLayerBlocks(tile: Uint8Array): LayerBlock[] {
     const layerBlocks: LayerBlock[] = [];
@@ -140,6 +143,7 @@ export function scanLayerBlocks(tile: Uint8Array): LayerBlock[] {
         if (isFeatureTableTag(tag)) {
             const nameByteLength = readVarint(tile, offset);
             const nameStart = offset.get();
+            // const name = textDecoder.decode(tile.subarray(nameStart, nameStart + nameByteLength));
             const name = decodeString(tile, nameStart, nameStart + nameByteLength);
             layerBlocks.push({ name, bytes: tile.subarray(prefixStart, blockEnd) });
         }
