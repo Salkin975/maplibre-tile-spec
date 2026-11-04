@@ -3,6 +3,11 @@ import { LazyPropertyVectors, type PendingPropertyColumn } from "./lazyPropertyV
 import { ScalarType, type Column } from "../metadata/tileset/tilesetMetadata";
 import { encodeInt32NoneColumn } from "../encoding/propertyEncoder";
 import { concatenateBuffers } from "../encoding/encodingUtils";
+import {
+    createColumnMetadataForStruct,
+    encodeSharedDictionary,
+    encodeStructField,
+} from "../decoding/decodingTestUtils";
 
 function scalarColumn(name: string): Column {
     return {
@@ -52,5 +57,63 @@ describe("LazyPropertyVectors", () => {
         const vector = store.get("b");
 
         expect(vector?.getValue(0)).toBe(2);
+    });
+
+    it.each([
+        ["name:", "de", "name:de"],
+        ["name", "_en", "name_en"],
+    ])("finds the child %s + %s of a struct by its full name %s", (structName, childName, fullName) => {
+        // Encoders join column and child name with any delimiter, or none at all.
+        const { lengthStream, dataStream } = encodeSharedDictionary(["Berlin"]);
+        const encoded = concatenateBuffers(lengthStream, dataStream, encodeStructField([0], [true]));
+        const column: PendingPropertyColumn = {
+            name: structName,
+            metadata: createColumnMetadataForStruct(structName, [{ name: childName }]),
+            numStreams: 1,
+            start: 0,
+            vectors: null,
+        };
+        const store = new LazyPropertyVectors(encoded, [column], 1);
+
+        expect(store.get(fullName)?.getValue(0)).toBe("Berlin");
+    });
+
+    it("returns the last column with a repeated name, like a Map built from all columns", () => {
+        const a = encodeInt32NoneColumn(new Int32Array([1]));
+        const b = encodeInt32NoneColumn(new Int32Array([2]));
+        const store = new LazyPropertyVectors(
+            concatenateBuffers(a, b),
+            [pendingColumn("x", 0), pendingColumn("x", a.length)],
+            1,
+        );
+
+        expect(store.get("x")?.getValue(0)).toBe(2);
+    });
+
+    it("returns the last column with a repeated name even if an earlier one was decoded first", () => {
+        // The struct also holds `y`, so get("y") decodes it, and its `x` child, before get("x").
+        const { lengthStream, dataStream } = encodeSharedDictionary(["struct"]);
+        const encodedStruct = concatenateBuffers(
+            lengthStream,
+            dataStream,
+            encodeStructField([0], [true]),
+            encodeStructField([0], [true]),
+        );
+        const encodedScalar = encodeInt32NoneColumn(new Int32Array([2]));
+        const structColumn: PendingPropertyColumn = {
+            name: "",
+            metadata: createColumnMetadataForStruct("", [{ name: "x" }, { name: "y" }]),
+            numStreams: 1,
+            start: 0,
+            vectors: null,
+        };
+        const store = new LazyPropertyVectors(
+            concatenateBuffers(encodedStruct, encodedScalar),
+            [structColumn, pendingColumn("x", encodedStruct.length)],
+            1,
+        );
+
+        expect(store.get("y")?.getValue(0)).toBe("struct");
+        expect(store.get("x")?.getValue(0)).toBe(2);
     });
 });

@@ -40,6 +40,7 @@ export class LazyPropertyVectors {
     /**
      * Returns the vector for `name`, decoding its column on first access.
      * Struct children (`name:en`, `name:de`) resolve through their parent column.
+     * The last column producing `name` wins, as in a Map built from all vectors.
      */
     get(name: string): Vector | undefined {
         const cached = this.#byName.get(name);
@@ -47,25 +48,23 @@ export class LazyPropertyVectors {
             return cached ?? undefined;
         }
 
+        let resolved: Vector | null = null;
         const columns = this.#columns;
-        for (let i = 0; i < columns.length; i++) {
+        // Struct children are named column name + child name, joined by any delimiter or none.
+        for (let i = columns.length - 1; i >= 0 && !resolved; i--) {
             const column = columns[i];
-            if (column.vectors !== null) {
-                // Already decoded, and it did not produce this name.
-                continue;
-            }
-            const columnName = column.name;
-            if (columnName === name || name.startsWith(`${columnName}:`) || name.startsWith(`${columnName}.`)) {
-                this.#decode(column);
-                const resolved = this.#byName.get(name);
-                if (resolved) {
-                    return resolved;
+            if (!name.startsWith(column.name)) continue;
+            const vectors = column.vectors ?? this.#decode(column);
+            for (let j = vectors.length - 1; j >= 0; j--) {
+                if (vectors[j].name === name) {
+                    resolved = vectors[j];
+                    break;
                 }
             }
         }
 
-        this.#byName.set(name, null);
-        return undefined;
+        this.#byName.set(name, resolved);
+        return resolved ?? undefined;
     }
 
     /** Decodes all remaining columns, e.g. before transferring across a worker boundary. */
@@ -102,16 +101,6 @@ export class LazyPropertyVectors {
         }
 
         column.vectors = vectors;
-
-        for (let i = 0; i < vectors.length; i++) {
-            const vector = vectors[i];
-            const name = (vector as { name?: string }).name ?? column.name;
-            // Overwrite cached misses, but never a vector that already claimed the name.
-            if (!this.#byName.get(name)) {
-                this.#byName.set(name, vector);
-            }
-        }
-
         return vectors;
     }
 }
