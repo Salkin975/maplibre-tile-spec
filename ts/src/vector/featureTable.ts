@@ -122,12 +122,7 @@ export default class FeatureTable {
     }
 
     get numFeatures(): number {
-        if (this._numFeatures !== undefined) {
-            return this._numFeatures;
-        }
-        return this._geometryVector && !(this._geometryVector instanceof PendingGeometryColumn)
-            ? this._geometryVector.numGeometries
-            : 0;
+        return this._numFeatures ?? this.geometryVector?.numGeometries ?? 0;
     }
 
     get extent(): number {
