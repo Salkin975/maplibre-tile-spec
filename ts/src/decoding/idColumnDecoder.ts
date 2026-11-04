@@ -14,9 +14,8 @@ import { Int64ConstVector } from "../vector/constant/int64ConstVector";
 import {
     decodeUnsignedConstInt32Stream,
     decodeUnsignedConstInt64Stream,
-    decodeSafeUnsignedInt64AsFloat64Stream,
+    decodeSafeUnsignedInt64Stream,
     decodeUnsignedInt32Stream,
-    decodeUnsignedInt64Stream,
     decodeSequenceInt32Stream,
     decodeSequenceInt64Stream,
     getVectorType,
@@ -70,16 +69,10 @@ export function decodeIdColumn(
 
     switch (vectorType) {
         case VectorType.FLAT: {
-            const safeIds = decodeSafeUnsignedInt64AsFloat64Stream(
-                tile,
-                offset,
-                idDataStreamMetadata,
-                nullabilityBuffer,
-            );
-            if (safeIds) return new DoubleFlatVector(columnName, safeIds, sizeOrNullabilityBuffer);
-
-            const ids = decodeUnsignedInt64Stream(tile, offset, idDataStreamMetadata, nullabilityBuffer);
-            return new Int64FlatVector(columnName, ids, sizeOrNullabilityBuffer);
+            const ids = decodeSafeUnsignedInt64Stream(tile, offset, idDataStreamMetadata, nullabilityBuffer);
+            return ids instanceof Float64Array
+                ? new DoubleFlatVector(columnName, ids, sizeOrNullabilityBuffer)
+                : new Int64FlatVector(columnName, ids, sizeOrNullabilityBuffer);
         }
         case VectorType.SEQUENCE: {
             const [baseValue, delta] = decodeSequenceInt64Stream(tile, offset, idDataStreamMetadata);

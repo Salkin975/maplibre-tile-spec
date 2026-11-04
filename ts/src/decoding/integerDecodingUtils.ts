@@ -161,7 +161,7 @@ export function decodeVarintFloat64(src: Uint8Array, offset: IntWrapper, numValu
 }
 
 //based on https://github.com/mapbox/pbf/blob/main/index.js
-function decodeVarintFloat64Value(buf: Uint8Array, offset: IntWrapper): number {
+export function decodeVarintFloat64Value(buf: Uint8Array, offset: IntWrapper): number {
     let val;
     let b;
     b = buf[offset.get()];
@@ -218,6 +218,8 @@ function decodeVarintRemainder(l, buf, offset) {
 }
 
 let sharedFastPforWorkspace: ReturnType<typeof createFastPforWireDecodeWorkspace> | undefined;
+/** Larger streams get a workspace of their own, so the shared one never pins a huge buffer. */
+const MAX_SHARED_FASTPFOR_BYTES = 1 << 18;
 
 export function decodeFastPfor(
     encodedBytes: Uint8Array,
@@ -225,8 +227,11 @@ export function decodeFastPfor(
     encodedByteLength: number,
     offset: IntWrapper,
 ): Uint32Array {
-    sharedFastPforWorkspace ??= createFastPforWireDecodeWorkspace();
-    return decodeFastPforWithWorkspace(encodedBytes, expectedValueCount, encodedByteLength, offset, sharedFastPforWorkspace);
+    const workspace =
+        encodedByteLength > MAX_SHARED_FASTPFOR_BYTES
+            ? createFastPforWireDecodeWorkspace()
+            : (sharedFastPforWorkspace ??= createFastPforWireDecodeWorkspace());
+    return decodeFastPforWithWorkspace(encodedBytes, expectedValueCount, encodedByteLength, offset, workspace);
 }
 
 export function decodeFastPforWithWorkspace(

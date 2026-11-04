@@ -3,6 +3,8 @@ import { decodeIdColumn } from "./idColumnDecoder";
 import IntWrapper from "./intWrapper";
 import { createRleMetadata, createStreamMetadata } from "./decodingTestUtils";
 import { encodeVarintInt64 } from "../encoding/integerEncodingUtils";
+import { encodeUint64sLE } from "../encoding/encodingUtils";
+import { PhysicalLevelTechnique } from "../metadata/tile/physicalLevelTechnique";
 import { LogicalLevelTechnique } from "../metadata/tile/logicalLevelTechnique";
 import { ColumnScope, type Column } from "../metadata/tileset/tilesetMetadata";
 import { DoubleFlatVector } from "../vector/flat/doubleFlatVector";
@@ -71,5 +73,35 @@ describe("decodeIdColumn - 64-bit ids", () => {
         expect(vector.getValue(0)).toBe(5n);
         expect(vector.getValue(1)).toBe(10n);
         expect(vector.getValue(2)).toBe(15n);
+    });
+
+    it("decodes a FLAT fixed-width (NONE) stream of safe integers as DoubleFlatVector", () => {
+        const metadata = {
+            ...createStreamMetadata(LogicalLevelTechnique.NONE, LogicalLevelTechnique.NONE, 3),
+            physicalLevelTechnique: PhysicalLevelTechnique.NONE,
+        };
+        const tile = encodeUint64sLE(BigUint64Array.from([1n, 2n, 3n]));
+        const offset = new IntWrapper(0);
+
+        const vector = decodeIdColumn(tile, LONG_ID_COLUMN, offset, "id", metadata, 3);
+
+        expect(vector).toBeInstanceOf(DoubleFlatVector);
+        expect(vector.getValue(0)).toBe(1);
+        expect(vector.getValue(2)).toBe(3);
+        expect(offset.get()).toBe(tile.length);
+    });
+
+    it("decodes a FLAT fixed-width (NONE) stream with an id above the safe range as Int64FlatVector", () => {
+        const unsafe = BigInt(Number.MAX_SAFE_INTEGER) + 2n;
+        const metadata = {
+            ...createStreamMetadata(LogicalLevelTechnique.NONE, LogicalLevelTechnique.NONE, 2),
+            physicalLevelTechnique: PhysicalLevelTechnique.NONE,
+        };
+        const tile = encodeUint64sLE(BigUint64Array.from([1n, unsafe]));
+
+        const vector = decodeIdColumn(tile, LONG_ID_COLUMN, new IntWrapper(0), "id", metadata, 2);
+
+        expect(vector).toBeInstanceOf(Int64FlatVector);
+        expect(vector.getValue(1)).toBe(unsafe);
     });
 });
