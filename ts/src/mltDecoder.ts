@@ -3,7 +3,7 @@ import { ComplexType, type Column } from "./metadata/tileset/tilesetMetadata";
 import IntWrapper from "./decoding/intWrapper";
 import { decodeStreamMetadata } from "./metadata/tile/streamMetadataDecoder";
 import BitVector from "./vector/flat/bitVector";
-import { decodeMapPropertyColumn } from "./decoding/mapPropertyDecoder";
+import { MapMask } from "./metadata/tile/mapMask";
 import type GeometryScaling from "./decoding/geometryScaling";
 import { decodeBooleanRle } from "./decoding/decodingUtils";
 import { decodeEmbeddedTileSetMetadata } from "./metadata/tileset/embeddedTilesetMetadataDecoder";
@@ -64,8 +64,12 @@ function skipPropertyColumn(
 ): void {
     if (columnMetadata.type === "complexType") {
         if (columnMetadata.complexType.physicalType === ComplexType.MAP) {
-            // MAP columns have no fixed terminator, so walk them with decodeMapPropertyColumn
-            decodeMapPropertyColumn(tile, offset, columnMetadata, numStreams);
+            // A dictionary mask byte, the length stream, then a stream-count byte before the string streams
+            const dictionaryMask = tile[offset.get()];
+            offset.add(1);
+            skipStreams(tile, offset, 1);
+            if (dictionaryMask & MapMask.STRING) offset.add(1);
+            skipStreams(tile, offset, numStreams - 1);
             return;
         }
         skipStructColumn(tile, offset, columnMetadata, blockEnd);
