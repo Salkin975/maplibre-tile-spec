@@ -19,6 +19,7 @@ import {
     decodeVarintInt32,
     decodeVarintInt64,
     decodeVarintFloat64,
+    decodeVarintFloat64Value,
     decodeZigZagInt32,
     decodeZigZagInt64,
     decodeZigZagFloat64,
@@ -199,29 +200,40 @@ export function decodeUnsignedInt64AsFloat64Stream(
     return nullabilityBuffer ? unpackNullable(values, nullabilityBuffer, 0) : values;
 }
 
-/**
- * Decodes an unsigned 64-bit varint stream into numbers if every value is a safe integer,
- * otherwise returns undefined and leaves `offset` unchanged for a `bigint` decode.
- */
-export function decodeSafeUnsignedInt64AsFloat64Stream(
+/** Decodes an unsigned 64-bit stream into numbers if every value is a safe integer, otherwise into bigints. */
+export function decodeSafeUnsignedInt64Stream(
     data: Uint8Array,
     offset: IntWrapper,
     streamMetadata: StreamMetadata,
     nullabilityBuffer?: BitVector,
-): Float64Array | undefined {
-    if (streamMetadata.physicalLevelTechnique !== PhysicalLevelTechnique.VARINT) return undefined;
-
-    const start = offset.get();
-    const encodedValues = decodeVarintFloat64(data, offset, streamMetadata.numValues);
-    if (areSafeUnsignedIntegers(encodedValues)) {
-        const values = decodeFloat64Values(encodedValues, streamMetadata, false);
-        if (areSafeUnsignedIntegers(values)) {
-            return nullabilityBuffer ? unpackNullable(values, nullabilityBuffer, 0) : values;
+): Float64Array | BigUint64Array {
+    if (streamMetadata.physicalLevelTechnique === PhysicalLevelTechnique.VARINT) {
+        const start = offset.get();
+        const encodedValues = new Float64Array(streamMetadata.numValues);
+        let i = 0;
+        // Stop at the first value a double cannot hold exactly, the stream needs bigints anyway.
+        for (; i < encodedValues.length; i++) {
+            const value = decodeVarintFloat64Value(data, offset);
+            if (value > Number.MAX_SAFE_INTEGER) break;
+            encodedValues[i] = value;
         }
+        if (i === encodedValues.length) {
+            const values = decodeFloat64Values(encodedValues, streamMetadata, false);
+            if (areSafeUnsignedIntegers(values)) {
+                return nullabilityBuffer ? unpackNullable(values, nullabilityBuffer, 0) : values;
+            }
+        }
+        offset.set(start);
     }
-    offset.set(start);
-    return undefined;
+
+    const values = decodeUnsignedInt64Stream(data, offset, streamMetadata, nullabilityBuffer);
+    for (let i = 0; i < values.length; i++) {
+        if (values[i] > MAX_SAFE_INTEGER_BIGINT) return values;
+    }
+    return Float64Array.from(values, Number);
 }
+
+const MAX_SAFE_INTEGER_BIGINT = BigInt(Number.MAX_SAFE_INTEGER);
 
 function areSafeUnsignedIntegers(values: Float64Array): boolean {
     for (let i = 0; i < values.length; i++) {
