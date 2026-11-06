@@ -1,39 +1,6 @@
 import type { SelectionVector } from "./selectionVector";
 import { FlatSelectionVector } from "./flatSelectionVector";
 import { ConstSelectionVector } from "./constSelectionVector";
-import type BitVector from "../flat/bitVector";
-
-/** A selection over every index in `[0, size)`, with no per-index nullability to track. */
-export function createSelectionVector(size: number): SelectionVector {
-    return ConstSelectionVector.full(size);
-}
-
-/** A selection over every present (non-null) index in `[0, size)`, per `nullabilityBuffer`. */
-export function createNullableSelectionVector(size: number, nullabilityBuffer?: BitVector): SelectionVector {
-    const selectedIndices = new Uint32Array(size);
-    let writeIndex = 0;
-    for (let index = 0; index < size; index++) {
-        if (!nullabilityBuffer || nullabilityBuffer.get(index)) selectedIndices[writeIndex++] = index;
-    }
-    return new FlatSelectionVector(selectedIndices, writeIndex);
-}
-
-/** Narrows `selection` to the indices that are present in `nullabilityBuffer`, if given. */
-export function updateNullableSelectionVector(
-    selection: SelectionVector,
-    nullabilityBuffer?: BitVector | null,
-): SelectionVector {
-    if (!nullabilityBuffer) return selection;
-
-    const limit = selection.limit;
-    const selectedIndices = new Uint32Array(limit);
-    let writeIndex = 0;
-    for (let i = 0; i < limit; i++) {
-        const index = selection.getIndex(i);
-        if (nullabilityBuffer.get(index)) selectedIndices[writeIndex++] = index;
-    }
-    return new FlatSelectionVector(selectedIndices, writeIndex);
-}
 
 /** Selects the indices in `[0, size)` for which `matches` is true, narrows `selection` in place if given. */
 export function scanSelection(
