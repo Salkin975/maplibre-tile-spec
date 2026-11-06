@@ -1,14 +1,14 @@
 import { decodeStreamMetadata } from "../metadata/tile/streamMetadataDecoder";
 import { StringFlatVector } from "../vector/flat/stringFlatVector";
 import { StringDictionaryVector } from "../vector/dictionary/stringDictionaryVector";
-import type IntWrapper from "./intWrapper";
+import IntWrapper from "./intWrapper";
 import BitVector from "../vector/flat/bitVector";
 import type Vector from "../vector/vector";
 import { PhysicalStreamType } from "../metadata/tile/physicalStreamType";
 import { DictionaryType } from "../metadata/tile/dictionaryType";
 import { LengthType } from "../metadata/tile/lengthType";
 import { decodeUnsignedInt32Stream, decodeLengthStreamToOffsetBuffer } from "./integerStreamDecoder";
-import { type Column, ScalarType } from "../metadata/tileset/tilesetMetadata";
+import { type Column, type Field, ScalarType } from "../metadata/tileset/tilesetMetadata";
 import { decodeVarintInt32 } from "./integerDecodingUtils";
 import { decodeBooleanRle, skipColumn } from "./decodingUtils";
 import {
@@ -174,12 +174,31 @@ function decodePlainStringVector(
         : new StringFlatVector(name, plainLengthStream, plainDataStream);
 }
 
-export function decodeSharedDictionary(
-    data: Uint8Array,
-    offset: IntWrapper,
-    column: Column,
-    propertyColumnNames?: Set<string>,
-): Vector[] {
+/**
+ * The dictionary streams of a shared-dictionary (struct) column, plus where each child's streams start,
+ * so a single child can be decoded without decoding its siblings.
+ */
+export interface SharedDictionary {
+    readonly column: Column & { type: "complexType" };
+    readonly dictionaryOffsetBuffer: Uint32Array;
+    readonly dictionaryBuffer: Uint8Array;
+    readonly symbolOffsetBuffer?: Uint32Array;
+    readonly symbolTableBuffer?: Uint8Array;
+    /** Shared by every FSST child vector of this column and populated on first access. */
+    readonly fsstDictionaryCache?: FsstDictionaryCache;
+    /** Offset of each child's first stream. */
+    readonly childStarts: Int32Array;
+    /** Stream count of each child, 0 means the child is not present in the tile. */
+    readonly childNumStreams: Int32Array;
+}
+
+/** The name of a struct child's vector: column name + child name, or the column name for an unnamed child. */
+export function sharedDictionaryChildName(columnName: string, childField: Field): string {
+    return childField.name ? `${columnName}${childField.name}` : columnName;
+}
+
+/** Reads the dictionary streams and locates every child, leaving `offset` at the end of the column. */
+export function readSharedDictionary(data: Uint8Array, offset: IntWrapper, column: Column): SharedDictionary {
     let dictionaryOffsetBuffer: Uint32Array | undefined;
     let dictionaryBuffer: Uint8Array | undefined;
     let symbolOffsetBuffer: Uint32Array | undefined;
@@ -222,80 +241,112 @@ export function decodeSharedDictionary(
     if (!dictionaryOffsetBuffer || !dictionaryBuffer) {
         throw new Error(`Incomplete shared dictionary for column "${column.name}"`);
     }
+
     const childFields = column.complexType.children;
-    const stringDictionaryVectors = [];
-    /** Shared by every FSST child-column vector in this SharedDict and populated on first access. */
-    const sharedDictionaryCache: FsstDictionaryCache | undefined = symbolTableBuffer ? {} : undefined;
-    let i = 0;
-    for (const childField of childFields) {
+    const childStarts = new Int32Array(childFields.length);
+    const childNumStreams = new Int32Array(childFields.length);
+    for (let childIndex = 0; childIndex < childFields.length; childIndex++) {
         const numStreams = decodeVarintInt32(data, offset, 1)[0];
-        if (numStreams === 0) {
-            /* Column is not present in the tile */
-            continue;
-        }
-
-        const columnName = childField.name ? `${column.name}${childField.name}` : column.name;
-        if (propertyColumnNames) {
-            if (!propertyColumnNames.has(columnName)) {
-                //TODO: add size of sub column to Mlt for faster skipping
-                skipColumn(numStreams, data, offset);
-                continue;
-            }
-        }
-
-        if (childField.type !== "scalarField" || childField.scalarField.physicalType !== ScalarType.STRING) {
-            throw new Error("Currently only scalar string fields are implemented for a struct.");
-        }
-        if ((numStreams > 1 && !childField.nullable) || (numStreams === 1 && childField.nullable)) {
-            throw new Error(
-                `The number of streams for the child field ${childField.name} does not match its nullability. nullibilty: ${childField.nullable}, numStreams: ${numStreams}`,
-            );
-        }
-
-        let presentStreamBitVector: BitVector | undefined;
-        if (childField.nullable) {
-            const presentStreamMetadata = decodeStreamMetadata(data, offset);
-            const presentStream = decodeBooleanRle(
-                data,
-                presentStreamMetadata.numValues,
-                presentStreamMetadata.byteLength,
-                offset,
-            );
-            presentStreamBitVector = new BitVector(presentStream, presentStreamMetadata.numValues);
-        }
-        const offsetStreamMetadata = decodeStreamMetadata(data, offset);
-        const offsetStream = decodeUnsignedInt32Stream(
-            data,
-            offset,
-            offsetStreamMetadata,
-            undefined,
-            presentStreamBitVector,
-        );
-
-        if (symbolTableBuffer) {
-            if (!symbolOffsetBuffer) {
-                throw new Error(`Incomplete shared FSST dictionary for column "${columnName}"`);
-            }
-            stringDictionaryVectors[i++] = new StringFsstDictionaryVector(
-                columnName,
-                offsetStream,
-                dictionaryOffsetBuffer,
-                dictionaryBuffer,
-                symbolOffsetBuffer,
-                symbolTableBuffer,
-                presentStreamBitVector,
-                sharedDictionaryCache,
-            );
-        } else {
-            stringDictionaryVectors[i++] = new StringDictionaryVector(
-                columnName,
-                offsetStream,
-                dictionaryOffsetBuffer,
-                dictionaryBuffer,
-                presentStreamBitVector,
-            );
-        }
+        childStarts[childIndex] = offset.get();
+        childNumStreams[childIndex] = numStreams;
+        //TODO: add size of sub column to Mlt for faster skipping
+        skipColumn(numStreams, data, offset);
     }
 
+    return {
+        column,
+        dictionaryOffsetBuffer,
+        dictionaryBuffer,
+        symbolOffsetBuffer,
+        symbolTableBuffer,
+        fsstDictionaryCache: symbolTableBuffer ? {} : undefined,
+        childStarts,
+        childNumStreams,
+    };
+}
+
+/** Decodes one child of a shared-dictionary column, null if the child is not present in the tile. */
+export function decodeSharedDictionaryChild(
+    data: Uint8Array,
+    sharedDictionary: SharedDictionary,
+    childIndex: number,
+): Vector | null {
+    const numStreams = sharedDictionary.childNumStreams[childIndex];
+    if (numStreams === 0) return null;
+
+    const column = sharedDictionary.column;
+    const childField = column.complexType.children[childIndex];
+    const columnName = sharedDictionaryChildName(column.name, childField);
+    if (childField.type !== "scalarField" || childField.scalarField.physicalType !== ScalarType.STRING) {
+        throw new Error("Currently only scalar string fields are implemented for a struct.");
+    }
+    if ((numStreams > 1 && !childField.nullable) || (numStreams === 1 && childField.nullable)) {
+        throw new Error(
+            `The number of streams for the child field ${childField.name} does not match its nullability. nullibilty: ${childField.nullable}, numStreams: ${numStreams}`,
+        );
+    }
+
+    const offset = new IntWrapper(sharedDictionary.childStarts[childIndex]);
+    let presentStreamBitVector: BitVector | undefined;
+    if (childField.nullable) {
+        const presentStreamMetadata = decodeStreamMetadata(data, offset);
+        const presentStream = decodeBooleanRle(
+            data,
+            presentStreamMetadata.numValues,
+            presentStreamMetadata.byteLength,
+            offset,
+        );
+        presentStreamBitVector = new BitVector(presentStream, presentStreamMetadata.numValues);
+    }
+    const offsetStreamMetadata = decodeStreamMetadata(data, offset);
+    const offsetStream = decodeUnsignedInt32Stream(
+        data,
+        offset,
+        offsetStreamMetadata,
+        undefined,
+        presentStreamBitVector,
+    );
+
+    if (sharedDictionary.symbolTableBuffer) {
+        if (!sharedDictionary.symbolOffsetBuffer) {
+            throw new Error(`Incomplete shared FSST dictionary for column "${columnName}"`);
+        }
+        return new StringFsstDictionaryVector(
+            columnName,
+            offsetStream,
+            sharedDictionary.dictionaryOffsetBuffer,
+            sharedDictionary.dictionaryBuffer,
+            sharedDictionary.symbolOffsetBuffer,
+            sharedDictionary.symbolTableBuffer,
+            presentStreamBitVector,
+            sharedDictionary.fsstDictionaryCache,
+        );
+    }
+    return new StringDictionaryVector(
+        columnName,
+        offsetStream,
+        sharedDictionary.dictionaryOffsetBuffer,
+        sharedDictionary.dictionaryBuffer,
+        presentStreamBitVector,
+    );
+}
+
+export function decodeSharedDictionary(
+    data: Uint8Array,
+    offset: IntWrapper,
+    column: Column,
+    propertyColumnNames?: Set<string>,
+): Vector[] {
+    const sharedDictionary = readSharedDictionary(data, offset, column);
+    const childFields = sharedDictionary.column.complexType.children;
+    const stringDictionaryVectors: Vector[] = [];
+    for (let childIndex = 0; childIndex < childFields.length; childIndex++) {
+        if (propertyColumnNames) {
+            const columnName = sharedDictionaryChildName(column.name, childFields[childIndex]);
+            if (!propertyColumnNames.has(columnName)) continue;
+        }
+        const vector = decodeSharedDictionaryChild(data, sharedDictionary, childIndex);
+        if (vector) stringDictionaryVectors.push(vector);
+    }
     return stringDictionaryVectors;
 }

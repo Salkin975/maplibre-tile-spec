@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { decodeSharedDictionaryChild, readSharedDictionary } from "../decoding/stringDecoder";
+import type * as StringDecoder from "../decoding/stringDecoder";
+import { decodePropertyColumn } from "../decoding/propertyDecoder";
+import type * as PropertyDecoder from "../decoding/propertyDecoder";
 import { LazyPropertyVectors, type LazyPropertyColumn } from "./lazyPropertyVectors";
 import { ScalarType, type Column } from "../metadata/tileset/tilesetMetadata";
 import { encodeInt32NoneColumn } from "../encoding/propertyEncoder";
@@ -8,6 +12,20 @@ import {
     encodeSharedDictionary,
     encodeStructField,
 } from "../decoding/decodingTestUtils";
+
+vi.mock("../decoding/stringDecoder", async (importOriginal) => {
+    const actual = await importOriginal<typeof StringDecoder>();
+    return {
+        ...actual,
+        readSharedDictionary: vi.fn(actual.readSharedDictionary),
+        decodeSharedDictionaryChild: vi.fn(actual.decodeSharedDictionaryChild),
+    };
+});
+
+vi.mock("../decoding/propertyDecoder", async (importOriginal) => {
+    const actual = await importOriginal<typeof PropertyDecoder>();
+    return { ...actual, decodePropertyColumn: vi.fn(actual.decodePropertyColumn) };
+});
 
 function scalarColumn(name: string): Column {
     return {
@@ -130,5 +148,75 @@ describe("LazyPropertyVectors", () => {
 
         expect(store.get("y")?.getValue(0)).toBe("struct");
         expect(store.get("x")?.getValue(0)).toBe(2);
+    });
+});
+
+describe("LazyPropertyVectors - struct children", () => {
+    /** A scalar `rank`, then an unnamed struct with `name` and `class`, as the encoder groups them. */
+    function structAndScalarStore(): LazyPropertyVectors {
+        const { lengthStream, dataStream } = encodeSharedDictionary(["Berlin", "city"]);
+        const encodedStruct = concatenateBuffers(
+            lengthStream,
+            dataStream,
+            encodeStructField([0], [true]),
+            encodeStructField([1], [true]),
+        );
+        const encodedRank = encodeInt32NoneColumn(new Int32Array([5]));
+        const structColumn: LazyPropertyColumn = {
+            name: "",
+            metadata: createColumnMetadataForStruct("", [{ name: "name" }, { name: "class" }]),
+            numStreams: 1,
+            start: 0,
+            vectors: null,
+        };
+        // The struct comes last, so a lookup walking the columns backwards meets it first
+        return new LazyPropertyVectors(
+            concatenateBuffers(encodedRank, encodedStruct),
+            [lazyColumn("rank", 0), { ...structColumn, start: encodedRank.length }],
+            1,
+        );
+    }
+
+    beforeEach(() => {
+        vi.mocked(readSharedDictionary).mockClear();
+        vi.mocked(decodeSharedDictionaryChild).mockClear();
+        vi.mocked(decodePropertyColumn).mockClear();
+    });
+
+    it("reads a scalar column without touching an unnamed struct", () => {
+        const store = structAndScalarStore();
+
+        expect(store.get("rank")?.getValue(0)).toBe(5);
+        expect(decodePropertyColumn).toHaveBeenCalledTimes(1);
+        expect(readSharedDictionary).not.toHaveBeenCalled();
+    });
+
+    it("decodes only the requested struct child", () => {
+        const store = structAndScalarStore();
+
+        expect(store.get("class")?.getValue(0)).toBe("city");
+        expect(decodeSharedDictionaryChild).toHaveBeenCalledTimes(1);
+
+        expect(store.get("name")?.getValue(0)).toBe("Berlin");
+        expect(readSharedDictionary).toHaveBeenCalledTimes(1);
+        expect(decodeSharedDictionaryChild).toHaveBeenCalledTimes(2);
+    });
+
+    it("decodes nothing for a name no column or child produces", () => {
+        const store = structAndScalarStore();
+
+        expect(store.get("name:fr")).toBeUndefined();
+        expect(decodePropertyColumn).not.toHaveBeenCalled();
+        expect(readSharedDictionary).not.toHaveBeenCalled();
+    });
+
+    it("returns the same child vectors from get() and decodeAll(), decoding each child once", () => {
+        const store = structAndScalarStore();
+        const classVector = store.get("class");
+
+        const allVectors = store.decodeAll();
+        expect(allVectors.map((vector) => vector.name)).toEqual(["rank", "name", "class"]);
+        expect(allVectors[2]).toBe(classVector);
+        expect(decodeSharedDictionaryChild).toHaveBeenCalledTimes(2);
     });
 });
