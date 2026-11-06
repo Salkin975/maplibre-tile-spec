@@ -512,14 +512,6 @@ export function fastInverseDelta(data: Uint32Array | Int32Array) {
     }
 }
 
-export function inverseDelta(data: Uint32Array) {
-    let prevValue = 0;
-    for (let i = 0; i < data.length; i++) {
-        data[i] += prevValue;
-        prevValue = data[i];
-    }
-}
-
 /*
  * In place decoding of the zigzag delta encoded Vec2.
  * Inspired by https://github.com/lemire/JavaFastPFOR/blob/master/src/main/java/me/lemire/integercompression/differential/Delta.java

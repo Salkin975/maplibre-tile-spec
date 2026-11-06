@@ -25,12 +25,6 @@ export default class BitVector {
         this.values[byteIndex] = this.values[byteIndex] | ((value ? 1 : 0) << bitIndex);
     }
 
-    getInt(index: number): number {
-        const byteIndex = index >> 3;
-        const bitOffset = index & 7;
-        return (this.values[byteIndex] >> bitOffset) & 1;
-    }
-
     size(): number {
         return this._size;
     }
