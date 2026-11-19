@@ -10,9 +10,10 @@ export type FsstDictionaryCache = {
 };
 
 export class StringFsstDictionaryVector extends VariableSizeVector<Uint8Array, string> {
-    // TODO: extend from StringVector
     private symbolLengthBuffer?: Uint32Array;
     private decodedDictionary?: Uint8Array;
+    /** Decoded strings per dictionary code, filled lazily. */
+    private decodedValues?: Array<string | undefined>;
 
     constructor(
         name: string,
@@ -29,6 +30,33 @@ export class StringFsstDictionaryVector extends VariableSizeVector<Uint8Array, s
     }
 
     protected getValueFromBuffer(index: number): string {
+        return this.getDictionaryValue(this.indexBuffer[index]);
+    }
+
+    get indices(): Uint32Array {
+        return this.indexBuffer;
+    }
+
+    get dictionaryOffsets(): Uint32Array {
+        return this.offsetBuffer;
+    }
+
+    getDictionaryValue(code: number): string {
+        this.decodedValues ??= new Array(this.offsetBuffer.length - 1);
+        let value = this.decodedValues[code];
+        if (value === undefined) {
+            const dictionary = this.getDecodedDictionary();
+            value = decodeString(dictionary, this.offsetBuffer[code], this.offsetBuffer[code + 1]);
+            this.decodedValues[code] = value;
+        }
+        return value;
+    }
+
+    getDictionaryBytes(): Uint8Array {
+        return this.getDecodedDictionary();
+    }
+
+    getDecodedDictionary(): Uint8Array {
         if (this.decodedDictionary == null) {
             this.decodedDictionary = this.sharedDictionaryCache?.decodedDictionary;
             if (this.decodedDictionary == null) {
@@ -38,11 +66,7 @@ export class StringFsstDictionaryVector extends VariableSizeVector<Uint8Array, s
                 }
             }
         }
-
-        const offset = this.indexBuffer[index];
-        const start = this.offsetBuffer[offset];
-        const end = this.offsetBuffer[offset + 1];
-        return decodeString(this.decodedDictionary, start, end);
+        return this.decodedDictionary;
     }
 
     private decodeDictionary(): Uint8Array {
